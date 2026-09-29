@@ -1,0 +1,97 @@
+{
+  "schema_version": "zero1-independent-holdout.v1",
+  "evaluated_on": "2026-09-29",
+  "parser_commit": "47fc6d3",
+  "office": [
+    {
+      "id": "ffc-docx",
+      "kind": "docx",
+      "source": "https://github.com/alexschiller/file-format-commons/blob/master/files/ffc.docx",
+      "sha256": "08c623d728a2261c4f4ce02ed3d955487d406b784d59827eac901b218cc8bdc3",
+      "assertion": "text anchors preserved"
+    },
+    {
+      "id": "ffc-xlsx",
+      "kind": "xlsx",
+      "source": "https://github.com/alexschiller/file-format-commons/blob/master/files/ffc.xlsx",
+      "sha256": "07d7f81d2d7f578397d2b774f2b744732d268d2db4db022366db51734cd782c1",
+      "assertion": "39 rows x 4 columns equal OOXML cell values"
+    },
+    {
+      "id": "ffc-pptx",
+      "kind": "pptx",
+      "source": "https://github.com/alexschiller/file-format-commons/blob/master/files/ffc.pptx",
+      "sha256": "9fc6795c961c622a9017a5843e54d367e2e9dc2e36f05c9f0bbb9dfa938e82b1",
+      "assertion": "slide text order and anchors preserved"
+    },
+    {
+      "id": "pptx-group-transform",
+      "kind": "pptx",
+      "source": "https://github.com/shbernal/ts-pptx/blob/master/test/read/fixtures/group-transform.pptx",
+      "sha256": "492fa2a2b69ee5f9b6dc171242c93c0ebd0c4055209f21e779eb9bc318f4481d",
+      "assertion": "seven group labels preserved on both slides"
+    },
+    {
+      "id": "pptx-table-merge-encoding",
+      "kind": "pptx",
+      "source": "https://github.com/shbernal/ts-pptx/blob/master/test/read/fixtures/table-merge-encoding.pptx",
+      "sha256": "c2756f8f042c92c8a05236e4c426846f4d344c07d51f54665983b786e27a9132",
+      "assertion": "five merged tables emitted with row/column spans"
+    }
+  ],
+  "pdf": [
+    {
+      "id": "german-government-strategic-partnership",
+      "kind": "pdf",
+      "source": "https://www.bundesregierung.de/resource/blob/974430/2420616/bc530bf3a13e787931fca1086688ff51/2026-04-14-erklaerung-deutsch-ukrianische-regierungskonsultationen-deutsch-data.pdf?download=1",
+      "sha256": "5df4c195f5154120df9a8916802923d4eb65667be63152c7ba30a2bae4a76d86",
+      "assertion": "14-page parse succeeds; title H1 and section H2"
+    },
+    {
+      "id": "lidl-brochure",
+      "kind": "pdf-stress",
+      "source": "local acquisition /private/tmp/lidl-2026-09-28.pdf",
+      "sha256": "ee4f9deb3b5cff4cc181ea74fbffa4b339e26f6191dff1ec934f1fd6fbefe8a9",
+      "assertion": "73-page parse succeeds; 186 tables and critical anchors preserved"
+    },
+    {
+      "id": "english-odl-unseen-01030000000111-120",
+      "kind": "pdf",
+      "source": "https://github.com/opendataloader-project/opendataloader-bench",
+      "source_commit": "7af1d8f4d0c09f51ea1a5c6ba5f66e993286d109",
+      "documents": 10,
+      "sha256s": {
+        "01030000000111": "fad8cdcee7f7884bddedf0ee485bf259f815315699f35ef82b2afca5fb28f68a",
+        "01030000000112": "7abbca82ea23276bbd534ca90a667ede80429690d2f06ae0e83459f75c42670f",
+        "01030000000113": "f17954b5fdd9abdb6b4ec921c26ef9949f8c3f34b35b4efae11d57f49efa8283",
+        "01030000000114": "be866d1b599b669a33acbc07b07847d6c72011cf4d221b20d889ad5a90ab30f5",
+        "01030000000115": "12e9c991f3d907593bacefdcf9a46c2cb57b7fb599e7840f438df04e416aab9d",
+        "01030000000116": "a5528f4dd6f5ba0d52e6bf97a0aae99ede782fe97f4a0b4f96029e5ed7fe18b",
+        "01030000000117": "10f75857bb705a5441260399c3fca1080262cc0c271270825caf141cf7b31770",
+        "01030000000118": "39aec6caead187513fa9e2a26a3bbb54ba0a3a4ae8e879642ca1584330b0c285",
+        "01030000000119": "b9e5879b4dcd812e854cc06c6c3cb4f54231af28c919be63e27bef4c639551c9",
+        "01030000000120": "6916893bac49ba4fefa0a83eaf039b73c4adf00ed81ef97d4aad8f1a5cb90994"
+      }
+    }
+  ],
+  "scans": [
+    {
+      "id": "german-government-page1",
+      "source_pdf_sha256": "5df4c195f5154120df9a8916802923d4eb65667be63152c7ba30a2bae4a76d86",
+      "scan_pdf_sha256": "102412a5bb6c56b222353b6f1b5644cb14a289943d7cebaa007f3ad1e316ab1f",
+      "language": "de"
+    },
+    {
+      "id": "github-modern-slavery-page1",
+      "source_pdf_sha256": "4890ca75bb8df618ba6cee45b3cd95c5005ab6a4c9b7b1e252bea22523370d81",
+      "scan_pdf_sha256": "d4f3790e7217ab5d950edc66b8153310a997d2a5bd9d28e986d20843eed4f8f4",
+      "language": "en"
+    },
+    {
+      "id": "lidl-pages-1-10-stress",
+      "source_pdf_sha256": "ee4f9deb3b5cff4cc181ea74fbffa4b339e26f6191dff1ec934f1fd6fbefe8a9",
+      "scan_pdf_sha256": "ce198eeffd3c8d1e2c09ee00069220e193079d86f5a568f65f2e56f834150962",
+      "language": "de"
+    }
+  ]
+}

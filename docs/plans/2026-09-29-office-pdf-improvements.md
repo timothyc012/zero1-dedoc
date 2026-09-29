@@ -95,9 +95,9 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 
 **범위:** 원본 보안 패치 6개 파일을 하나의 PR로 유지한다.
 
-- [ ] `git cherry-pick -x 1a70bc16b00e96646c8c1f12e335f5f8ba3c0abd`를 별도 `codex/*` 브랜치에서 수행하고 출처를 유지한다.
-- [ ] 루트 밖 심링크·특수 파일 접근을 거부하고, 허용된 디렉터리의 Unicode 그림 이름을 읽는 기존 기능을 보존한다.
-- [ ] Zero1 package/bin/MCP 이름과 기존 fork 지침이 유지된다.
+- [x] `git cherry-pick -x 1a70bc16b00e96646c8c1f12e335f5f8ba3c0abd`를 별도 `codex/*` 브랜치에서 수행하고 출처를 유지한다.
+- [x] 루트 밖 심링크·특수 파일 접근을 거부하고, 허용된 디렉터리의 Unicode 그림 이름을 읽는 기존 기능을 보존한다.
+- [x] Zero1 package/bin/MCP 이름과 기존 fork 지침이 유지된다.
 
 **검증:** `node --import tsx --test tests/generate-image-dir.test.ts tests/mcp-generate-images.test.ts`, typecheck/build. **의존성:** 없음. 계획 승인 후 첫 반영 PR.
 
@@ -107,9 +107,9 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 
 **범위:** `cc1fca2`는 다수 파서·공통 렌더러를 함께 바꾸므로 원자적 upstream PR로 취급한다.
 
-- [ ] `git cherry-pick -x cc1fca205f08f1ac2ec1fd0541c6f891c0722327` 후 README/CLI 충돌을 Zero1 정체성과 upstream 옵션 모두 유지하도록 해결한다.
-- [ ] PDF `scriptTags` 기본 off, DOCX 기본 on을 검증하고 숫자 첨자·구두점·HTML 표 렌더링을 확인한다. 새 기능의 정규화 정책을 기록한다.
-- [ ] `docs/UPSTREAM.md`에 가져온 기능 커밋을 남긴다. upstream 전체 main을 병합했다고 표현하지 않는다. 릴리스 커밋의 `name: kordoc` 등은 가져오지 않는다.
+- [x] `git cherry-pick -x cc1fca205f08f1ac2ec1fd0541c6f891c0722327` 후 README/CLI 충돌을 Zero1 정체성과 upstream 옵션 모두 유지하도록 해결한다.
+- [x] PDF `scriptTags` 기본 off, DOCX 기본 on을 검증하고 숫자 첨자·구두점·HTML 표 렌더링을 확인한다. 새 기능의 정규화 정책을 기록한다.
+- [x] `docs/UPSTREAM.md`에 가져온 기능 커밋을 남긴다. upstream 전체 main을 병합했다고 표현하지 않는다. 릴리스 커밋의 `name: kordoc` 등은 가져오지 않는다.
 
 **검증:** upstream `tests/sup-sub.test.ts`, 전체 `npm test`, build/typecheck, 고정 ODL200과 G0 Office/PDF 및 German smoke. 원본 v4.16.3 클론도 동일 옵션으로 측정해 변경 원인을 구별한다. **의존성:** G0, U1.
 
@@ -141,9 +141,9 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 
 **범위 S:** `src/docx/parser.ts`, `tests/docx.test.ts`.
 
-- [ ] `collectInline()`이 XML 자식 순서대로 일반 run·수식·하이퍼링크·필드를 처리하도록 한다. 마지막에 모든 OMML을 덧붙이는 처리를 제거하고 중첩 `oMathPara/oMath` 중복 방출을 막는다.
-- [ ] `For $m=1$,`과 `The angle is $…$.`가 원본 순서를 유지한다. 한 문단의 여러 수식, 표 셀·링크 내부 수식, display math를 포함한다.
-- [ ] U2의 sup/sub·스타일과 기존 링크·각주·필드 처리 결과가 유지된다.
+- [x] `collectInline()`이 XML 자식 순서대로 일반 run·수식·하이퍼링크·필드를 처리하도록 한다. 마지막에 모든 OMML을 덧붙이는 처리를 제거하고 중첩 `oMathPara/oMath` 중복 방출을 막는다.
+- [x] `For $m=1$,`과 `The angle is $…$.`가 원본 순서를 유지한다. 한 문단의 여러 수식, 표 셀·링크 내부 수식, display math를 포함한다.
+- [x] U2의 sup/sub·스타일과 기존 링크·각주·필드 처리 결과가 유지된다.
 
 **검증:** `node --import tsx --test tests/docx-equation.test.ts tests/docx.test.ts tests/docx-numbering.test.ts tests/sup-sub.test.ts`, DOCX 5개와 신규 holdout의 순서 gold. **의존성:** U2, G0.
 
@@ -235,8 +235,8 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 
 **별도 저장소 작업, 범위 M:** `src/onto_kernel/bridge/kordoc_adapter.py`, `parser_selection.py`, `tests/test_bridge_kordoc_adapter.py`, parser-selection 테스트. I2와 한 통합 PR에서 진행한다.
 
-- [ ] `zero1_dedoc`을 정식 선택지로 추가하고 기존 bounded NDJSON worker 경계·경로 제한·timeout을 재사용한다. 공통 worker 코드를 복제하지 않는다.
-- [ ] `kordoc` 이름은 호환 별칭으로 제공하되 결과 provenance에는 **실제 Zero1 버전과 SHA**를 기록한다. 옛 Kordoc 4.16.1 실행으로 오해시키지 않는다.
+- [x] `zero1_dedoc`을 정식 선택지로 추가하고 기존 bounded NDJSON worker 경계·경로 제한·timeout을 재사용한다. 공통 worker 코드를 복제하지 않는다.
+- [x] `kordoc` 이름은 호환 별칭으로 제공하되 결과 provenance에는 **실제 Zero1 버전과 SHA**를 기록한다. 옛 Kordoc 4.16.1 실행으로 오해시키지 않는다.
 - [ ] PDF/Office `auto` 변경은 별도 승격 PR로 남긴다. 의미 있는 텍스트 없는 OCR 필요 출력, 잘림 경고, 미지원 형식이 downstream에서 정상 내용으로 승격되지 않도록 기존 review 경로에 전달한다.
 
 **검증:** adapter/selection contract tests와 기존 이름 호환성. **의존성:** 도입할 각 트랙의 게이트 통과와 검증된 fork commit 확정.
@@ -245,9 +245,9 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 
 **별도 저장소 작업, 범위 M:** `src/onto_kernel/bridge/document_stage.py`, `document_parse_preview.py`, `general_document_extractor.py`, `tests/test_document_stage.py`, `tests/test_general_document_extractor.py`.
 
-- [ ] 세 진입점이 I1의 canonical parser 선택을 일관되게 사용한다. 일반 추출의 허용 집합에도 `zero1_dedoc`이 들어간다.
-- [ ] CLI/preview/stage에서 동일 형식·옵션의 실제 parser provenance와 품질 경고가 유지된다. 기존 자동 라우팅 결과를 회귀 단언한다.
-- [ ] PPTX 지원은 Zero1의 X1/X2를 포함한 고정 버전을 쓸 때만 활성화한다. 스캔은 O3의 모델 상태를 확인한다.
+- [x] 세 진입점이 I1의 canonical parser 선택을 일관되게 사용한다. 일반 추출의 허용 집합에도 `zero1_dedoc`이 들어간다.
+- [x] CLI/preview/stage에서 동일 형식·옵션의 실제 parser provenance와 품질 경고가 유지된다. 기존 자동 라우팅 결과를 회귀 단언한다.
+- [x] PPTX 지원은 Zero1의 X1/X2를 포함한 고정 버전을 쓸 때만 활성화한다. 스캔은 O3의 모델 상태를 확인한다.
 
 **검증:** 일반 추출·preview·stage의 지원/미지원/timeout/빈 내용 경고 전파. **의존성:** I1. I1/I2를 함께 통과시킨 뒤 통합 PR을 병합한다.
 
@@ -264,6 +264,15 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 **검증:** Node 20 이미지의 parser identity, SHA, NDJSON ready/response, 제한 경로·누락 모델·timeout 시나리오. **의존성:** I2.
 
 ## 6. 체크포인트와 완료 조건
+
+### 2026-09-29 independent holdout update
+
+The independent holdout run is recorded in
+[`docs/benchmarks/zero1-independent-holdout-2026-09-29.md`](../benchmarks/zero1-independent-holdout-2026-09-29.md).
+It closes the stale U1/U2/D1/I1/I2 checkboxes and adds source-backed Office,
+PPTX, German/English PDF, full BMF page-one cell, and scan OCR evidence. The
+clean German and English scan gates pass; the Lidl brochure remains a marked
+stress failure, and the saved WSL endpoint still times out.
 
 권장 순서: **G0 → U1/U2 → P1 → E1/D1/H1 → T1 → X1/X2 → O1/O2/O3 → I1/I2/I3**. P1 진단에서 발견된 근거가 T1 설계를 결정한다. Excel 보존 테스트는 후속 포맷 변경 전에 확정한다.
 
