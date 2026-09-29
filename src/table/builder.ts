@@ -206,7 +206,7 @@ export function escapeGfm(text: string): string {
   // 줄 첫 ATX "# " → \# — 본문 "# arch -k"(유닉스 프롬프트)가 헤딩이 되던 것 (hwp3-sample11).
   // < → \< — 원시 HTML 로 읽히는 모양(< 뒤 영문자·/·!·?)만. 캡션 "<Table 18-4: …>" 가 모든
   //   렌더러에서 <table> 여는 태그가 되고 "<br>" 글이 줄바꿈이 되던 것. kordoc 자신의 밑줄 마커
-  //   <u>·</u>(HWP5·PDF 가 block.text 에 넣음)는 제외, "<개정 2012.2.14>"·"<신설>"·"< 요약 >"
+  //   <u>·</u>(HWP5·PDF 가 block.text 에 넣음)와 첨자 <sup>·<sub>(script-tags)는 제외, "<개정 2012.2.14>"·"<신설>"·"< 요약 >"
   //   같은 한글·숫자·공백 뒤따름은 HTML 이 아니라 그대로 둔다.
   // 단 $...$ / $$...$$ 수식 스팬은 KaTeX 문법이라 이스케이프하면 파스 에러가 나므로 보호한다
   // (스팬을 임시 필러로 가린 뒤 escape → 복원). NUL 필러는 마크다운 본문에 등장하지 않는다.
@@ -228,7 +228,7 @@ export function escapeGfm(text: string): string {
     .replace(/([~*_`])/g, "\\$1")
     .replace(/(?<!\\)\|/g, "\\|")
     .replace(/^([ \t]*)(?=#{1,6}(?:[ \t]|$))/gm, "$1\\")
-    .replace(/<(?!\/?u>)(?=[A-Za-z/!?])/g, "\\<")
+    .replace(/<(?!\/?(?:u|sup|sub)>)(?=[A-Za-z/!?])/g, "\\<")
   return escaped.replace(new RegExp(NUL + "(\\d+)" + NUL, "g"), (_, n) => spans[Number(n)])
 }
 
@@ -660,11 +660,11 @@ function visibleText(b: IRBlock): string {
 /**
  * HTML 표 셀 글 → HTML 글. 병합·중첩 표는 HTML 로 나가는데 v4.14.4 까지 셀 글을 그대로 실어, 원문
  * `<script>`·`<img onerror>` 가 살아있는 태그가 되고 "x<y"·"A & B" 가 태그·엔티티로 먹혔다 (GFM 경로는
- * escapeGfm 이 막는다). kordoc 자신의 밑줄 마커 <u>·</u>(HWP5·PDF 가 글에 넣음)는 escapeGfm 처럼 태그로 둔다.
+ * escapeGfm 이 막는다). kordoc 자신의 밑줄 마커 <u>·</u>(HWP5·PDF 가 글에 넣음)와 첨자 <sup>·<sub> 는 escapeGfm 처럼 태그로 둔다.
  * 셀 줄바꿈 <br> 은 이 뒤에 넣으므로 원문 글자 "<br>"(&lt;br&gt;)와 갈린다. 읽는 쪽은 utils unescapeHtml
  */
 export function escapeHtmlCellText(text: string): string {
-  return escapeHtml(text).replace(/&lt;(\/?)u&gt;/g, "<$1u>")
+  return escapeHtml(text).replace(/&lt;(\/?)(u|sup|sub)&gt;/g, "<$1$2>")
 }
 
 /** 셀 내부 콘텐츠 → HTML — blocks(중첩표/다중문단) 있으면 구조 보존 재귀 렌더링 */

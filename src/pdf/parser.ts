@@ -10,6 +10,7 @@
  * text-clean(마크다운 정리), formula-ocr(수식).
  */
 
+import { stripScriptTags } from "../script-tags.js"
 import type { InternalParseResult, IRBlock, DocumentMetadata, ExtractedImage, ParseOptions, ParseWarning, OutlineItem } from "../types.js"
 import { KordocError } from "../utils.js"
 import { parsePageRange, hasRequestedPagesAfter } from "../page-range.js"
@@ -389,6 +390,8 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
           const regionPages = new Map([...ocrRegions].filter(([p]) =>
             options?.ocr !== "force" && !isImageBased && !pageQuality.find(q => q.page === p)?.needsOcr))
           const ocrPageBlocks = await runPdfOcr(ocrBuffer, targets, mode, warnings, options?.onProgress, options?.tables !== false, vectorPageOps, regionPages)
+          // OCR 글은 첨자를 가르지 않는다 — 검출 박스 높이·위치로는 기준선을 믿을 수 없다(scriptTags 를 켜도)
+          for (const obs of ocrPageBlocks.values()) stripScriptTags({ blocks: obs })
           if (ocrPageBlocks.size > 0) {
             const replacePages = new Set<number>()
             for (const [p, obs] of ocrPageBlocks) {

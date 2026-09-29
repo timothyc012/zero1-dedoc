@@ -8,6 +8,7 @@ import { KordocError, stripDtd } from "../utils.js"
 import type { IRBlock, ParseWarning } from "../types.js"
 import { HEADING_RATIO_H1, HEADING_RATIO_H2, HEADING_RATIO_H3 } from "../types.js"
 import { createXmlParser, findChildByLocalName, MAX_DECOMPRESS_SIZE } from "./parser-shared.js"
+import type { ScriptKind } from "../script-tags.js"
 
 // ─── HWPX 스타일 정보 ──────────────────────────────
 
@@ -17,6 +18,8 @@ export interface HwpxCharProperty {
   italic?: boolean
   strike?: boolean
   underline?: boolean
+  /** 위·아래첨자 — <hh:supscript/>·<hh:subscript/> */
+  script?: ScriptKind
   fontName?: string
 }
 
@@ -148,6 +151,8 @@ function parseCharProperties(doc: Document, map: Map<string, HwpxCharProperty>):
           const shape = k.getAttribute("shape") || ""
           if (isRealStrikeShape(shape)) prop.strike = true
         }
+        else if (localTag === "supscript") prop.script = "sup"
+        else if (localTag === "subscript") prop.script = "sub"
         else if (localTag === "underline") {
           // 판별자는 type — 한컴은 밑줄 없는 charPr 에도 type="NONE" 요소를 넣는다
           // (코퍼스 352파일 실측: NONE 15,603 / BOTTOM 156, TOP·CENTER 미관측).

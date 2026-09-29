@@ -5,6 +5,7 @@
  * w:p → paragraph/heading, w:tbl → table, w:drawing → image.
  */
 
+import { wrapScript, tidyScriptTags } from "../script-tags.js"
 import JSZip from "jszip"
 import { ListCounter } from "./numbering.js"
 import { DOMParser } from "@xmldom/xmldom"
@@ -337,6 +338,10 @@ function extractRun(r: Element): RunResult {
   if (rPrEls.length > 0) {
     bold = getChildElements(rPrEls[0], "b").length > 0
     italic = getChildElements(rPrEls[0], "i").length > 0
+    // 위·아래첨자 — w:vertAlign(직접 서식). 글자 스타일(rStyle)로 건 첨자는 보지 않는다
+    const va = getChildElements(rPrEls[0], "vertAlign")[0]
+    const v = va ? getAttr(va, "val") : null
+    if (v === "superscript" || v === "subscript") text = wrapScript(text, v === "superscript" ? "sup" : "sub")
   }
 
   return { text, bold, italic }
@@ -481,7 +486,7 @@ function collectInline(
     else parts.push(" $" + latex + "$ ")
   }
 
-  const text = parts.join("").replace(/[ \t]{2,}/g, " ").trim()
+  const text = tidyScriptTags(parts.join("")).replace(/[ \t]{2,}/g, " ").trim()
   return { text, bold, italic, footnoteText }
 }
 

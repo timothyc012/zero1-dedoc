@@ -227,8 +227,14 @@ export interface ParseOptions {
   onProgress?: (current: number, total: number) => void
   /** PDF 머리글/바닥글 자동 제거 */
   removeHeaderFooter?: boolean
+  /**
+   * 위·아래첨자를 인라인 HTML `<sup>`·`<sub>` 로 표기 — 평문으로 펴면 "10⁴ m²" 가 "104 m2", "x_i" 가 "xi" 로 값이 바뀐다.
+   * 기본: HWPX·HWP·DOCX 켬(글자 모양에 적힌 첨자), PDF 끔(글자 크기·기준선으로 추정 — 논문·수식 문서는 true 권장.
+   * 공개 벤치 ODL 정답이 첨자를 평문으로 적어 기본값을 두지 않는다). false 면 모든 형식에서 평문. OCR 로 읽은 글은 늘 평문
+   */
+  scriptTags?: boolean
   /** 평문 Markdown — 그림 자리 표시·링크 URL·밑줄(`<u>`)·굵게(`**`) 표기를 빼고 글만 (제목·목록·표 구조는 유지).
-   *  이미지 바이트를 따로 저장하지 않는 색인·RAG 용. 기본 false. `blocks` IR 은 그대로 */
+   *  첨자 `<sup>`·`<sub>` 는 값이 남게 `10^4`·`H_2O` 로 편다. 이미지 바이트를 따로 저장하지 않는 색인·RAG 용. 기본 false. `blocks` IR 은 그대로 */
   plain?: boolean
   /** 모든 표를 HTML 로 — 파이프 표도 HTML 표로 옮기고, 표마다 태그를 한 줄씩 들여써 낸다(BeautifulSoup prettify 모양, 첫 행 `<th>`).
    *  HTML 표만 다루는 소비자·채점기용. 기본 false(병합·중첩 없는 표는 GFM 파이프 표) */

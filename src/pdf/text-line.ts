@@ -447,6 +447,12 @@ export function mergeSuperscriptLines(lines: NormItem[][]): NormItem[][] {
     for (const i of line) total += i.text.trim().length
     return total > 0 && total <= 10
   }
+  // 짧은 기호 조각 여럿(각 3자 이하 — 저자 줄 소속 표시 ∗·†·a·1)은 합이 10자를 넘어도, 조각마다 옆 줄 글자 오른끝에
+  // 붙어(0.35em 안) 있으면 조각이다. 글자 위에 얹힌 수식 조각(∑ 위아래 극한)은 붙어 있지 않다
+  const isMarkers = (line: NormItem[], host: NormItem[]) => line.length > 1 && line.length <= 16 && line.every(i => {
+    if (i.text.trim().length > 3 || !i.text.trim()) return false
+    return host.some(h => { const g = i.x - (h.x + h.w); return g <= h.fontSize * 0.35 && g >= -h.fontSize * 0.1 })
+  })
 
   const result: NormItem[][] = [lines[0]]
   for (let i = 1; i < lines.length; i++) {
@@ -455,8 +461,8 @@ export function mergeSuperscriptLines(lines: NormItem[][]): NormItem[][] {
     const a = band(prev)
     const b = band(curr)
     const overlap = Math.min(a.top, b.top) - Math.max(a.bottom, b.bottom)
-    const prevIsFrag = isFrag(prev) && a.height <= b.height * 0.8 && overlap >= a.height * 0.5
-    const currIsFrag = isFrag(curr) && b.height <= a.height * 0.8 && overlap >= b.height * 0.5
+    const prevIsFrag = (isFrag(prev) || isMarkers(prev, curr)) && a.height <= b.height * 0.8 && overlap >= a.height * 0.5
+    const currIsFrag = (isFrag(curr) || isMarkers(curr, prev)) && b.height <= a.height * 0.8 && overlap >= b.height * 0.5
     if (prevIsFrag || currIsFrag) {
       result[result.length - 1] = [...prev, ...curr]
     } else {
