@@ -479,10 +479,10 @@ export function mergeCrossPageTables(blocks: IRBlock[], pageHeights?: Map<number
     // 이어짐을 가로막지 않게 (빈 조각의 뒤쪽 이음은 이미 앞선 차례에 시도했다)
     if (EMPTY_PARTS.has(curr.table)) { blocks.splice(j, 1); i++; continue }
     if (joined === null) continue
-    // A new document/overview can print its own institution/date row and a
-    // full-width title inside the ruled table. Equal column coordinates alone
-    // must not join it to the previous page's independent table.
-    if (!CLIP_TABLES.has(prev.table) && !CLIP_TABLES.has(curr.table) && startsIndependentTitledGrid(prev.table, curr.table)) continue
+    const ruledPair = !CLIP_TABLES.has(prev.table) && !CLIP_TABLES.has(curr.table)
+    // A different caption or leading full-width title is evidence of a new
+    // table, even when its columns and page-edge geometry match.
+    if (ruledPair && startsIndependentTable(prev.table, curr.table)) continue
     if (prev.table.cols !== curr.table.cols || prev.table.renderAsTable !== curr.table.renderAsTable || EMPTY_PARTS.has(prev.table)) continue
 
     // 좌우 경계 근접 검증 (폭 대비 비율)
@@ -497,6 +497,9 @@ export function mergeCrossPageTables(blocks: IRBlock[], pageHeights?: Map<number
     // joinClipParts 가 쪼개진 행·반복 머리 행 증거가 있을 때만 옮겨 잇는다 (여기서 옮김을 받으면 연달아 놓인 Q&A 상자가 12×5 로 이어진다)
     const px = TABLE_COLXS.get(prev.table), cx = TABLE_COLXS.get(curr.table)
     if (px && cx && !shiftedSame(px, cx, !CLIP_TABLES.has(prev.table) && !CLIP_TABLES.has(curr.table))) continue
+    // For ruled tables, geometry is necessary but not sufficient. Require a
+    // repeated header/caption or compatible data-column roles across the edge.
+    if (ruledPair && !hasRuledContinuationEvidence(prev.table, curr.table)) continue
 
     // 다음 표 첫 행이 앞 표 첫 행과 같은 모양(칸마다 열·행 병합이 같고 세로 병합 칸을 품은 머리)인데 글이 다르면 새 표의 머리다
     // — 쪽마다 새로 놓인 같은 틀 상자("일 러 두 기" 다음 쪽 "목 차", 보도자료 표지 상자). 되풀이 머리 행은 글이 같다
@@ -532,14 +535,49 @@ export function mergeCrossPageTables(blocks: IRBlock[], pageHeights?: Map<number
   }
 }
 
-function startsIndependentTitledGrid(prev: IRTable, curr: IRTable): boolean {
-  if (curr.cols < 3 || curr.rows < 3) return false
-  const first = curr.cells[0].filter(cell => cell.text.trim())
-  if (first.length === 0 || first.length > 2) return false
-  const title = curr.cells.slice(1, 3).flat().find(cell => cell.colSpan === curr.cols && cell.text.trim().length >= 12)?.text.trim()
-  if (!title) return false
-  const normalize = (text: string) => text.replace(/\s+/g, " ").trim()
-  return !prev.cells.slice(0, 3).flat().some(cell => cell.colSpan === prev.cols && normalize(cell.text) === normalize(title))
+const normalizedCellText = (text: string) => text.replace(/\s+/g, " ").trim()
+
+/** Full-width titles before data rows; an outer-edge institution/date row may precede them. */
+function leadingFullSpanTitles(table: IRTable): string[] {
+  if (table.cols < 2) return []
+  const titles: string[] = []
+  for (const row of table.cells) {
+    const filled = row.map((cell, col) => ({ cell, col })).filter(({ cell }) => cell.text.trim())
+    if (filled.length === 0) continue
+    const full = filled.find(({ cell }) => cell.colSpan === table.cols)
+    if (full) { titles.push(normalizedCellText(full.cell.text)); continue }
+    const metadataRow = titles.length === 0 && filled.length === 2 && filled[0].col === 0
+      && filled[1].col === table.cols - 1
+    if (!metadataRow) break
+  }
+  return titles
+}
+
+function startsIndependentTable(prev: IRTable, curr: IRTable): boolean {
+  const prevCaption = normalizedCellText(prev.caption ?? "")
+  const currCaption = normalizedCellText(curr.caption ?? "")
+  if (currCaption && currCaption !== prevCaption) return true
+  const prior = new Set(leadingFullSpanTitles(prev))
+  return leadingFullSpanTitles(curr).some(title => !prior.has(title))
+}
+
+/** Text/number/empty roles supply positive continuation evidence without language-specific labels. */
+function dataRowRoles(row: IRCell[]): string | null {
+  if (row.some(cell => cell.colSpan > 1)) return null
+  const roles = row.map(cell => {
+    const text = cell.text.trim()
+    if (!text) return "_"
+    return /^[+\-]?\d[\d.,\s%]*$/.test(text) ? "N" : "T"
+  })
+  return roles.filter(role => role !== "_").length >= 2 ? roles.join("") : null
+}
+
+function hasRuledContinuationEvidence(prev: IRTable, curr: IRTable): boolean {
+  if (prev.cells[0] && curr.cells[0] && rowTextsEqual(prev.cells[0], curr.cells[0])) return true
+  if (prev.caption && normalizedCellText(prev.caption) === normalizedCellText(curr.caption ?? "")) return true
+  const previous = [...prev.cells].reverse().map(dataRowRoles).find(Boolean)
+  const next = curr.cells.map(dataRowRoles).find(Boolean)
+  return !!previous && previous === next
 }
 
 /**

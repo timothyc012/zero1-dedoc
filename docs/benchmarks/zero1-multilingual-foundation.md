@@ -32,10 +32,10 @@ Command after `npm run build`:
 npm run bench:german-smoke -- /path/to/bmf-tax-tables.pdf /path/to/solvency-forms.pdf
 ```
 
-On the final Apple M4 local run, the smoke passed in 405 ms for the 11-page tax PDF and 284 ms for the 29-page form PDF, peak Node RSS 250 MiB. These are observed wall times, not a controlled engine-to-engine speed comparison.
+On the final Apple M4 local run, the smoke passed in 350 ms for the 11-page tax PDF and 280 ms for the 29-page form PDF, peak Node RSS 231 MiB. These are observed wall times, not a controlled engine-to-engine speed comparison.
 
 The packed `zero1-dedoc@4.16.1-zero1.1` tarball was also installed into an isolated **WSL Docker Node 20.20.2** image (`02ontology/zero1-dedoc-eval:4.16.1-zero1.1`, image digest `sha256:f490ca9afdd3d8e0f935dab9acc7b5725654ee22fdd0d3ea31f3903bb679a309`) with PDF.js and no optional OCR/model packages. With `--network none`, the same two official PDFs passed all table/value/form-title assertions; observed peak Node RSS was 190 MiB. The text-layer result was correct despite PDF.js warning that optional canvas rendering was unavailable in this lean image. The existing 02ontology operating Compose was not changed.
 
 ## Korean and OCR coverage
 
-The repository's `npm test` passed **2,600 tests**, with **10 skips** and **0 failures** after the parser fixes. The first sandboxed attempt failed six tests requiring localhost, Chromium, or filesystem watch; the same suite passed when allowed to use those resources. The private Korean PDF/HWPX corpus required by `npm run bench:gate` was not present in this checkout, so that gate is **unverified**. OCR is not part of these results. The bundled recognition model remains Korean PP-OCRv5; German and English scanned PDFs need a separate model-selection and gold-set evaluation.
+The repository's `npm test` passed **2,604 tests**, with **10 skips** and **0 failures** after the parser fixes and general-rule hardening. The first sandboxed attempt failed six tests requiring localhost, Chromium, or filesystem watch; the same suite passed when allowed to use those resources. The private Korean PDF/HWPX corpus required by `npm run bench:gate` was not present in this checkout, so that gate is **unverified**. OCR is not part of these results. The bundled recognition model remains Korean PP-OCRv5; German and English scanned PDFs need a separate model-selection and gold-set evaluation.

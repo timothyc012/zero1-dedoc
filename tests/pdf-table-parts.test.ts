@@ -117,6 +117,52 @@ describe("mergeCrossPageTables — 클립 표 쪽 넘김 판정", () => {
     assert.equal(blocks.length, 2)
     assert.equal(blocks[1].table!.cells[1][0].text, "Nachrichtliche Angaben und Bruttoberechnungen")
   })
+  it("짧은 첫 행 제목과 다른 열 이름표는 새 표의 시작이다", () => {
+    const xs = [55, 200, 350, 500]
+    const line = (table: IRTable, page: number): IRBlock => {
+      TABLE_COLXS.set(table, xs)
+      return { type: "table", table, pageNumber: page, bbox: { page, x: 55, y: 40, width: 445, height: 730 } }
+    }
+    const prev = grid(2, 3, [[0, 0, "Name"], [0, 1, "Q1"], [0, 2, "Q2"], [1, 0, "Alpha"], [1, 1, "1"], [1, 2, "2"]])
+    const title = grid(3, 3, [[0, 0, "Q3", 3], [1, 0, "Name"], [1, 1, "Q1"], [1, 2, "Q2"], [2, 0, "Beta"], [2, 1, "3"], [2, 2, "4"]])
+    const titled = [line(prev, 1), line(title, 2)]
+    mergeCrossPageTables(titled, PAGE_H)
+    assert.equal(titled.length, 2)
+
+    const reset = grid(2, 3, [[0, 0, "Region"], [0, 1, "Year"], [0, 2, "Amount"], [1, 0, "Berlin"], [1, 1, "2026"], [1, 2, "3"]])
+    const resetBlocks = [line(prev, 1), line(reset, 2)]
+    mergeCrossPageTables(resetBlocks, PAGE_H)
+    assert.equal(resetBlocks.length, 2)
+  })
+  it("비날짜 메타데이터 행 다음의 짧은 전폭 제목도 새 표를 가른다", () => {
+    const xs = [55, 200, 350, 500]
+    const line = (table: IRTable, page: number): IRBlock => {
+      TABLE_COLXS.set(table, xs)
+      return { type: "table", table, pageNumber: page, bbox: { page, x: 55, y: 40, width: 445, height: 730 } }
+    }
+    const prev = grid(2, 3, [[0, 0, "Name"], [0, 1, "Q1"], [0, 2, "Q2"], [1, 0, "Alpha"], [1, 2, "FY25"]])
+    const curr = grid(3, 3, [[0, 0, "Agency"], [0, 2, "FY26"], [1, 0, "Tax", 3], [2, 0, "Beta"], [2, 2, "FY26"]])
+    const blocks = [line(prev, 1), line(curr, 2)]
+    mergeCrossPageTables(blocks, PAGE_H)
+    assert.equal(blocks.length, 2)
+  })
+  it("되풀이된 제목·열 이름표와 같은 데이터 열 스키마는 이어진 표다", () => {
+    const xs = [55, 200, 350, 500]
+    const line = (table: IRTable, page: number): IRBlock => {
+      TABLE_COLXS.set(table, xs)
+      return { type: "table", table, pageNumber: page, bbox: { page, x: 55, y: 40, width: 445, height: 730 } }
+    }
+    const prev = grid(3, 3, [[0, 0, "Results", 3], [1, 0, "Name"], [1, 1, "2025"], [1, 2, "2026"], [2, 0, "Alpha"], [2, 1, "1"], [2, 2, "2"]])
+    const curr = grid(3, 3, [[0, 0, "Results", 3], [1, 0, "Name"], [1, 1, "2025"], [1, 2, "2026"], [2, 0, "Beta"], [2, 1, "3"], [2, 2, "4"]])
+    const blocks = [line(prev, 1), line(curr, 2)]
+    mergeCrossPageTables(blocks, PAGE_H)
+    assert.equal(blocks.length, 1)
+
+    const continuation = grid(1, 3, [[0, 0, "Gamma"], [0, 1, "5"], [0, 2, "6"]])
+    const plain = [line(grid(2, 3, [[0, 0, "Name"], [0, 1, "2025"], [0, 2, "2026"], [1, 0, "Alpha"], [1, 1, "1"], [1, 2, "2"]]), 1), line(continuation, 2)]
+    mergeCrossPageTables(plain, PAGE_H)
+    assert.equal(plain.length, 1)
+  })
   it("두 쪽 모두 단위 행으로 시작하면 열이 같아도 별도 표로 둔다", () => {
     const make = (name: string, page: number): IRBlock => {
       const table = grid(3, 3, [[0, 0, "(단위: ha, %)", 3], [1, 0, "지역"], [1, 1, "2025"], [1, 2, "2026"], [2, 0, name], [2, 1, "1"], [2, 2, "2"]])
