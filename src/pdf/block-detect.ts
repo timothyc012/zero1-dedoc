@@ -315,14 +315,14 @@ export function detectPageLeadHeadings(blocks: IRBlock[]): void {
     page.push(b)
     byPage.set(b.pageNumber ?? 0, page)
   }
-  for (const page of byPage.values()) {
+  for (const [pageNo, page] of byPage) {
     // OCR 로 끼운 그림 속 글(style 없음 — mergeOcrImageRegions, 쪽 머리 로고)은 쪽 첫머리 판정에 끼지 않는다
     const content = page.filter(b => b.type !== "image" && b.type !== "separator" && !(b.type === "paragraph" && !b.style))
     // Official press PDFs often put a compact sender/contact table above the
     // title. Treat that table as a running header only when the next two
     // blocks have a clear title-to-body size relationship; otherwise ordinary
     // table-first pages must remain untouched.
-    const headerTableLead = content[0]?.type === "table" && !!content[0].bbox &&
+    const headerTableLead = pageNo === 1 && content[0]?.type === "table" && !!content[0].bbox &&
       (content[1]?.type === "paragraph" || content[1]?.type === "heading") && !!content[1].style?.fontSize &&
       content[2]?.type === "paragraph" && !!content[2].style?.fontSize &&
       (content[1].style.fontSize / content[2].style.fontSize) >= 1.15 &&
@@ -350,7 +350,9 @@ export function detectPageLeadHeadings(blocks: IRBlock[]): void {
       Math.abs(first.bbox.x - second.bbox.x) <= first.style.fontSize * 2 &&
       first.bbox.y - (second.bbox.y + second.bbox.height) >= first.style.fontSize * 2 &&
       !captionLike.test(firstText) && !/^(?:doi:|https?:|www\.)/i.test(firstText)
-    const headerLeadTitle = headerTableLead && (first.type === "paragraph" || first.type === "heading") &&
+    // Keep an existing H2 section level. The real document title below an
+    // official first-page header can enter this pass as H3 from font sizing.
+    const headerLeadTitle = headerTableLead && (first.type === "paragraph" || (first.type === "heading" && first.level === 3)) &&
       firstText.length >= 5 && firstText.length <= 120 && second.type === "paragraph" &&
       !!second.style?.fontSize && !!second.bbox &&
       first.style.fontSize >= second.style.fontSize * 1.15 &&

@@ -202,4 +202,45 @@ describe("document lead heading hierarchy", () => {
     assert.equal(blocks[1].type, "heading")
     assert.equal(blocks[1].level, 1)
   })
+
+  it("keeps an existing first-page H2 below a compact table", () => {
+    const blocks: IRBlock[] = [
+      { type: "table", pageNumber: 1, bbox: { page: 1, x: 0, y: 540, width: 500, height: 160 }, table: { rows: 4, cols: 2, cells: [], hasHeader: false } },
+      { type: "heading", level: 2, pageNumber: 1, text: "1. Gegenstand der Prüfung", bbox: { page: 1, x: 70, y: 510, width: 340, height: 20 }, style: { fontSize: 13, fontName: "section" } },
+      { type: "paragraph", pageNumber: 1, text: "Die Prüfung umfasst die folgenden Unterlagen.", bbox: { page: 1, x: 70, y: 480, width: 310, height: 11 }, style: { fontSize: 10, fontName: "body" } },
+    ]
+    detectPageLeadHeadings(blocks)
+    assert.equal(blocks[1].level, 2)
+  })
+
+  it("promotes a first-page H3 document title below a compact table", () => {
+    const blocks: IRBlock[] = [
+      { type: "table", pageNumber: 1, bbox: { page: 1, x: 0, y: 540, width: 500, height: 160 }, table: { rows: 4, cols: 2, cells: [], hasHeader: false } },
+      { type: "heading", level: 3, pageNumber: 1, text: "Erklärung über eine strategische Partnerschaft", bbox: { page: 1, x: 70, y: 510, width: 340, height: 20 }, style: { fontSize: 13, fontName: "title" } },
+      { type: "paragraph", pageNumber: 1, text: "Die Partnerschaft beruht auf den folgenden Punkten.", bbox: { page: 1, x: 70, y: 480, width: 310, height: 11 }, style: { fontSize: 10, fontName: "body" } },
+    ]
+    detectPageLeadHeadings(blocks)
+    assert.equal(blocks[1].level, 1)
+  })
+
+  it("preserves a middle-page H2 below a small continued table", () => {
+    const blocks: IRBlock[] = [
+      { type: "table", pageNumber: 5, bbox: { page: 5, x: 0, y: 540, width: 500, height: 160 }, table: { rows: 4, cols: 2, cells: [], hasHeader: false } },
+      { type: "heading", level: 2, pageNumber: 5, text: "3.2 Ergebnisse der Prüfung", bbox: { page: 5, x: 70, y: 510, width: 340, height: 20 }, style: { fontSize: 13, fontName: "section" } },
+      { type: "paragraph", pageNumber: 5, text: "Die Prüfung ergab weitere Ergebnisse.", bbox: { page: 5, x: 70, y: 480, width: 310, height: 11 }, style: { fontSize: 10, fontName: "body" } },
+    ]
+    detectPageLeadHeadings(blocks)
+    assert.equal(blocks[1].type, "heading")
+    assert.equal(blocks[1].level, 2)
+  })
+
+  it("does not make a middle-page paragraph into a document title", () => {
+    const blocks: IRBlock[] = [
+      { type: "table", pageNumber: 5, bbox: { page: 5, x: 0, y: 540, width: 500, height: 160 }, table: { rows: 4, cols: 2, cells: [], hasHeader: false } },
+      { type: "paragraph", pageNumber: 5, text: "3.2 Ergebnisse der Prüfung", bbox: { page: 5, x: 70, y: 510, width: 340, height: 20 }, style: { fontSize: 13, fontName: "section" } },
+      { type: "paragraph", pageNumber: 5, text: "Die Prüfung ergab weitere Ergebnisse.", bbox: { page: 5, x: 70, y: 480, width: 310, height: 11 }, style: { fontSize: 10, fontName: "body" } },
+    ]
+    detectPageLeadHeadings(blocks)
+    assert.equal(blocks[1].type, "paragraph")
+  })
 })
