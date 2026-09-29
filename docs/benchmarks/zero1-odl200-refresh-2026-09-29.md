@@ -2,7 +2,7 @@
 
 The public OpenDataLoader 200-document corpus was rerun after the PDF numeric
 band and German heading fixes. The run used the unmodified public evaluator,
-`ocr:false`, and the current `75a8d2a` parser build. All **200/200** inputs
+`ocr:false`, and the current `607aee6` parser build. All **200/200** inputs
 parsed without a worker failure.
 
 | Metric | Previous locked result | Current result | Delta |
