@@ -1011,7 +1011,7 @@ function mergeAdjacentTableBlocks(blocks: IRBlock[]): IRBlock[] {
       result.push(curr)
     }
   }
-  return mergeSideBandTables(result)
+  return result
 }
 
 /** Rejoin a label band and a numeric value band that the fallback gutter path
@@ -1038,17 +1038,27 @@ export function mergeSideBandTables(blocks: IRBlock[]): IRBlock[] {
       const sourceRows = right.table.cells
       let bestRows: IRCell[][] | null = null
       let bestNumeric = -1
+      let bestNumericWidth = 0
       for (let start = 0; start <= sourceRows.length - left.table.rows; start++) {
         const candidate = sourceRows.slice(start, start + left.table.rows)
         let score = 0
+        const widths = new Map<number, number>()
         for (const source of candidate) {
           const values = source.map(cell => cell.text.trim()).filter(Boolean).join(" ").split(/\s+/).filter(Boolean)
           const numeric = values.filter(value => /^[-−–]?\d[\d.,]*$/.test(value) || value === "x").length
-          if (numeric >= Math.max(5, values.length * 0.65)) score++
+          if (numeric >= Math.max(8, values.length * 0.65)) {
+            score++
+            widths.set(values.length, (widths.get(values.length) ?? 0) + 1)
+          }
         }
-        if (score > bestNumeric) { bestNumeric = score; bestRows = candidate }
+        const [width, widthCount] = [...widths.entries()].sort((a, b) => b[1] - a[1])[0] ?? [0, 0]
+        if (score > bestNumeric || (score === bestNumeric && widthCount > 0 && width > bestNumericWidth)) {
+          bestNumeric = score
+          bestNumericWidth = width
+          bestRows = candidate
+        }
       }
-      if (!bestRows || bestNumeric < Math.max(3, left.table.rows * 0.6)) continue
+  if (!bestRows || bestNumeric < Math.max(3, left.table.rows * 0.6) || bestNumericWidth < 8) continue
       const rows: IRCell[][] = []
       let numericRows = 0
       for (let r = 0; r < left.table.rows; r++) {
@@ -1059,7 +1069,7 @@ export function mergeSideBandTables(blocks: IRBlock[]): IRBlock[] {
         }
         const values = bestRows[r]?.map(cell => cell.text.trim()).filter(Boolean).join(" ").split(/\s+/).filter(Boolean) ?? []
         const numeric = values.filter(value => /^[-−–]?\d[\d.,]*$/.test(value) || value === "x").length
-        if (numeric >= Math.max(5, values.length * 0.65)) numericRows++
+        if (numeric >= Math.max(8, values.length * 0.65)) numericRows++
         rows.push([{ text: label, colSpan: 1, rowSpan: 1 }, ...values.map(value => ({ text: value, colSpan: 1, rowSpan: 1 }))])
       }
       if (numericRows < Math.max(3, left.table.rows * 0.6)) continue
@@ -1333,8 +1343,9 @@ function hasTwoColumnNumericTableEvidence(items: NormItem[], cutX: number): bool
     const right = line.filter(item => item.x >= cutX)
     if (left.length === 0 || right.length === 0) continue
     paired++
-    const rightText = right.map(item => item.text).join(" ").trim()
-    if (/\d/.test(rightText) && rightText.length <= 240) numeric++
+    const values = right.map(item => item.text).join(" ").trim().split(/\s+/).filter(Boolean)
+    const numericValues = values.filter(value => /^[-−–]?\d[\d.,]*$/.test(value) || value === "x")
+    if (values.length >= 8 && numericValues.length >= Math.max(8, values.length * 0.65)) numeric++
   }
   return paired >= 5 && numeric >= Math.max(4, paired * 0.45)
 }
@@ -1359,7 +1370,7 @@ function buildNumericBandTable(
     const rightText = mergeLineSimple(right).trim()
     const values = rightText.split(/\s+/).filter(Boolean)
     const numericValues = values.filter(value => /^[-−–]?\d[\d.,]*$/.test(value) || value === "x")
-    if (leftText && values.length >= 5 && numericValues.length >= Math.max(5, values.length * 0.65)) {
+    if (leftText && values.length >= 8 && numericValues.length >= Math.max(8, values.length * 0.65)) {
       detected.push({ left: leftText, values, items: row })
     }
   }
