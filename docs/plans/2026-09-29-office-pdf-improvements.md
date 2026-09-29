@@ -217,6 +217,8 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 
 ### O3. OCR 언어·품질 옵션을 CLI/MCP/worker에 연결
 
+**상태:** 구현 완료 in current implementation branch. CLI `--ocr-language`, MCP `ocr_language`, worker `ocrLanguage`이 같은 ParseOptions 프로필을 선택한다.
+
 **범위 M:** `src/cli.ts`, `src/mcp/tools-parse.ts`, `src/cli/commands-worker.ts`, `tests/parse-worker.test.ts`, OCR surface 테스트(신규).
 
 - [ ] 라이브러리의 모델 프로필 선택을 CLI `--ocr-language`, MCP `ocr_language`, 제한된 worker 옵션으로 전달한다. 알 수 없는 언어는 기본 모델로 숨겨 대체하지 않는다.

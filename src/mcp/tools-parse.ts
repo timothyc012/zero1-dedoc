@@ -18,6 +18,8 @@ export function registerParseTools(server: McpServer): void {
       file_path: z.string().min(1).describe("파싱할 문서 파일의 절대 경로 (HWP, HWPX, PDF, XLSX, DOCX, PNG/JPG/WebP)"),
       ocr: z.union([z.boolean(), z.literal("force")]).optional()
         .describe("스캔/이미지 PDF 텍스트 OCR (내장 PP-OCRv5 korean, 첫 사용 시 ~18MB 자동 다운로드). true=텍스트층이 없거나 깨진 페이지만 인식하고 정상 페이지는 그대로 둡니다. \"force\"=텍스트층이 있어도 무시하고 전 페이지 강제 재인식. parse 결과에 NEEDS_OCR 경고가 있으면 이 옵션으로 재시도하세요"),
+      ocr_language: z.enum(["korean", "en", "de"]).optional()
+        .describe("내장 OCR 언어 프로필 (korean, en, de)"),
       remove_header_footer: z.boolean().optional()
         .describe("PDF 머리글/바닥글 자동 제거 (기본 true — false로 끄기, CLI --no-header-footer 대응)"),
       formula_ocr: z.boolean().optional()
@@ -41,7 +43,7 @@ export function registerParseTools(server: McpServer): void {
       tables: z.boolean().optional()
         .describe("PDF 표 감지 (기본 true — false로 끄기, CLI --no-tables 대응). 테두리 박스를 표로 오인해 읽기 순서가 뒤집히는 문서(2단 시험지 등)에서 자연 읽기순 텍스트만 뽑습니다 (#64)"),
     },
-    async ({ file_path, ocr, remove_header_footer, formula_ocr, dedupe_running_headers, keep_trailing_empty_cols, keep_empty_paragraphs, include_field_placeholders, html_tables, script_tags, plain, password, tables }) => {
+    async ({ file_path, ocr, ocr_language, remove_header_footer, formula_ocr, dedupe_running_headers, keep_trailing_empty_cols, keep_empty_paragraphs, include_field_placeholders, html_tables, script_tags, plain, password, tables }) => {
       try {
         const { buffer, resolved } = await readValidatedFile(file_path, MAX_FILE_SIZE, PARSE_EXTENSIONS)
         const format = detectFormat(buffer)
@@ -61,6 +63,7 @@ export function registerParseTools(server: McpServer): void {
         const result = await parse(buffer, {
           filePath: resolved,
           ...(ocr !== undefined ? { ocr } : {}),
+          ...(ocr_language !== undefined ? { ocrLanguage: ocr_language } : {}),
           ...(remove_header_footer !== undefined ? { removeHeaderFooter: remove_header_footer } : {}),
           ...(formula_ocr ? { formulaOcr: true } : {}),
           ...(dedupe_running_headers ? { dedupeRunningHeaders: true } : {}),
