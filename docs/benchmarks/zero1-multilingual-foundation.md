@@ -64,7 +64,8 @@ Docker result verifies the same network-isolated package and worker contract.
 
 An explicit OCR-enabled evaluation image was also built with the same package,
 `ZERO1_ENABLE_OCR=1`, and `ZERO1_OCR_LANGUAGES="en de"`. Its digest is
-`sha256:bb3d46f32c250ff6eb5e773b24d97a6a62f41a42cec9e2ea322c775be0edc995`.
+`sha256:4b5580b52b487dbfb1c0ae1d3d6ac4ef6d622d63d90422ad6f16a2ebeece8891`
+and source revision `75a8d2a2d7b29b995b824dca6f812fd229f33592`.
 With `--network none`, the high-resolution German image-only fixture returned
 `OCR_APPLIED` and exactly preserved `Schäferstraße Köln – Fußgängerzone
 123,45 EUR`. The model-free image and the OCR-enabled image are separate
