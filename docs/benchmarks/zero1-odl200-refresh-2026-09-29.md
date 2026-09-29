@@ -2,7 +2,7 @@
 
 The public OpenDataLoader 200-document corpus was rerun after the PDF numeric
 band and German heading fixes. The run used the unmodified public evaluator,
-`ocr:false`, and the current `607aee6` parser build. All **200/200** inputs
+`ocr:false`, and the current `f1aa562` parser build. All **200/200** inputs
 parsed without a worker failure.
 
 | Metric | Previous locked result | Current result | Delta |
@@ -21,3 +21,8 @@ retained locally with SHA-256
 This refresh is evidence of public-corpus non-regression. It does not replace
 the German BMF cell gold or the private Korean holdout, and it does not change
 the 02ontology `auto` parser route.
+
+The same metrics were rechecked after reconnecting the numeric side-band merge
+to the built page-block return path. The hash-pinned German smoke then passed
+pages 6, 7, 10, and 11 as 10-column tables, confirming that the public score
+did not hide a regression in the German target documents.

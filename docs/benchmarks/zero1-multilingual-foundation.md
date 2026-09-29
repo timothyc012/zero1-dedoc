@@ -15,7 +15,7 @@ The same 200 PDFs were parsed before and after the German PDF changes. Both runs
 
 All **200/200 PDFs** parsed in both runs. The table metric has 42 scored documents and heading metric 107 according to the public evaluator. Three documents moved by less than `0.00026` NID, with no material negative document delta; the table score was unchanged. [Baseline evaluation JSON](data/kordoc-v4.16.1-odl200.json) · [Zero1 evaluation JSON](data/zero1-dedoc-odl200.json).
 
-The post-T1/H1 refresh is recorded in
+The post-T1/H1 and numeric side-band refresh is recorded in
 [zero1-odl200-refresh-2026-09-29.md](zero1-odl200-refresh-2026-09-29.md):
 200/200 still parse, table score is unchanged, and reading-order and heading
 means improve slightly against the locked result.
