@@ -100,6 +100,11 @@ The same candidate was rerun on the German-government and GitHub scan
 holdouts. Their markdown outputs were byte-for-byte identical to the previous
 holdout results; those scans do not trigger the large-page adaptive path.
 
+A direct-PNG route probe on 1.5× and 2× enlarged derivatives of the same
+page scored 28/30 and 27/30 components. These are not independent samples and
+do not replace the 30/30 image-only-PDF result; they show that this PDF-path
+pass should not be generalized to direct image ingestion.
+
 Candidate evidence: Zero1 commit
 `eb3850b42e85b8950de84c7a964bf7e28e2dfba8`; package SHA-256
 `e503bdb150b1c91c45055839c20898de1416c16c7b87fe843b468ad4b76242b6`; local

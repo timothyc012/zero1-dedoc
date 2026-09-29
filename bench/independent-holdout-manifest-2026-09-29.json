@@ -109,6 +109,14 @@
       "page": 2,
       "language": "de",
       "gold_method": "30 critical content components checked against the rendered page, independently of the hidden text layer"
+    },
+    {
+      "id": "lidl-page2-upscaled-image-route-probe",
+      "derived_from_png_sha256": "ca8ac5d98ec139bdf787e9243c91f19557128fccf75bb086c7ead0413a7098fb",
+      "upscaled_1_5x_png_sha256": "c1b3c8882932dd76568e4ea2fa3d2d60d1a4c03a7d62311012a78ebefd7f7ec8",
+      "upscaled_2x_png_sha256": "5a0b08cd4d426c0ff0dd997e9ba4c42e8db8d62432c57fd73d93c7c88a32a2eb",
+      "language": "de",
+      "assertion": "direct PNG route scores 28/30 at 1.5x and 27/30 at 2x; same-source derived probes, not independent gold samples"
     }
   ]
 }
