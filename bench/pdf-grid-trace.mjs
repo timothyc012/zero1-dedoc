@@ -18,6 +18,7 @@ import { bridgeSplitColumnVerticals } from "../src/pdf/vertical-bridge.js"
 import { bridgeSkippedRowVerticals } from "../src/pdf/vertical-bridge.js"
 import { extendHeaderBoxRows } from "../src/pdf/header-box-rows.js"
 import { markUnderlineItems } from "../src/pdf/underline.js"
+import { preferDenseRuledGrids } from "../src/pdf/page-blocks.js"
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const args = process.argv.slice(2)
@@ -41,7 +42,7 @@ await mkdir(outDir, { recursive: true })
 
 const round = n => Math.round(n * 100) / 100
 const line = segment => ({ x1: round(segment.x1), y1: round(segment.y1), x2: round(segment.x2), y2: round(segment.y2), width: round(segment.lineWidth) })
-const grid = item => ({ bbox: Object.fromEntries(Object.entries(item.bbox).map(([k,v]) => [k,round(v)])), rows: item.rowYs.length - 1, cols: item.colXs.length - 1, rowYs: item.rowYs.map(round), colXs: item.colXs.map(round), clip: !!item.cells })
+const grid = item => ({ bbox: Object.fromEntries(Object.entries(item.bbox).map(([k,v]) => [k,round(v)])), rows: item.rowYs.length - 1, cols: item.colXs.length - 1, rowYs: item.rowYs.map(round), colXs: item.colXs.map(round), clip: !!item.cells, clipParent:item.clipParent??null })
 const escape = value => String(value).replace(/[&<>"']/g, char => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&apos;" })[char])
 const svgLine = (segment, height, color, width = 1, opacity = 1) => `<line x1="${round(segment.x1)}" y1="${round(height-segment.y1)}" x2="${round(segment.x2)}" y2="${round(height-segment.y2)}" stroke="${color}" stroke-width="${width}" opacity="${opacity}"/>`
 const svgBox = (box, height, color, opacity = 1, width = 1) => `<rect x="${round(box.x1)}" y="${round(height-box.y2)}" width="${round(box.x2-box.x1)}" height="${round(box.y2-box.y1)}" fill="none" stroke="${color}" stroke-width="${width}" opacity="${opacity}"/>`
@@ -81,14 +82,14 @@ for (let pageNumber = 1; pageNumber <= end; pageNumber++) {
   if (clipGrids.length === 0) ({ horizontals, verticals } = extendHeaderBoxRows(horizontals, verticals, items))
   const underlines = new Set(markUnderlineItems(items, horizontals, verticals))
   if (underlines.size) horizontals = horizontals.filter(item => !underlines.has(item))
-  const lineGrids = buildTableGrids(horizontals, verticals)
+  const lineGrids = buildTableGrids(horizontals, verticals, items)
   const afterShading = dropShadingClipGrids(clipGrids, lineGrids, extracted.fillRects, verticals)
   const afterInset = dropInsetClipGrids(afterShading, lineGrids)
   const afterHead = dropHeadBandClipGrids(afterInset, lineGrids)
   const tableClipGrids = dropCoarseClipGrids(afterHead, lineGrids, verticals, items)
   const lineAfterClip = dropGridsInside(lineGrids, tableClipGrids, [])
   const lineAfterContainer = dropGridsInside(lineGrids, tableClipGrids, clipResult.containers)
-  const retained = [...tableClipGrids, ...lineAfterContainer]
+  const retained = preferDenseRuledGrids(lineGrids, tableClipGrids, clipResult.containers, horizontals, verticals, items)
   if (pageNumber < start) { page.cleanup(); continue }
 
   const affiliations = []

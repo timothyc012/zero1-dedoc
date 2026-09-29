@@ -201,6 +201,7 @@ function mergeVertices(vertices: Vertex[]): Vertex[] {
 export function buildTableGrids(
   horizontals: LineSegment[],
   verticals: LineSegment[],
+  items: Pick<TextItem, "text" | "x" | "y" | "w" | "h">[] = [],
 ): TableGrid[] {
   if (horizontals.length < 2 || verticals.length < 2) return []
 
@@ -333,7 +334,7 @@ export function buildTableGrids(
   }
 
   // 중첩표는 제자리에 둔다 — 같은 열 수로 위아래 붙은 칸 안 표 둘을 한 표로 잇지 않는다
-  return [...mergeAdjacentGrids(grids.filter(g => !g.lineNested)), ...grids.filter(g => g.lineNested)]
+  return [...mergeAdjacentGrids(grids.filter(g => !g.lineNested), items), ...grids.filter(g => g.lineNested)]
 }
 
 /** 음영 클립 판정: 클립 칸과 채움 사각형 좌표 허용 차 (pt) */
@@ -522,7 +523,7 @@ function enforceMinHeight(rowYs: number[], minHeight: number): number[] {
 }
 
 /** 같은 열 구조를 가진 인접 그리드를 병합 */
-function mergeAdjacentGrids(grids: TableGrid[]): TableGrid[] {
+function mergeAdjacentGrids(grids: TableGrid[], items: Pick<TextItem, "text" | "x" | "y" | "w" | "h">[]): TableGrid[] {
   if (grids.length <= 1) return grids
   const sorted = [...grids].sort((a, b) => b.bbox.y2 - a.bbox.y2)
   const merged: TableGrid[] = [sorted[0]]
@@ -535,7 +536,16 @@ function mergeAdjacentGrids(grids: TableGrid[]): TableGrid[] {
       const mergeTol = Math.max(VERTEX_MERGE_FACTOR * Math.max(prev.vertexRadius, curr.vertexRadius), 6) * 3
       const colMatch = prev.colXs.every((x, ci) => Math.abs(x - curr.colXs[ci]) <= mergeTol)
       const verticalGap = prev.bbox.y1 - curr.bbox.y2
-      if (colMatch && verticalGap >= -CONNECT_TOL && verticalGap <= 20) {
+      // A caption printed in the gap is evidence that these are two tables,
+      // even if their physical column coordinates are identical. Joining the
+      // grids would turn the caption into a full-width body row.
+      const gapText = verticalGap > 2 && items.some(item => {
+        const cx = item.x + item.w / 2, cy = item.y + item.h / 2
+        return item.text.trim().length >= 2 && cx >= Math.max(prev.bbox.x1, curr.bbox.x1) &&
+          cx <= Math.min(prev.bbox.x2, curr.bbox.x2) &&
+          cy > curr.bbox.y2 + 1 && cy < prev.bbox.y1 - 1
+      })
+      if (colMatch && !gapText && verticalGap >= -CONNECT_TOL && verticalGap <= 20) {
         const allRowYs = [...new Set([...prev.rowYs, ...curr.rowYs])].sort((a, b) => b - a)
         merged[merged.length - 1] = {
           rowYs: allRowYs,

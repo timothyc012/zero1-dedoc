@@ -54,3 +54,55 @@ export function scoreBmfPage(page, blocks) {
       alignedSectionSpans===expectedFullSpanRows&&outputFullSpanRows===expectedFullSpanRows&&
       !footerInsideTable }
 }
+
+/** Pages 1–3 have two-row headers; page 3 contains two separately printed tables. */
+export function scoreBmfFrontPage(page, blocks) {
+  const tables=blocks.filter(block=>block.type==="table"&&block.table)
+  const expectedValues=page.tables.flatMap(table=>table.rows.flatMap(row=>row.values.map(cell=>cell.display).filter(value=>value!==null)))
+  const outputText=blocks.flatMap(block=>block.type==="table"&&block.table
+    ?block.table.cells.flat().map(cell=>cell.text):[block.text??""]).join(" ")
+  const available=counter(outputText.match(/(?<!\w)[+-]?(?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d+)?|(?<!\w)[x-](?!\w)/g)??[])
+  let presentValues=0
+  for(const value of expectedValues)if((available.get(value)??0)>0){available.set(value,available.get(value)-1);presentValues++}
+  const used=new Set()
+  const scored=page.tables.map(spec=>{
+    const index=tables.findIndex((block,i)=>!used.has(i)&&block.table.rows===spec.expectedRows&&block.table.cols===spec.expectedCols)
+    if(index>=0)used.add(index)
+    const actual=index>=0?tables[index].table:null
+    let alignedHeaders=0,alignedLabels=0,alignedValues=0,alignedSections=0
+    if(actual){
+      for(const [rowIndex,header] of spec.headers.entries()){
+        const outputRow=actual.cells[rowIndex]??[]
+        if(textKey(outputRow[0]?.text)===textKey(header.label))alignedHeaders++
+        for(const [colIndex,value] of header.values.entries())
+          if(textKey(outputRow[colIndex+1]?.text)===textKey(value.text))alignedHeaders++
+      }
+      for(const [rowIndex,source] of spec.rows.entries()){
+        const outputRow=actual.cells[rowIndex+spec.headers.length]??[]
+        if(textKey(outputRow[0]?.text)===textKey(source.label))alignedLabels++
+        if(source.role==="section"&&outputRow[0]?.colSpan===spec.expectedCols)alignedSections++
+        for(const [colIndex,value] of source.values.entries())
+          if(value.display!==null&&String(outputRow[colIndex+1]?.text??"").trim()===value.display)alignedValues++
+      }
+    }
+    const expectedSectionSpans=spec.rows.filter(row=>row.role==="section").length
+    const outputSectionSpans=actual?.cells.flat().filter(cell=>cell.colSpan===spec.expectedCols).length??null
+    const headerSpans=actual?.cells[0]?.[0]?.rowSpan===2&&actual.cells[0]?.[1]?.colSpan===3&&actual.cells[0]?.[4]?.colSpan===3
+    return {expectedRows:spec.expectedRows,expectedCols:spec.expectedCols,exactShape:!!actual,
+      sourceValues:spec.rows.reduce((n,row)=>n+row.values.filter(value=>value.display!==null).length,0),
+      alignedValues,alignedLabels,alignedHeaders,
+      expectedSectionSpans,alignedSections,outputSectionSpans,headerSpans:!!headerSpans,
+      pass:!!actual&&alignedHeaders===spec.headers.length*7&&alignedLabels===spec.rows.length&&
+        alignedValues===spec.rows.reduce((n,row)=>n+row.values.filter(value=>value.display!==null).length,0)&&
+        alignedSections===expectedSectionSpans&&outputSectionSpans===expectedSectionSpans&&!!headerSpans}
+  })
+  const outside=page.outsideTableRows.map(item=>({sourceRow:item.sourceRow,text:item.text,
+    outside:blocks.some(block=>block.type!=="table"&&textKey(block.text).includes(textKey(item.text)))&&
+      !tables.some(block=>block.table.cells.flat().some(cell=>textKey(cell.text).includes(textKey(item.text))))}))
+  return {page:page.page,tableShapes:tables.map(block=>[block.table.rows,block.table.cols]),
+    expectedTables:page.tables.length,exactTables:scored.filter(table=>table.pass).length,
+    expectedDisplayValues:expectedValues.length,presentDisplayValues:presentValues,
+    alignedDisplayValues:scored.reduce((n,table)=>n+table.alignedValues,0),
+    outsideTableRows:outside,tables:scored,
+    fullCellGoldPass:tables.length===page.tables.length&&scored.every(table=>table.pass)&&outside.every(item=>item.outside)}
+}
