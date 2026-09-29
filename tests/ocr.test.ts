@@ -14,7 +14,7 @@
 
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { parseCharacterDict, getOcrModelStatus } from "../src/ocr/models.js"
+import { parseCharacterDict, getOcrModelStatus, getOcrModelProfile, normalizeOcrLanguage } from "../src/ocr/models.js"
 import { ctcDecode, componentBoxes, OcrEngine, DEFAULT_OCR_TUNING } from "../src/ocr/engine.js"
 import { runPdfOcr, MAX_OCR_PIXELS } from "../src/ocr/pdf-ocr.js"
 import type { OcrProvider, ParseWarning } from "../src/types.js"
@@ -37,6 +37,25 @@ describe("OCR 사전 파싱 (parseCharacterDict)", () => {
 
   it("character_dict 없으면 빈 배열", () => {
     assert.deepEqual(parseCharacterDict("Global:\n  model: x\n"), [])
+  })
+})
+
+describe("OCR 언어 프로필", () => {
+  it("korean/en/de profiles use distinct cached recognizers and dictionaries", () => {
+    assert.equal(normalizeOcrLanguage("english"), "en")
+    assert.equal(normalizeOcrLanguage("deutsch"), "de")
+    const korean = getOcrModelProfile("korean")
+    const english = getOcrModelProfile("en")
+    const german = getOcrModelProfile("de")
+    assert.equal(korean.rec.filename, "rec_korean.onnx")
+    assert.equal(english.rec.filename, "rec_en.onnx")
+    assert.equal(german.rec.filename, "rec_latin.onnx")
+    assert.notEqual(english.directory, german.directory)
+    assert.notEqual(english.dict.filename, german.dict.filename)
+  })
+
+  it("rejects an unprofiled OCR language instead of falling back to Korean", () => {
+    assert.throws(() => normalizeOcrLanguage("fr"), /지원하지 않는 OCR 언어/)
   })
 })
 

@@ -78,14 +78,16 @@ export function registerSystemCommands(program: Command): void {
 
   program
     .command("check-ocr-models")
-    .description("텍스트 OCR 모델(PP-OCRv5 korean det+rec, ~18MB) 상태 확인 — 없거나 SHA 불일치면 다운로드")
+    .description("텍스트 OCR 모델(korean/en/de) 상태 확인 — 없거나 SHA 불일치면 다운로드")
     .option("--status-only", "상태만 JSON 으로 출력 (다운로드 안 함)")
+    .option("--language <lang>", "모델 언어: korean, en, de", "korean")
     .action(async (opts) => {
       try {
-        const { getOcrModelStatus, ensureOcrModels, getOcrModelsDir } = await import("../ocr/models.js")
-        const dir = getOcrModelsDir()
+        const { getOcrModelStatus, ensureOcrModels, getOcrModelsDir, normalizeOcrLanguage } = await import("../ocr/models.js")
+        const language = normalizeOcrLanguage(opts.language)
+        const dir = getOcrModelsDir(language)
         if (opts.statusOnly) {
-          const status = await getOcrModelStatus()
+          const status = await getOcrModelStatus(language)
           process.stdout.write(
             JSON.stringify(
               {
@@ -122,7 +124,7 @@ export function registerSystemCommands(program: Command): void {
           } else if (p.phase === "skip") {
             process.stderr.write(`[kordoc-ocr] ${p.spec.name} 이미 존재 (skip)\n`)
           }
-        })
+        }, language)
         process.stdout.write("ok\n")
       } catch (err) {
         process.stderr.write(`[kordoc] OCR 모델 준비 실패: ${sanitizeError(err)}\n`)

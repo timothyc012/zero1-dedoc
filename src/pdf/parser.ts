@@ -389,7 +389,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
           // 텍스트층이 멀쩡한 쪽은 그림 영역만 읽는다 (쪽 전체를 갈아 끼우는 쪽 — 스캔·깨진 텍스트층 — 은 쪽 전체)
           const regionPages = new Map([...ocrRegions].filter(([p]) =>
             options?.ocr !== "force" && !isImageBased && !pageQuality.find(q => q.page === p)?.needsOcr))
-          const ocrPageBlocks = await runPdfOcr(ocrBuffer, targets, mode, warnings, options?.onProgress, options?.tables !== false, vectorPageOps, regionPages)
+          const ocrPageBlocks = await runPdfOcr(ocrBuffer, targets, mode, warnings, options?.onProgress, options?.tables !== false, vectorPageOps, regionPages, options?.ocrLanguage)
           // OCR 글은 첨자를 가르지 않는다 — 검출 박스 높이·위치로는 기준선을 믿을 수 없다(scriptTags 를 켜도)
           for (const obs of ocrPageBlocks.values()) stripScriptTags({ blocks: obs })
           if (ocrPageBlocks.size > 0) {

@@ -18,6 +18,7 @@ import type { LineSegment } from "../pdf/line-types.js"
 import { extractPageBlocksWithLines } from "../pdf/page-blocks.js"
 import { detectRulingLines, rulingToPdfLines } from "./ruling-lines.js"
 import { DEFAULT_OCR_TUNING, getOcrEngine, type OcrItem, type OcrPageStats, type OcrTuning } from "./engine.js"
+import { normalizeOcrLanguage, type OcrLanguage } from "./models.js"
 import { deskewPage } from "./deskew.js"
 import { ensureOcrModels } from "./models.js"
 import { OPTIONAL_DEP_INSTALL_HINT } from "../utils.js"
@@ -54,6 +55,7 @@ export async function runPdfOcr(
   detectTables = true,
   vectorOps?: Map<number, PageOps>,
   imageRegions?: Map<number, Array<{ x1: number; y1: number; x2: number; y2: number }>>,
+  ocrLanguage?: string,
 ): Promise<Map<number, IRBlock[]>> {
   const result = new Map<number, IRBlock[]>()
   if (targets.size === 0) return result
@@ -63,14 +65,15 @@ export async function runPdfOcr(
     "@hyzyla/pdfium",
     () => import("@hyzyla/pdfium"),
   )
+  const language: OcrLanguage = normalizeOcrLanguage(ocrLanguage)
   if (mode === "builtin") {
     await ensureOcrModels(p => {
       if (p.phase === "download" && p.downloaded === 0) {
         process.stderr.write(`[kordoc-ocr] ${p.spec.name} 다운로드 중 (~${p.spec.sizeMb}MB)...\n`)
       }
-    })
+    }, language)
   }
-  const engine = mode === "builtin" ? await getOcrEngine() : null
+  const engine = mode === "builtin" ? await getOcrEngine(language) : null
 
   const pdfium = await pdfiumMod.PDFiumLibrary.init()
   const doc = await pdfium.loadDocument(new Uint8Array(buffer))

@@ -72,8 +72,8 @@ export async function parseImageDocument(
     if (p.phase === "download" && p.downloaded === 0) {
       process.stderr.write(`[kordoc-ocr] ${p.spec.name} 다운로드 중 (~${p.spec.sizeMb}MB)...\n`)
     }
-  })
-  const engine = await getOcrEngine()
+  }, options?.ocrLanguage)
+  const engine = await getOcrEngine(options?.ocrLanguage)
   const stats: OcrPageStats = { droppedLowConf: 0 }
   const items = await engine.recognizePage(data, width, height, stats)
   if (stats.droppedLowConf > 0) {

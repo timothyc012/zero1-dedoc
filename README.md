@@ -26,9 +26,10 @@ The built `zero1-dedoc setup` command registers the local MCP bundle directly. I
 - The German solvency forms retain `Formular F.701.01` through `F.705.01` in the complete 29-page document. Genuine running page numbers are still filtered.
 - DOCX inline equations retain their original position among surrounding text runs. Superscript/subscript output is available through the inherited `scriptTags` option.
 - PPTX slide order, titles, text shapes, tables, and speaker notes are parsed into the same `IRBlock[]` contract. Unsupported or malformed package parts return an explicit PPTX error.
+- Built-in OCR accepts `ocrLanguage: "korean" | "en" | "de"` and keeps each recognizer/dictionary in a separate SHA-verified cache. German/English OCR requires running `zero1-dedoc check-ocr-models --language de|en` before an offline parse.
 - The public 200-document [OpenDataLoader benchmark](https://github.com/opendataloader-project/opendataloader-bench) is the English-heavy regression gate. No OCR: overall **0.93705**, reading order **0.93803**, table **0.93570**, heading **0.93265**, with 200/200 documents parsed. The fork's PDF fixes changed no per-document score relative to its Kordoc v4.16.1 base. See [benchmark evidence](https://github.com/timothyc012/zero1-dedoc/blob/main/docs/benchmarks/zero1-multilingual-foundation.md).
 
-These are measured cases, not a claim of universal German or English accuracy. The built-in OCR recognition model is still Korean PP-OCRv5, which includes Latin characters but has **not** been validated as a German or English scanned-document model. Multilingual OCR remains a separate milestone.
+These are measured cases, not a claim of universal German or English accuracy. The built-in OCR profiles now include Korean, English, and Latin/German model contracts; the de/en profiles still require their language-specific model caches and holdout accuracy evaluation before being treated as a default.
 
 ## Attribution and maintenance
 

@@ -223,6 +223,8 @@ export interface ParseOptions {
    *  - `"force"`: 전 페이지를 내장 엔진으로 강제 OCR.
    *  - 함수: 사용자 제공 OcrProvider (Claude Vision·Tesseract 등) — 판정은 `true`와 동일. */
   ocr?: boolean | "force" | OcrProvider
+  /** 내장 OCR 인식 언어: korean(기본), en, de. 모델은 사전 설치돼 있어야 한다. */
+  ocrLanguage?: "korean" | "en" | "de"
   /** 진행률 콜백 — current: 현재 페이지/섹션, total: 전체 수 */
   onProgress?: (current: number, total: number) => void
   /** PDF 머리글/바닥글 자동 제거 */

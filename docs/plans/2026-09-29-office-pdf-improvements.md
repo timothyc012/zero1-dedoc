@@ -193,7 +193,9 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 
 ### O1. de/en OCR 모델 프로필과 사전 준비
 
-**범위 M:** `src/ocr/models.ts`, `src/types.ts`, `src/cli/commands-system.ts`, `tests/ocr-model-profiles.test.ts`(신규).
+**상태:** 첫 구현 slice 완료 in current implementation branch. PP-OCRv5 English와 Latin/German recognizer·사전의 URL/SHA를 고정하고 `ocrLanguage=korean|en|de`, 언어별 캐시, 명시적인 미지원 언어 오류를 연결했다. 준비 명령은 `check-ocr-models --language <lang>`으로 선택한다. 실제 de/en 이미지 인식 정확도와 모델 다운로드는 O2 검증에서 완료한다.
+
+**범위 M:** `src/ocr/models.ts`, `src/types.ts`, `src/ocr/engine.ts`, `src/ocr/pdf-ocr.ts`, `src/ocr/image-ocr.ts`, `src/cli.ts`, `src/cli/commands-system.ts`, `src/shared/model-bundle.ts`, `tests/ocr.test.ts`.
 
 - [ ] `ocrLanguage` 또는 동등한 명시 옵션으로 언어→recognizer/dictionary/preprocessing 프로필을 선택한다. Docling/RapidOCR의 언어 해석을 참고하며 `de`를 이름만 바꾼 한국어 모델로 처리하지 않는다.
 - [ ] 모델·사전 SHA, 라이선스, 입력 크기·채널 순서·정규화·출력 class 차원을 함께 고정한다. 독일어 ä/ö/ü/ß, 영어, 유럽식 소수·천 단위를 실제 모델에서 검증한다.

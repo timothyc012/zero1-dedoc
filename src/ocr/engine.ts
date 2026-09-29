@@ -29,10 +29,8 @@ import { readFile } from "fs/promises"
 import { join } from "path"
 import { OPTIONAL_DEP_INSTALL_HINT } from "../utils.js"
 import {
-  OCR_DET_MODEL,
-  OCR_REC_MODEL,
-  OCR_REC_DICT,
-  getOcrModelsDir,
+  getOcrModelProfile,
+  type OcrLanguage,
   parseCharacterDict,
 } from "./models.js"
 import { edgeTrim, leadingBullet, tallInkCount, grayCrop, inkBounds, inkStats, leaderRuns, leadingTriangle, splitRowBands } from "./line-split.js"
@@ -160,7 +158,7 @@ export class OcrEngine {
     this.sharp = parts.sharp
   }
 
-  static async create(): Promise<OcrEngine> {
+  static async create(language?: OcrLanguage): Promise<OcrEngine> {
     const [ortMod, sharpModRaw] = await Promise.all([
       tryImport<typeof import("onnxruntime-node")>("onnxruntime-node", () => import("onnxruntime-node")),
       tryImport<{ default?: SharpFactory } & SharpFactory>(
@@ -172,16 +170,17 @@ export class OcrEngine {
     const sharpMod: SharpFactory =
       typeof sharpAny === "function" ? sharpAny : (sharpAny.default ?? (sharpAny as unknown as SharpFactory))
 
-    const dir = getOcrModelsDir()
+    const profile = getOcrModelProfile(language)
+    const dir = profile.directory
     const sessionOpts: import("onnxruntime-node").InferenceSession.SessionOptions = {
       graphOptimizationLevel: "all",
       executionProviders: ["cpu"],
       logSeverityLevel: 3, // paddle2onnx 변환 잔여물 W 로그 폭주 억제
     }
     const [det, rec, dictYml] = await Promise.all([
-      ortMod.InferenceSession.create(join(dir, OCR_DET_MODEL.filename), sessionOpts),
-      ortMod.InferenceSession.create(join(dir, OCR_REC_MODEL.filename), sessionOpts),
-      readFile(join(dir, OCR_REC_DICT.filename), "utf-8"),
+      ortMod.InferenceSession.create(join(dir, profile.det.filename), sessionOpts),
+      ortMod.InferenceSession.create(join(dir, profile.rec.filename), sessionOpts),
+      readFile(join(dir, profile.dict.filename), "utf-8"),
     ])
     const dict = parseCharacterDict(dictYml)
     if (dict.length === 0) throw new Error("OCR 사전 파싱 실패 — 모델 캐시를 삭제 후 재다운로드하세요")
@@ -585,14 +584,17 @@ async function tryImport<T>(name: string, loader: () => Promise<T>): Promise<T> 
 }
 
 // ─── 엔진 싱글턴 (watch/서버 장기 실행에서 세션 재사용) ───
-let enginePromise: Promise<OcrEngine> | null = null
+const enginePromises = new Map<OcrLanguage, Promise<OcrEngine>>()
 
-export function getOcrEngine(): Promise<OcrEngine> {
+export function getOcrEngine(language?: OcrLanguage): Promise<OcrEngine> {
+  const key = language ?? "korean"
+  let enginePromise = enginePromises.get(key)
   if (!enginePromise) {
-    enginePromise = OcrEngine.create().catch(err => {
-      enginePromise = null // 실패는 캐시하지 않음 — 모델 설치 후 재시도 가능
+    enginePromise = OcrEngine.create(key).catch(err => {
+      enginePromises.delete(key) // 실패는 캐시하지 않음 — 모델 설치 후 재시도 가능
       throw err
     })
+    enginePromises.set(key, enginePromise)
   }
   return enginePromise
 }

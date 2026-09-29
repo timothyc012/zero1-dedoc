@@ -28,6 +28,7 @@ program
   .option("--no-tables", "PDF 표 감지 끄기 — 테두리 박스를 표로 오인해 읽기 순서가 뒤집히는 문서(2단 시험지 등)에서 자연 읽기순 텍스트만 뽑는다 (#64)")
   .option("--formula-ocr", "PDF 수식 OCR 활성화 (MFD+MFR ONNX, 첫 사용 시 모델 ~155MB 자동 다운로드)")
   .option("--ocr", "스캔/이미지 PDF 텍스트 OCR (내장 PP-OCRv5 korean, 첫 사용 시 모델 ~18MB 자동 다운로드 — OCR 필요 페이지만 인식)")
+  .option("--ocr-language <lang>", "내장 OCR 언어: korean, en, de (모델을 먼저 사이드로드해야 함)")
   .option("--ocr-force", "전 페이지 강제 OCR (텍스트층이 있어도 무시하고 재인식)")
   .option("--dedupe-headers", "HWP5 레이아웃 표 페이지 반복 러닝 헤더 중복 제거 (기본 off — 붙임별 재번호 오삭제 주의)")
   .option("--keep-empty-cols", "표 오른쪽 끝 빈 열(서식 입력란) 보존 (#47, 기본 off: 후행 빈 열 트림)")
@@ -82,6 +83,7 @@ program
         if (opts.formulaOcr) parseOptions.formulaOcr = true
         if (opts.ocrForce) parseOptions.ocr = "force"
         else if (opts.ocr) parseOptions.ocr = true
+        if (opts.ocrLanguage) parseOptions.ocrLanguage = opts.ocrLanguage as "korean" | "en" | "de"
         if (opts.dedupeHeaders) parseOptions.dedupeRunningHeaders = true
         if (opts.keepEmptyCols) parseOptions.keepTrailingEmptyCols = true
         if (opts.keepEmptyParagraphs) parseOptions.keepEmptyParagraphs = true
