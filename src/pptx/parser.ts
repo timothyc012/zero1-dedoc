@@ -86,14 +86,36 @@ function slideOrder(presentation: Document, rels: Map<string, { type: string; ta
 function tableBlock(frame: Element, pageNumber: number): IRBlock | null {
   const table = descendants(frame, "tbl")[0]
   if (!table) return null
-  const rows = children(table, "tr").map(row => children(row, "tc").map(cell => ({
-    text: textOf(cell), colSpan: 1, rowSpan: 1,
-  })))
-  if (!rows.length) return null
-  const cols = Math.max(...rows.map(row => row.length), 0)
+  const sourceRows = children(table, "tr").map(row => children(row, "tc"))
+  if (!sourceRows.length) return null
+  const placed: Array<Array<{ text: string; colSpan: number; rowSpan: number }>> = []
+  let maxCols = 0
+  for (let r = 0; r < sourceRows.length; r++) {
+    const row = placed[r] ?? (placed[r] = [])
+    let cursor = 0
+    for (const cell of sourceRows[r]) {
+      while (row[cursor]) cursor++
+      const props = children(cell, "tcPr")[0]
+      const span = (name: string): number => {
+        const raw = props?.getAttribute(name) ?? cell.getAttribute(name)
+        const value = raw ? Number.parseInt(raw, 10) : 1
+        return Number.isFinite(value) && value > 0 ? value : 1
+      }
+      const colSpan = span("gridSpan")
+      const rowSpan = span("rowSpan")
+      const value = { text: textOf(cell), colSpan, rowSpan }
+      for (let dr = 0; dr < rowSpan; dr++) {
+        const target = placed[r + dr] ?? (placed[r + dr] = [])
+        for (let dc = 0; dc < colSpan; dc++) target[cursor + dc] = dr === 0 && dc === 0 ? value : { text: "", colSpan: 1, rowSpan: 1 }
+      }
+      cursor += colSpan
+      maxCols = Math.max(maxCols, cursor)
+    }
+  }
+  const cells = placed.map(row => Array.from({ length: maxCols }, (_, i) => row[i] ?? { text: "", colSpan: 1, rowSpan: 1 }))
   return { type: "table", pageNumber, table: {
-    rows: rows.length, cols, cells: rows.map(row => Array.from({ length: cols }, (_, i) => row[i] ?? { text: "", colSpan: 1, rowSpan: 1 })),
-    hasHeader: rows.length > 1,
+    rows: cells.length, cols: maxCols, cells,
+    hasHeader: cells.length > 1,
   } }
 }
 
@@ -121,6 +143,29 @@ async function slideNotes(zip: JSZip, slidePath: string): Promise<string | undef
   return text || undefined
 }
 
+function slideShapeBlocks(root: Element, pageNumber: number, warnings: ParseWarning[]): IRBlock[] {
+  const blocks: IRBlock[] = []
+  for (const shape of children(root)) {
+    const kind = local(shape)
+    if (kind === "sp") {
+      const block = shapeBlock(shape, pageNumber)
+      if (block) blocks.push(block)
+    } else if (kind === "graphicFrame") {
+      const table = tableBlock(shape, pageNumber)
+      if (table) blocks.push(table)
+      else warnings.push({ page: pageNumber, code: "UNSUPPORTED_ELEMENT", message: "PPTX graphic frame is not a table (chart/SmartArt data was not extracted)" })
+    } else if (kind === "grpSp") {
+      blocks.push(...slideShapeBlocks(shape, pageNumber, warnings))
+    } else if (kind === "pic") {
+      const name = descendants(shape, "cNvPr")[0]?.getAttribute("descr") || descendants(shape, "cNvPr")[0]?.getAttribute("name") || "image"
+      warnings.push({ page: pageNumber, code: "UNSUPPORTED_ELEMENT", message: `PPTX image content was not OCR-parsed: ${name}` })
+    } else if (kind === "cxnSp") {
+      warnings.push({ page: pageNumber, code: "UNSUPPORTED_ELEMENT", message: "PPTX connector shape has no text payload" })
+    }
+  }
+  return blocks
+}
+
 export async function parsePptxDocument(buffer: ArrayBuffer, _options?: ParseOptions): Promise<{
   markdown: string
   blocks: IRBlock[]
@@ -140,16 +185,7 @@ export async function parsePptxDocument(buffer: ArrayBuffer, _options?: ParseOpt
     if (!file) { warnings.push({ code: "PARTIAL_PARSE", message: `Missing slide part: ${slidePath}` }); continue }
     const root = parseXml(await file.async("text")).documentElement
     const tree = descendants(root, "spTree")[0]
-    if (tree) {
-      for (const shape of children(tree)) {
-        const table = local(shape) === "graphicFrame" ? tableBlock(shape, index + 1) : null
-        if (table) blocks.push(table)
-        else if (local(shape) === "sp") {
-          const block = shapeBlock(shape, index + 1)
-          if (block) blocks.push(block)
-        }
-      }
-    }
+    if (tree) blocks.push(...slideShapeBlocks(tree, index + 1, warnings))
     const notes = await slideNotes(zip, slidePath)
     if (notes) blocks.push({ type: "paragraph", text: notes, pageNumber: index + 1 })
   }
