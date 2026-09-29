@@ -149,12 +149,13 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 
 ### H1. PDF 제목 역할과 레벨 교정
 
-**상태:** 구현 완료 in current implementation branch. 독일 연방정부 보도자료 holdout에서 14pt 표제가 H1, 굵은 11pt 부제가 H2로 유지되도록 문서 lead hierarchy를 교정했다. 전체 발행자 holdout은 후속이다.
+**상태:** PR #5의 표 앞머리 제목 규칙에서 중간 쪽 H2→H1 회귀를 확인하고 `ce11c6d`에서 첫 쪽으로 한정했다. 기존 H2는 유지하고, 첫 쪽의 H3 문서 제목은 H1로 올린다. 독일 연방정부 14쪽 holdout에서 첫 제목 H1·5쪽 소제목 H2를 확인했다. ODL200 전체 재평가에서 제목 점수 MHS 0.932713617(107문서), 문서별 변동 0건이다. 다른 발행기관의 전체 제목 holdout은 후속이다.
 
 **범위 M:** `src/pdf/block-detect.ts`, 필요하면 `src/pdf/heading-demote.ts`, `tests/pdf-typography-headings.test.ts`, G0 gold.
 
 - [x] font size 하나로 계층을 정하지 않고 문서 lead의 기존 heading, 본문 face, 앞뒤 본문 관계를 함께 사용한다. 문서 제목 후보 판정과 섹션 레벨 부여를 구분한다.
 - [x] 보도자료 제목이 부제보다 상위 레벨이 되고 전체 문서의 제목/본문 순서가 보존된다. 독일어 제목 문자열이나 특정 파일명을 조건으로 넣지 않는다.
+- [x] 5쪽의 작은 선행 표 뒤 H2와 일반 문단을 H1로 덮지 않는다. 첫 쪽의 기존 H2도 유지하고, H3 문서 제목 승격은 유지한다.
 - [ ] 큰 글씨 인용문·기관 로고·표 제목·머리말을 H1로 올리는 음성 사례와 U2의 논문 저자 첨자 사례를 통과한다.
 
 **검증:** 해당 heading 테스트, 고정 ODL200의 문서별 MHS·NID 후퇴 없음, 독립 발행자 제목 holdout. **의존성:** U2, G0.
@@ -255,7 +256,7 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 
 ### I3. 02ontology 평가 이미지·버전 고정
 
-**상태:** lean image와 OCR-enabled image를 local Docker Desktop에서 검증 완료. WSL 주소가 현재 접근되지 않아 WSL 실행 자체는 보류한다.
+**상태:** lean image와 OCR-enabled image를 local Docker Desktop에서 검증 완료. 저장된 WSL SSH IP가 오래되어 Mac에서 접속이 시간 초과됐다. Windows 호스트의 `wsl.exe` Docker는 사용자 세션에서 동작했으며, Zero1 후보 이미지의 WSL 전용 smoke 기록은 아직 없다.
 
 **별도 저장소 작업, 범위 S/M:** `deploy/zero1-dedoc/Dockerfile`(신규), 운영 가이드, 이미지 smoke script.
 
@@ -273,8 +274,10 @@ The independent holdout run is recorded in
 [`docs/benchmarks/zero1-independent-holdout-2026-09-29.md`](../benchmarks/zero1-independent-holdout-2026-09-29.md).
 It closes the stale U1/U2/D1/I1/I2 checkboxes and adds source-backed Office,
 PPTX, German/English PDF, full BMF page-one cell, and scan OCR evidence. The
-clean German and English scan gates pass; the Lidl brochure remains a marked
-stress failure, and the saved WSL endpoint still times out.
+clean German and English scan gates pass. The Lidl image-only PDF visual check
+is 30/30; the old 10-page CER/WER reference is superseded because its hidden
+text layer disagrees with the rendered page. The saved WSL SSH IP is stale;
+the candidate image still needs a recorded WSL-specific smoke.
 
 권장 순서: **G0 → U1/U2 → P1 → E1/D1/H1 → T1 → X1/X2 → O1/O2/O3 → I1/I2/I3**. P1 진단에서 발견된 근거가 T1 설계를 결정한다. Excel 보존 테스트는 후속 포맷 변경 전에 확정한다.
 
