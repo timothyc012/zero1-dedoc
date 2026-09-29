@@ -14,10 +14,12 @@ async function createXlsx(opts?: {
   sheets?: { name: string; rows: string[][] }[]
   merges?: string[]
   sharedStrings?: string[]
+  forceStrings?: string[]
 }): Promise<ArrayBuffer> {
   const zip = new JSZip()
   const sheets = opts?.sheets ?? [{ name: "Sheet1", rows: [["A", "B"], ["1", "2"]] }]
   const allStrings = opts?.sharedStrings ?? [...new Set(sheets.flatMap(s => s.rows.flat()))]
+  const forceStrings = new Set(opts?.forceStrings ?? [])
 
   // [Content_Types].xml
   const sheetTypes = sheets.map((_, i) =>
@@ -72,7 +74,7 @@ async function createXlsx(opts?: {
         const strIdx = allStrings.indexOf(val)
         if (strIdx >= 0) return `<c r="${ref}" t="s"><v>${strIdx}</v></c>`
         // 숫자인 경우
-        if (!isNaN(Number(val))) return `<c r="${ref}"><v>${val}</v></c>`
+        if (!forceStrings.has(val) && !isNaN(Number(val))) return `<c r="${ref}"><v>${val}</v></c>`
         return `<c r="${ref}" t="s"><v>${strIdx}</v></c>`
       }).join("")
       return `<row r="${ri + 1}">${cells}</row>`
@@ -138,6 +140,18 @@ describe("XLSX 파서", () => {
     assert.equal(result.success, true)
     if (!result.success) return
     assert.ok(result.markdown.includes("병합됨"))
+  })
+
+  it("문자열로 저장된 계정 코드는 앞자리 0을 유지한다", async () => {
+    const buffer = await createXlsx({
+      sheets: [{ name: "Posting Lines", rows: [["Account", "Amount"], ["0420", "1200"], ["0970", "450"]] }],
+      forceStrings: ["0420", "0970"],
+    })
+    const result = await parse(buffer)
+    assert.equal(result.success, true)
+    if (!result.success) return
+    assert.match(result.markdown, /0420/)
+    assert.match(result.markdown, /0970/)
   })
 
   it("빈 XLSX은 적절히 처리", async () => {

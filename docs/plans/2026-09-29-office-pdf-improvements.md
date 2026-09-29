@@ -125,6 +125,8 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 
 ### E1. Excel의 값 보존을 회귀 기준으로 고정
 
+**상태:** 구현 완료 in current implementation branch. XLSX 합성 테스트가 문자열 계정 코드 `0420`·`0970`의 앞자리 0 보존을 직접 검사한다.
+
 **범위 S:** `tests/xlsx.test.ts`, `tests/xls.test.ts`, G0 manifest/gold.
 
 - [ ] `0420`, `0970`, 날짜처럼 보이는 문자열, 지수형 숫자, 소수, merged cells를 원본 타입과 위치로 검사한다.
