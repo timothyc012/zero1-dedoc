@@ -1,0 +1,958 @@
+{
+  "schema_version": "zero1-office-pdf-result.v1",
+  "manifest_sha256": "fa2d115da45e9843144adb37cad9d393d311b1eb46d67913229104f3a78f7a74",
+  "evaluator_sha256": "959aee01ab031c48ffd7ea22868cba77cd772ebe0f1c83d2b3800bf35946b825",
+  "parser_revision": "b357c44fb3b2df87fca998324b7f20899c8e6936",
+  "parser_package_version": "4.16.1-zero1.1",
+  "options": {
+    "ocr": false,
+    "images": false
+  },
+  "corpus_role": "development-regression; separate independent holdouts required",
+  "summary": {
+    "documents": 20,
+    "supported": 20,
+    "formats": {
+      "docx": 5,
+      "xlsx": 5,
+      "xls": 1,
+      "pptx": 1,
+      "pdf": 8
+    }
+  },
+  "documents": [
+    {
+      "id": "test.docx",
+      "format": "docx",
+      "sha256": "ee1974633f3b1e8bb54201abce779a755cb1cd5259641a08cf7b1b9b36dec42b",
+      "support": {
+        "parsed": true,
+        "error": null
+      },
+      "elapsedMs": 15,
+      "warnings": [],
+      "quality": {
+        "text": {
+          "totalUnits": 31,
+          "presentUnits": 31,
+          "orderedUnits": 31,
+          "exactUnitRecallWeighted": 1
+        }
+      }
+    },
+    {
+      "id": "equations.docx",
+      "format": "docx",
+      "sha256": "339b064492530598859de0bde8504de7a4aefead88210baf3e9f3db0ed925b40",
+      "support": {
+        "parsed": true,
+        "error": null
+      },
+      "elapsedMs": 6,
+      "warnings": [],
+      "quality": {
+        "text": {
+          "totalUnits": 3,
+          "presentUnits": 3,
+          "orderedUnits": 3,
+          "exactUnitRecallWeighted": 1
+        },
+        "inlineMath": {
+          "expected": "For $m=1$,",
+          "exactSequencePresent": true
+        }
+      }
+    },
+    {
+      "id": "test_with_comment.docx",
+      "format": "docx",
+      "sha256": "296fdb38ac2869f153db77e5f85ddbd74a1f931d8a3524cd5e12e3c5936d56a0",
+      "support": {
+        "parsed": true,
+        "error": null
+      },
+      "elapsedMs": 5,
+      "warnings": [],
+      "quality": {
+        "text": {
+          "totalUnits": 30,
+          "presentUnits": 30,
+          "orderedUnits": 30,
+          "exactUnitRecallWeighted": 1
+        }
+      }
+    },
+    {
+      "id": "docx_complex_layout.docx",
+      "format": "docx",
+      "sha256": "6eb2b1e9d68dae67d5b5c622efa2ef434d0a2ed1dda9baf0db44e34f55d85d92",
+      "support": {
+        "parsed": true,
+        "error": null
+      },
+      "elapsedMs": 22,
+      "warnings": [],
+      "quality": {
+        "text": {
+          "totalUnits": 8,
+          "presentUnits": 8,
+          "orderedUnits": 8,
+          "exactUnitRecallWeighted": 1
+        }
+      }
+    },
+    {
+      "id": "docx_multipage.docx",
+      "format": "docx",
+      "sha256": "f1c5f87bd2ad57fc26780fa203bd6f5fc6a4db82b372026122c9f29e3ed30f42",
+      "support": {
+        "parsed": true,
+        "error": null
+      },
+      "elapsedMs": 21,
+      "warnings": [],
+      "quality": {
+        "text": {
+          "totalUnits": 13,
+          "presentUnits": 13,
+          "orderedUnits": 13,
+          "exactUnitRecallWeighted": 1
+        }
+      }
+    },
+    {
+      "id": "test.xlsx",
+      "format": "xlsx",
+      "sha256": "a867be6ece38a4224bcfe34312e5c296ed520a76a431e0454603ceb171fbd4af",
+      "support": {
+        "parsed": true,
+        "error": null
+      },
+      "elapsedMs": 5,
+      "warnings": [],
+      "quality": {
+        "sourceGold": "native-xlsx",
+        "cells": {
+          "sourceCells": 116,
+          "exactVisibleCells": 116,
+          "exactVisibleRecall": 1,
+          "bySourceType": {
+            "string": {
+              "source": 10,
+              "exactVisible": 10
+            },
+            "number": {
+              "source": 106,
+              "exactVisible": 106
+            }
+          },
+          "outputTypeMetadataAvailable": false,
+          "leadingZero": {
+            "source": 0,
+            "exactVisible": 0
+          },
+          "missingExamples": []
+        },
+        "merges": {
+          "sourceRanges": 0,
+          "outputSpans": 0,
+          "addressAligned": null
+        }
+      }
+    },
+    {
+      "id": "test.xls",
+      "format": "xls",
+      "sha256": "17a94b6514e8998f4dc25bc77265b6f62982c18614ba4401a87fa01f90f53f1d",
+      "support": {
+        "parsed": true,
+        "error": null
+      },
+      "elapsedMs": 2,
+      "warnings": [],
+      "quality": {
+        "sourceGold": "paired-test.xlsx",
+        "cells": {
+          "sourceCells": 116,
+          "exactVisibleCells": 116,
+          "exactVisibleRecall": 1,
+          "bySourceType": {
+            "string": {
+              "source": 10,
+              "exactVisible": 10
+            },
+            "number": {
+              "source": 106,
+              "exactVisible": 106
+            }
+          },
+          "outputTypeMetadataAvailable": false,
+          "leadingZero": {
+            "source": 0,
+            "exactVisible": 0
+          },
+          "missingExamples": []
+        },
+        "merges": {
+          "sourceRanges": 0,
+          "outputSpans": 0,
+          "addressAligned": null
+        }
+      }
+    },
+    {
+      "id": "xlsx_complex_layout.xlsx",
+      "format": "xlsx",
+      "sha256": "7f333462745b6aacf6862d8e02c3213cf6de1b41b33facde5674321b5f2554c1",
+      "support": {
+        "parsed": true,
+        "error": null
+      },
+      "elapsedMs": 2,
+      "warnings": [],
+      "quality": {
+        "sourceGold": "native-xlsx",
+        "cells": {
+          "sourceCells": 21,
+          "exactVisibleCells": 21,
+          "exactVisibleRecall": 1,
+          "bySourceType": {
+            "string": {
+              "source": 17,
+              "exactVisible": 17
+            },
+            "number": {
+              "source": 4,
+              "exactVisible": 4
+            }
+          },
+          "outputTypeMetadataAvailable": false,
+          "leadingZero": {
+            "source": 0,
+            "exactVisible": 0
+          },
+          "missingExamples": []
+        },
+        "merges": {
+          "sourceRanges": 0,
+          "outputSpans": 0,
+          "addressAligned": null
+        }
+      }
+    },
+    {
+      "id": "test.pptx",
+      "format": "pptx",
+      "sha256": "f0b9e5252aec3730c91f276a7c3b8f4a9893a7b66540f6c6af160a49855ca507",
+      "support": {
+        "parsed": true,
+        "error": null
+      },
+      "elapsedMs": 6,
+      "warnings": [
+        "UNSUPPORTED_ELEMENT",
+        "UNSUPPORTED_ELEMENT",
+        "UNSUPPORTED_ELEMENT"
+      ],
+      "quality": {
+        "slideCount": {
+          "expected": 6,
+          "actual": 6
+        },
+        "text": {
+          "totalUnits": 28,
+          "presentUnits": 28,
+          "orderedUnits": 28,
+          "exactUnitRecallWeighted": 1
+        }
+      }
+    },
+    {
+      "id": "bmf-tax-tables.xlsx",
+      "format": "xlsx",
+      "sha256": "36dd814e82b1066493201069cee7c638f9e753e9ea77fc52fd00a8a7d7f64f80",
+      "support": {
+        "parsed": true,
+        "error": null
+      },
+      "elapsedMs": 36,
+      "warnings": [],
+      "quality": {
+        "sourceGold": "native-xlsx",
+        "cells": {
+          "sourceCells": 3512,
+          "exactVisibleCells": 1613,
+          "exactVisibleRecall": 0.4592824601366743,
+          "bySourceType": {
+            "string": {
+              "source": 533,
+              "exactVisible": 533
+            },
+            "number": {
+              "source": 2979,
+              "exactVisible": 1080
+            }
+          },
+          "outputTypeMetadataAvailable": false,
+          "leadingZero": {
+            "source": 0,
+            "exactVisible": 0
+          },
+          "missingExamples": [
+            {
+              "sheet": "1 Steuerarten",
+              "address": "G7",
+              "type": "number",
+              "value": "20966969.309749998"
+            },
+            {
+              "sheet": "1 Steuerarten",
+              "address": "H7",
+              "type": "number",
+              "value": "4.4067980086150902"
+            },
+            {
+              "sheet": "1 Steuerarten",
+              "address": "I7",
+              "type": "number",
+              "value": "178401147.92717999"
+            },
+            {
+              "sheet": "1 Steuerarten",
+              "address": "J7",
+              "type": "number",
+              "value": "170488348.08838701"
+            },
+            {
+              "sheet": "1 Steuerarten",
+              "address": "K7",
+              "type": "number",
+              "value": "4.6412555036844703"
+            },
+            {
+              "sheet": "1 Steuerarten",
+              "address": "G8",
+              "type": "number",
+              "value": "562802.02615000005"
+            },
+            {
+              "sheet": "1 Steuerarten",
+              "address": "I8",
+              "type": "number",
+              "value": "35543506.630828701"
+            },
+            {
+              "sheet": "1 Steuerarten",
+              "address": "J8",
+              "type": "number",
+              "value": "38602547.897419997"
+            },
+            {
+              "sheet": "1 Steuerarten",
+              "address": "K8",
+              "type": "number",
+              "value": "-7.9244542995457401"
+            },
+            {
+              "sheet": "1 Steuerarten",
+              "address": "G9",
+              "type": "number",
+              "value": "1388320.3571599999"
+            },
+            {
+              "sheet": "1 Steuerarten",
+              "address": "H9",
+              "type": "number",
+              "value": "-5.0310994137464897"
+            },
+            {
+              "sheet": "1 Steuerarten",
+              "address": "I9",
+              "type": "number",
+              "value": "26373050.778080001"
+            }
+          ]
+        },
+        "merges": {
+          "sourceRanges": 315,
+          "outputSpans": 278,
+          "addressAligned": null
+        }
+      }
+    },
+    {
+      "id": "financial-register-2026.xlsx",
+      "format": "xlsx",
+      "sha256": "d8a9ce6f5f68f5cad16bd5698ed1a209c767057189a3f2e28a282d8b07bd8fb3",
+      "support": {
+        "parsed": true,
+        "error": null
+      },
+      "elapsedMs": 2,
+      "warnings": [],
+      "quality": {
+        "sourceGold": "native-xlsx",
+        "cells": {
+          "sourceCells": 56,
+          "exactVisibleCells": 56,
+          "exactVisibleRecall": 1,
+          "bySourceType": {
+            "string": {
+              "source": 30,
+              "exactVisible": 30
+            },
+            "number": {
+              "source": 26,
+              "exactVisible": 26
+            }
+          },
+          "outputTypeMetadataAvailable": false,
+          "leadingZero": {
+            "source": 0,
+            "exactVisible": 0
+          },
+          "missingExamples": []
+        },
+        "merges": {
+          "sourceRanges": 0,
+          "outputSpans": 0,
+          "addressAligned": null
+        }
+      }
+    },
+    {
+      "id": "hgb-posting-lines.xlsx",
+      "format": "xlsx",
+      "sha256": "0f536ae50af814185a2d0c3e6746dcd5e030076255d4d4286b8bd66f77591a89",
+      "support": {
+        "parsed": true,
+        "error": null
+      },
+      "elapsedMs": 4,
+      "warnings": [],
+      "quality": {
+        "sourceGold": "native-xlsx",
+        "cells": {
+          "sourceCells": 440,
+          "exactVisibleCells": 416,
+          "exactVisibleRecall": 0.9454545454545454,
+          "bySourceType": {
+            "string": {
+              "source": 368,
+              "exactVisible": 368
+            },
+            "number": {
+              "source": 72,
+              "exactVisible": 48
+            }
+          },
+          "outputTypeMetadataAvailable": false,
+          "leadingZero": {
+            "source": 4,
+            "exactVisible": 4
+          },
+          "missingExamples": [
+            {
+              "sheet": "Posting_Lines",
+              "address": "B2",
+              "type": "number",
+              "value": "46027"
+            },
+            {
+              "sheet": "Posting_Lines",
+              "address": "B3",
+              "type": "number",
+              "value": "46030"
+            },
+            {
+              "sheet": "Posting_Lines",
+              "address": "B4",
+              "type": "number",
+              "value": "46034"
+            },
+            {
+              "sheet": "Posting_Lines",
+              "address": "B5",
+              "type": "number",
+              "value": "46037"
+            },
+            {
+              "sheet": "Posting_Lines",
+              "address": "B6",
+              "type": "number",
+              "value": "46042"
+            },
+            {
+              "sheet": "Posting_Lines",
+              "address": "B7",
+              "type": "number",
+              "value": "46047"
+            },
+            {
+              "sheet": "Posting_Lines",
+              "address": "B8",
+              "type": "number",
+              "value": "46053"
+            },
+            {
+              "sheet": "Posting_Lines",
+              "address": "B9",
+              "type": "number",
+              "value": "46053"
+            },
+            {
+              "sheet": "Posting_Lines",
+              "address": "B10",
+              "type": "number",
+              "value": "46056"
+            },
+            {
+              "sheet": "Posting_Lines",
+              "address": "B11",
+              "type": "number",
+              "value": "46059"
+            },
+            {
+              "sheet": "Posting_Lines",
+              "address": "B12",
+              "type": "number",
+              "value": "46063"
+            },
+            {
+              "sheet": "Posting_Lines",
+              "address": "B13",
+              "type": "number",
+              "value": "46067"
+            }
+          ]
+        },
+        "merges": {
+          "sourceRanges": 0,
+          "outputSpans": 0,
+          "addressAligned": null
+        },
+        "codeChecks": {
+          "0420": {
+            "expected": 3,
+            "found": 3
+          },
+          "0970": {
+            "expected": 1,
+            "found": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "de-press-pdf",
+      "format": "pdf",
+      "sha256": "e9c8bf2e2deb1c675c46fb0815d5500c03ffbe712d328ae12febed6bf7191d34",
+      "support": {
+        "parsed": true,
+        "error": null
+      },
+      "elapsedMs": 173,
+      "warnings": [],
+      "quality": {
+        "pages": {
+          "expected": 2,
+          "actual": 2
+        },
+        "headings": {
+          "expected": 2,
+          "exactOrdered": 2,
+          "checks": [
+            {
+              "text": "Kanzler Merz zur Situation im Nahen Osten",
+              "level": 1,
+              "foundInOrder": true
+            },
+            {
+              "text": "Der Sprecher der Bundesregierung, Stefan Kornelius, teilt mit:",
+              "level": 2,
+              "foundInOrder": true
+            }
+          ]
+        },
+        "tableShapes": {
+          "expected": 0,
+          "exact": 0,
+          "checks": []
+        },
+        "formIds": {
+          "expected": [],
+          "found": [],
+          "exactOnce": [],
+          "occurrences": {}
+        },
+        "ocr": {
+          "expectedRequired": null,
+          "configured": false,
+          "detectedNeed": false,
+          "applied": false,
+          "emptyText": false,
+          "appropriatelyFlagged": null
+        }
+      }
+    },
+    {
+      "id": "de-tax-pdf",
+      "format": "pdf",
+      "sha256": "1bbaae9366524c2830b52092b9e6a5f9b9bdb5a801402e48dd9e58d32385c4b2",
+      "support": {
+        "parsed": true,
+        "error": null
+      },
+      "elapsedMs": 204,
+      "warnings": [],
+      "quality": {
+        "pages": {
+          "expected": 11,
+          "actual": 11
+        },
+        "headings": {
+          "expected": 0,
+          "exactOrdered": 0,
+          "checks": []
+        },
+        "tableShapes": {
+          "expected": 3,
+          "exact": 3,
+          "checks": [
+            {
+              "page": 1,
+              "rows": 47,
+              "cols": 7,
+              "found": true
+            },
+            {
+              "page": 2,
+              "rows": 50,
+              "cols": 7,
+              "found": true
+            },
+            {
+              "page": 3,
+              "rows": 44,
+              "cols": 7,
+              "found": true
+            }
+          ]
+        },
+        "formIds": {
+          "expected": [],
+          "found": [],
+          "exactOnce": [],
+          "occurrences": {}
+        },
+        "ocr": {
+          "expectedRequired": null,
+          "configured": false,
+          "detectedNeed": false,
+          "applied": false,
+          "emptyText": false,
+          "appropriatelyFlagged": null
+        }
+      }
+    },
+    {
+      "id": "de-form-pdf",
+      "format": "pdf",
+      "sha256": "9fb138c73c0d7065203e1ed30a90d2febb3a2ab94a980cb31e679ce49f1ddda6",
+      "support": {
+        "parsed": true,
+        "error": null
+      },
+      "elapsedMs": 299,
+      "warnings": [],
+      "quality": {
+        "pages": {
+          "expected": 29,
+          "actual": 29
+        },
+        "headings": {
+          "expected": 0,
+          "exactOrdered": 0,
+          "checks": []
+        },
+        "tableShapes": {
+          "expected": 0,
+          "exact": 0,
+          "checks": []
+        },
+        "formIds": {
+          "expected": [
+            "F.701.01",
+            "F.702.01",
+            "F.703.01",
+            "F.704.01",
+            "F.705.01"
+          ],
+          "found": [
+            "F.701.01",
+            "F.702.01",
+            "F.703.01",
+            "F.704.01",
+            "F.705.01"
+          ],
+          "exactOnce": [],
+          "occurrences": {
+            "F.701.01": 4,
+            "F.702.01": 4,
+            "F.703.01": 4,
+            "F.704.01": 4,
+            "F.705.01": 6
+          }
+        },
+        "ocr": {
+          "expectedRequired": null,
+          "configured": false,
+          "detectedNeed": false,
+          "applied": false,
+          "emptyText": false,
+          "appropriatelyFlagged": null
+        },
+        "tableColumnCheck": {
+          "expectedPage": 2,
+          "expectedCols": 6,
+          "found": true
+        }
+      }
+    },
+    {
+      "id": "en-text-pdf",
+      "format": "pdf",
+      "sha256": "d5331f327c830b6b5d1c873e82b1b87cb74ae418b2e20e7e9420ae9f23f2da34",
+      "support": {
+        "parsed": true,
+        "error": null
+      },
+      "elapsedMs": 3,
+      "warnings": [],
+      "quality": {
+        "pages": {
+          "expected": null,
+          "actual": 1
+        },
+        "headings": {
+          "expected": 0,
+          "exactOrdered": 0,
+          "checks": []
+        },
+        "tableShapes": {
+          "expected": 0,
+          "exact": 0,
+          "checks": []
+        },
+        "formIds": {
+          "expected": [],
+          "found": [],
+          "exactOnce": [],
+          "occurrences": {}
+        },
+        "ocr": {
+          "expectedRequired": null,
+          "configured": false,
+          "detectedNeed": false,
+          "applied": false,
+          "emptyText": false,
+          "appropriatelyFlagged": null
+        },
+        "topicIds": {
+          "expected": [
+            "HE-CL4-2026-01",
+            "HE-CL5-2026-02"
+          ],
+          "found": [
+            "HE-CL4-2026-01",
+            "HE-CL5-2026-02"
+          ]
+        }
+      }
+    },
+    {
+      "id": "en-table-pdf",
+      "format": "pdf",
+      "sha256": "fb61810272d5044b5d6c8c9bbf05ae4aa1bb7dd8356f2379329120204e654b98",
+      "support": {
+        "parsed": true,
+        "error": null
+      },
+      "elapsedMs": 2,
+      "warnings": [],
+      "quality": {
+        "pages": {
+          "expected": null,
+          "actual": 1
+        },
+        "headings": {
+          "expected": 0,
+          "exactOrdered": 0,
+          "checks": []
+        },
+        "tableShapes": {
+          "expected": 0,
+          "exact": 0,
+          "checks": []
+        },
+        "formIds": {
+          "expected": [],
+          "found": [],
+          "exactOnce": [],
+          "occurrences": {}
+        },
+        "ocr": {
+          "expectedRequired": null,
+          "configured": false,
+          "detectedNeed": false,
+          "applied": false,
+          "emptyText": false,
+          "appropriatelyFlagged": null
+        },
+        "topicIds": {
+          "expected": [
+            "HE-EIC-2026-03"
+          ],
+          "found": [
+            "HE-EIC-2026-03"
+          ]
+        }
+      }
+    },
+    {
+      "id": "en-layout-pdf",
+      "format": "pdf",
+      "sha256": "0d39dad48f4e1f1cdc9da8cccf709bd837c934cda754480ac5f739d0e7bbeab8",
+      "support": {
+        "parsed": true,
+        "error": null
+      },
+      "elapsedMs": 2,
+      "warnings": [],
+      "quality": {
+        "pages": {
+          "expected": null,
+          "actual": 1
+        },
+        "headings": {
+          "expected": 0,
+          "exactOrdered": 0,
+          "checks": []
+        },
+        "tableShapes": {
+          "expected": 0,
+          "exact": 0,
+          "checks": []
+        },
+        "formIds": {
+          "expected": [],
+          "found": [],
+          "exactOnce": [],
+          "occurrences": {}
+        },
+        "ocr": {
+          "expectedRequired": null,
+          "configured": false,
+          "detectedNeed": false,
+          "applied": false,
+          "emptyText": false,
+          "appropriatelyFlagged": null
+        },
+        "topicIds": {
+          "expected": [
+            "HE-CA-2026-04"
+          ],
+          "found": [
+            "HE-CA-2026-04"
+          ]
+        }
+      }
+    },
+    {
+      "id": "image-only-scan-pdf",
+      "format": "pdf",
+      "sha256": "1332b4aca700bfe76ecdd5162f96031621b8ef36af2aa6792d74c98bd89062d4",
+      "support": {
+        "parsed": true,
+        "error": null
+      },
+      "elapsedMs": 104,
+      "warnings": [
+        "NEEDS_OCR"
+      ],
+      "quality": {
+        "pages": {
+          "expected": 1,
+          "actual": 1
+        },
+        "headings": {
+          "expected": 0,
+          "exactOrdered": 0,
+          "checks": []
+        },
+        "tableShapes": {
+          "expected": 0,
+          "exact": 0,
+          "checks": []
+        },
+        "formIds": {
+          "expected": [],
+          "found": [],
+          "exactOnce": [],
+          "occurrences": {}
+        },
+        "ocr": {
+          "expectedRequired": true,
+          "configured": false,
+          "detectedNeed": true,
+          "applied": false,
+          "emptyText": true,
+          "appropriatelyFlagged": true
+        }
+      }
+    },
+    {
+      "id": "en-cleanh2-pdf",
+      "format": "pdf",
+      "sha256": "03e6c8a761506e06158b18803c8ed4a971f542d86ea83719bf761e693028cb02",
+      "support": {
+        "parsed": true,
+        "error": null
+      },
+      "elapsedMs": 1447,
+      "warnings": [
+        "SKIPPED_IMAGE"
+      ],
+      "quality": {
+        "pages": {
+          "expected": 230,
+          "actual": 230
+        },
+        "headings": {
+          "expected": 0,
+          "exactOrdered": 0,
+          "checks": []
+        },
+        "tableShapes": {
+          "expected": 0,
+          "exact": 0,
+          "checks": []
+        },
+        "formIds": {
+          "expected": [],
+          "found": [],
+          "exactOnce": [],
+          "occurrences": {}
+        },
+        "ocr": {
+          "expectedRequired": null,
+          "configured": false,
+          "detectedNeed": false,
+          "applied": false,
+          "emptyText": false,
+          "appropriatelyFlagged": null
+        }
+      }
+    }
+  ]
+}

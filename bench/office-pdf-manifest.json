@@ -1,0 +1,293 @@
+{
+  "schema_version": "zero1-office-pdf-eval.v1",
+  "corpus_role": "development-regression; separate independent holdouts required",
+  "source_evaluation_commit": "8d815693d2c7c2ec9c2a6309fd8528160abe132a",
+  "approved_parser_baseline_commit": "b357c44fb3b2df87fca998324b7f20899c8e6936",
+  "parser_package_version": "4.16.1-zero1.1",
+  "options": {
+    "ocr": false,
+    "images": false
+  },
+  "reference_runtime_versions": {
+    "markitdown": "0.1.8",
+    "opendataloader_pdf": "2.5.11",
+    "docling": "2.119.0"
+  },
+  "baseline_result": "bench/office-pdf-baseline.json",
+  "documents": [
+    {
+      "id": "test.docx",
+      "format": "docx",
+      "filename": "test.docx",
+      "sha256": "ee1974633f3b1e8bb54201abce779a755cb1cd5259641a08cf7b1b9b36dec42b",
+      "source": {
+        "url": "https://raw.githubusercontent.com/microsoft/markitdown/b8f79c57ebc0044be41323d89b2a45d3fda8460e/packages/markitdown/tests/test_files/test.docx",
+        "kind": "public_url"
+      }
+    },
+    {
+      "id": "equations.docx",
+      "format": "docx",
+      "filename": "equations.docx",
+      "sha256": "339b064492530598859de0bde8504de7a4aefead88210baf3e9f3db0ed925b40",
+      "source": {
+        "url": "https://raw.githubusercontent.com/microsoft/markitdown/b8f79c57ebc0044be41323d89b2a45d3fda8460e/packages/markitdown/tests/test_files/equations.docx",
+        "kind": "public_url"
+      },
+      "expected": {
+        "inline_math_order": "For $m=1$,"
+      }
+    },
+    {
+      "id": "test_with_comment.docx",
+      "format": "docx",
+      "filename": "test_with_comment.docx",
+      "sha256": "296fdb38ac2869f153db77e5f85ddbd74a1f931d8a3524cd5e12e3c5936d56a0",
+      "source": {
+        "url": "https://raw.githubusercontent.com/microsoft/markitdown/b8f79c57ebc0044be41323d89b2a45d3fda8460e/packages/markitdown/tests/test_files/test_with_comment.docx",
+        "kind": "public_url"
+      }
+    },
+    {
+      "id": "docx_complex_layout.docx",
+      "format": "docx",
+      "filename": "docx_complex_layout.docx",
+      "sha256": "6eb2b1e9d68dae67d5b5c622efa2ef434d0a2ed1dda9baf0db44e34f55d85d92",
+      "source": {
+        "url": "https://raw.githubusercontent.com/microsoft/markitdown/b8f79c57ebc0044be41323d89b2a45d3fda8460e/packages/markitdown-ocr/tests/ocr_test_data/docx_complex_layout.docx",
+        "kind": "public_url"
+      }
+    },
+    {
+      "id": "docx_multipage.docx",
+      "format": "docx",
+      "filename": "docx_multipage.docx",
+      "sha256": "f1c5f87bd2ad57fc26780fa203bd6f5fc6a4db82b372026122c9f29e3ed30f42",
+      "source": {
+        "url": "https://raw.githubusercontent.com/microsoft/markitdown/b8f79c57ebc0044be41323d89b2a45d3fda8460e/packages/markitdown-ocr/tests/ocr_test_data/docx_multipage.docx",
+        "kind": "public_url"
+      }
+    },
+    {
+      "id": "test.xlsx",
+      "format": "xlsx",
+      "filename": "test.xlsx",
+      "sha256": "a867be6ece38a4224bcfe34312e5c296ed520a76a431e0454603ceb171fbd4af",
+      "source": {
+        "url": "https://raw.githubusercontent.com/microsoft/markitdown/b8f79c57ebc0044be41323d89b2a45d3fda8460e/packages/markitdown/tests/test_files/test.xlsx",
+        "kind": "public_url"
+      }
+    },
+    {
+      "id": "test.xls",
+      "format": "xls",
+      "filename": "test.xls",
+      "sha256": "17a94b6514e8998f4dc25bc77265b6f62982c18614ba4401a87fa01f90f53f1d",
+      "source": {
+        "url": "https://raw.githubusercontent.com/microsoft/markitdown/b8f79c57ebc0044be41323d89b2a45d3fda8460e/packages/markitdown/tests/test_files/test.xls",
+        "kind": "public_url"
+      }
+    },
+    {
+      "id": "xlsx_complex_layout.xlsx",
+      "format": "xlsx",
+      "filename": "xlsx_complex_layout.xlsx",
+      "sha256": "7f333462745b6aacf6862d8e02c3213cf6de1b41b33facde5674321b5f2554c1",
+      "source": {
+        "url": "https://raw.githubusercontent.com/microsoft/markitdown/b8f79c57ebc0044be41323d89b2a45d3fda8460e/packages/markitdown-ocr/tests/ocr_test_data/xlsx_complex_layout.xlsx",
+        "kind": "public_url"
+      }
+    },
+    {
+      "id": "test.pptx",
+      "format": "pptx",
+      "filename": "test.pptx",
+      "sha256": "f0b9e5252aec3730c91f276a7c3b8f4a9893a7b66540f6c6af160a49855ca507",
+      "source": {
+        "url": "https://raw.githubusercontent.com/microsoft/markitdown/b8f79c57ebc0044be41323d89b2a45d3fda8460e/packages/markitdown/tests/test_files/test.pptx",
+        "kind": "public_url"
+      },
+      "expected": {
+        "source_text_paragraphs": 28
+      }
+    },
+    {
+      "id": "bmf-tax-tables.xlsx",
+      "format": "xlsx",
+      "filename": "bmf-tax-tables.xlsx",
+      "sha256": "36dd814e82b1066493201069cee7c638f9e753e9ea77fc52fd00a8a7d7f64f80",
+      "source": {
+        "url": "https://www.bundesfinanzministerium.de/Content/DE/Standardartikel/Themen/Steuern/Steuerschaetzungen_und_Steuereinnahmen/2026-09-22-steuereinnahmen-august-2026-xlxs.xlsx?__blob=publicationFile&v=2",
+        "kind": "public_url"
+      }
+    },
+    {
+      "id": "financial-register-2026.xlsx",
+      "format": "xlsx",
+      "filename": "financial-register-2026.xlsx",
+      "sha256": "d8a9ce6f5f68f5cad16bd5698ed1a209c767057189a3f2e28a282d8b07bd8fb3",
+      "source": {
+        "url": "https://raw.githubusercontent.com/timothyc012/02ontology/73b8344d6c763b2cb67c267c59ec66c1dd3589f6/tests/in01/corpus/financial-register-2026.xlsx",
+        "kind": "public_url"
+      },
+      "bundled": "bench/fixtures/office-pdf/financial-register-2026.xlsx"
+    },
+    {
+      "id": "hgb-posting-lines.xlsx",
+      "format": "xlsx",
+      "filename": "hgb-posting-lines.xlsx",
+      "sha256": "0f536ae50af814185a2d0c3e6746dcd5e030076255d4d4286b8bd66f77591a89",
+      "source": {
+        "kind": "synthetic_fixture",
+        "description": "Bundled hash-pinned synthetic fixture; no private documents"
+      },
+      "bundled": "bench/fixtures/office-pdf/hgb-posting-lines.xlsx",
+      "expected": {
+        "string_codes": {
+          "0420": 3,
+          "0970": 1
+        }
+      }
+    },
+    {
+      "id": "de-press-pdf",
+      "format": "pdf",
+      "filename": "federal-press-release.pdf",
+      "sha256": "e9c8bf2e2deb1c675c46fb0815d5500c03ffbe712d328ae12febed6bf7191d34",
+      "source": {
+        "url": "https://www.bundesregierung.de/resource/blob/2196306/2409144/de5e4c11fa10c704768faaa6f99fc5a8/2026-02-28-bk-nahost-data.pdf?download=1",
+        "kind": "public_url"
+      },
+      "expected": {
+        "page_count": 2,
+        "heading_order": [
+          {
+            "text": "Kanzler Merz zur Situation im Nahen Osten",
+            "level": 1
+          },
+          {
+            "text": "Der Sprecher der Bundesregierung, Stefan Kornelius, teilt mit:",
+            "level": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "de-tax-pdf",
+      "format": "pdf",
+      "filename": "bmf-tax-tables.pdf",
+      "sha256": "1bbaae9366524c2830b52092b9e6a5f9b9bdb5a801402e48dd9e58d32385c4b2",
+      "source": {
+        "url": "https://www.bundesfinanzministerium.de/Content/DE/Standardartikel/Themen/Steuern/Steuerschaetzungen_und_Steuereinnahmen/2026-09-22-steuereinnahmen-august-2026.pdf?__blob=publicationFile&v=2",
+        "kind": "public_url"
+      },
+      "expected": {
+        "page_count": 11,
+        "table_shapes": [
+          {
+            "page": 1,
+            "rows": 47,
+            "cols": 7
+          },
+          {
+            "page": 2,
+            "rows": 50,
+            "cols": 7
+          },
+          {
+            "page": 3,
+            "rows": 44,
+            "cols": 7
+          }
+        ]
+      }
+    },
+    {
+      "id": "de-form-pdf",
+      "format": "pdf",
+      "filename": "pension-form.pdf",
+      "sha256": "9fb138c73c0d7065203e1ed30a90d2febb3a2ab94a980cb31e679ce49f1ddda6",
+      "source": {
+        "url": "https://www.gesetze-im-internet.de/normengrafiken/bgbl1_2024/j0414-172_0010.pdf",
+        "kind": "public_url"
+      },
+      "expected": {
+        "page_count": 29,
+        "form_ids": [
+          "F.701.01",
+          "F.702.01",
+          "F.703.01",
+          "F.704.01",
+          "F.705.01"
+        ],
+        "table_shape": {
+          "page": 2,
+          "cols": 6
+        }
+      }
+    },
+    {
+      "id": "en-text-pdf",
+      "format": "pdf",
+      "filename": "text-native.pdf",
+      "sha256": "d5331f327c830b6b5d1c873e82b1b87cb74ae418b2e20e7e9420ae9f23f2da34",
+      "source": {
+        "url": "https://raw.githubusercontent.com/timothyc012/02ontology/73b8344d6c763b2cb67c267c59ec66c1dd3589f6/tests/fixtures/horizon_pdf_quality/text-native.pdf",
+        "kind": "public_url"
+      },
+      "bundled": "bench/fixtures/office-pdf/text-native.pdf"
+    },
+    {
+      "id": "en-table-pdf",
+      "format": "pdf",
+      "filename": "table-heavy.pdf",
+      "sha256": "fb61810272d5044b5d6c8c9bbf05ae4aa1bb7dd8356f2379329120204e654b98",
+      "source": {
+        "url": "https://raw.githubusercontent.com/timothyc012/02ontology/73b8344d6c763b2cb67c267c59ec66c1dd3589f6/tests/fixtures/horizon_pdf_quality/table-heavy.pdf",
+        "kind": "public_url"
+      },
+      "bundled": "bench/fixtures/office-pdf/table-heavy.pdf"
+    },
+    {
+      "id": "en-layout-pdf",
+      "format": "pdf",
+      "filename": "layout-mixed.pdf",
+      "sha256": "0d39dad48f4e1f1cdc9da8cccf709bd837c934cda754480ac5f739d0e7bbeab8",
+      "source": {
+        "url": "https://raw.githubusercontent.com/timothyc012/02ontology/73b8344d6c763b2cb67c267c59ec66c1dd3589f6/tests/fixtures/horizon_pdf_quality/layout-mixed.pdf",
+        "kind": "public_url"
+      },
+      "bundled": "bench/fixtures/office-pdf/layout-mixed.pdf"
+    },
+    {
+      "id": "image-only-scan-pdf",
+      "format": "pdf",
+      "filename": "image-only-scan.pdf",
+      "sha256": "1332b4aca700bfe76ecdd5162f96031621b8ef36af2aa6792d74c98bd89062d4",
+      "source": {
+        "kind": "synthetic_fixture",
+        "description": "Bundled hash-pinned synthetic fixture; no private documents"
+      },
+      "bundled": "bench/fixtures/office-pdf/image-only-scan.pdf",
+      "expected": {
+        "page_count": 1,
+        "requires_ocr": true,
+        "ocr_applied": false
+      }
+    },
+    {
+      "id": "en-cleanh2-pdf",
+      "format": "pdf",
+      "filename": "cleanh2-awp-2026.pdf",
+      "sha256": "03e6c8a761506e06158b18803c8ed4a971f542d86ea83719bf761e693028cb02",
+      "source": {
+        "url": "https://www.clean-hydrogen.europa.eu/document/download/39eaa445-236f-41a6-af21-c3c648472968_en?filename=Clean+Hydrogen+JU+AWP2026+-+Ammended_FinalForPublication.pdf",
+        "page_url": "https://www.clean-hydrogen.europa.eu/about-us/key-documents/annual-work-programmes_en",
+        "kind": "official_publication"
+      },
+      "expected": {
+        "page_count": 230
+      }
+    }
+  ]
+}
