@@ -988,6 +988,7 @@ function hasPrintedPageCounter(entries: ReadonlyArray<{ page: number; text: stri
   if (entries.length < 3) return false
   const pageShape = (text: string): boolean => {
     const t = text.trim()
+    if (/^(?:s|p)\.\s*\d{1,6}(?:\s*(?:[/／]|of|von)\s*\d{1,6})?$/i.test(t)) return true
     if (/\b[A-Z]\.\d+(?:\.\d+)*/i.test(t)) return false // F.701.01 같은 식별자
     if (/^[-–—(]?\s*\d{1,6}\s*[-–—)]?$/.test(t)) return true
     if (/^\d{1,6}\s*(?:[/／]|of)\s*\d{1,6}$/i.test(t)) return true

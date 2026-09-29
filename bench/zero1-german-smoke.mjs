@@ -33,6 +33,10 @@ assert.deepEqual(front.map(block => [block.pageNumber, block.table.rows, block.t
 const first = front[0].table
 const lohnsteuer = first.cells.find(row => row.some(cell => cell.text === "Lohnsteuer"))
 assert.deepEqual(lohnsteuer?.map(cell => cell.text), ["Lohnsteuer", "21.890.941", "20.966.969", "4,4", "178.401.148", "170.488.348", "4,6"])
+assert.deepEqual(first.cells.at(-2)?.map(cell => cell.text),
+  ["Zölle", "590.293", "529.521", "11,5", "4.005.606", "3.868.988", "3,5"])
+assert.deepEqual(first.cells.at(-1)?.map(cell => cell.text),
+  ["Steuern insgesamt ohne Gemeindesteuern", "64.323.011", "63.238.965", "1,7", "581.782.277", "576.546.324", "0,9"])
 
 const form = results[1].result
 const forms = ["F.701.01", "F.702.01", "F.703.01", "F.704.01", "F.705.01"]
@@ -45,6 +49,7 @@ console.log(JSON.stringify({
   inputs: inputs.map((input, index) => ({ sha256: input.sha256, elapsedMs: results[index].elapsedMs })),
   taxTables: front.map(block => [block.pageNumber, block.table.rows, block.table.cols]),
   lohnsteuer: lohnsteuer.map(cell => cell.text),
+  finalTaxTotal: first.cells.at(-1).map(cell => cell.text),
   formTitles: forms,
   peakRssMb: Math.round(process.memoryUsage().rss / 1048576),
 }))

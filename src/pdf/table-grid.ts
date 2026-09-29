@@ -8,7 +8,7 @@
  * Core algorithm concepts from veraPDF-wcag-algs (GPLv3+/MPLv2+)
  */
 
-import type { LineSegment, TableGrid } from "./line-types.js"
+import type { LineSegment, TableGrid, TextItem } from "./line-types.js"
 import { VERTEX_MERGE_FACTOR } from "./line-types.js"
 
 /** 선 교차점 (Vertex) — ODL의 핵심 개념 */
@@ -431,7 +431,10 @@ export function dropHeadBandClipGrids(clipGrids: TableGrid[], lineGrids: TableGr
  * table. Prefer the ruled grid only when its interior vertical lines actually
  * span the clip region; a broad layout frame is not enough evidence.
  */
-export function dropCoarseClipGrids(clipGrids: TableGrid[], lineGrids: TableGrid[], verticals: LineSegment[]): TableGrid[] {
+export function dropCoarseClipGrids(
+  clipGrids: TableGrid[], lineGrids: TableGrid[], verticals: LineSegment[],
+  items: Pick<TextItem, "text" | "x" | "y" | "w" | "h">[] = [],
+): TableGrid[] {
   if (clipGrids.length === 0 || lineGrids.length === 0 || verticals.length === 0) return clipGrids
   const near = (a: number, b: number) => Math.abs(a - b) <= 1.5
   const verticalCoverage = (x: number, low: number, high: number): number => {
@@ -458,8 +461,26 @@ export function dropCoarseClipGrids(clipGrids: TableGrid[], lineGrids: TableGrid
     if (lineHeight < (c.bbox.y2 - c.bbox.y1) * 1.5) return false
     const inner = l.colXs.slice(1, -1)
     const ruled = inner.filter(x => verticalCoverage(x, low, high) >= overlap * 0.75)
+    if (ruled.length >= Math.ceil(inner.length / 2)) return true
     const wholeGridRuled = inner.every(x => verticalCoverage(x, l.bbox.y1, l.bbox.y2) >= lineHeight * 0.75)
-    return ruled.length >= Math.ceil(inner.length / 2) || wholeGridRuled
+    if (!wholeGridRuled) return false
+    // A table can have full-span heading or total rows with no local vertical
+    // rules. Use the table's row boundaries (or text in its existing columns)
+    // to distinguish those rows from a separate clip on the same page.
+    const aligned = c.rowYs.filter(y => l.rowYs.some(lineY => near(y, lineY))).length
+    const trailingRowsAlign = c.rowYs.length >= 3 && c.rowYs.slice(-3).every(y => l.rowYs.some(lineY => near(y, lineY)))
+    if ((aligned >= 2 && aligned * 2 >= c.rowYs.length) || trailingRowsAlign) return true
+    if (aligned === 0) return false
+    const occupied = new Set<number>()
+    let numeric = 0
+    for (const item of items) {
+      if (!item.text.trim() || item.y + item.h / 2 < low || item.y + item.h / 2 > high) continue
+      const col = l.colXs.findIndex((x, i) => i < lineCols && item.x >= x - 2 && item.x + item.w <= l.colXs[i + 1] + 2)
+      if (col < 0 || occupied.has(col)) continue
+      occupied.add(col)
+      if (/^[+-]?(?:\d[\d.,\s]*|[xX–—-])%?$/.test(item.text.trim())) numeric++
+    }
+    return occupied.size >= Math.ceil(lineCols * 0.75) && numeric >= Math.ceil(lineCols / 2)
   }))
 }
 

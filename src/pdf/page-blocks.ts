@@ -127,7 +127,7 @@ export function extractPageBlocksWithLines(
   // 쪽 넘김 되풀이 머리 행 클립 띠도 선 표에 맡긴다 (dropHeadBandClipGrids)
   const tableClipGrids = dropCoarseClipGrids(
     dropHeadBandClipGrids(dropInsetClipGrids(dropShadingClipGrids(clipGrids, lineGrids, extracted.fillRects, verticals), lineGrids), lineGrids),
-    lineGrids, verticals,
+    lineGrids, verticals, items,
   )
   const grids = [...tableClipGrids, ...dropGridsInside(lineGrids, tableClipGrids, clipResult.containers)]
 
@@ -460,7 +460,7 @@ function extractBlocksWithGrids(
     }
 
     // 셀 추출 — 클립 그리드는 셀이 확정돼 있다
-    const cells = grid.cells ?? extractCells(grid, horizontals, verticals)
+    const cells = grid.cells ?? extractCells(grid, horizontals, verticals, tableItems)
     if (cells.length === 0) continue
 
     // 텍스트→셀 매핑 (hasSpaceBefore 전파 — 셀 텍스트 단어 공백 복원)
