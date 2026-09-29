@@ -6,7 +6,7 @@ import { detectRuledBandTables } from "../src/pdf/ruled-band-tables.js"
 import { demoteNonHeadingRoles } from "../src/pdf/heading-demote.js"
 import { splitTwoColumnProse } from "../src/pdf/page-regions.js"
 import { FACE_CHARS } from "../src/pdf/paragraph-lines.js"
-import { detectTypographyHeadings } from "../src/pdf/block-detect.js"
+import { detectPageLeadHeadings, detectTypographyHeadings } from "../src/pdf/block-detect.js"
 import type { LineSegment } from "../src/pdf/line-types.js"
 import type { NormItem } from "../src/pdf/text-line.js"
 import type { IRBlock } from "../src/types.js"
@@ -172,5 +172,23 @@ describe("face purity of typography titles", () => {
     detectTypographyHeadings(blocks)
     assert.equal(lead.type, "paragraph")
     assert.equal(title.type, "heading")
+  })
+})
+
+describe("document lead heading hierarchy", () => {
+  it("keeps a display title above a bold press-release subtitle", () => {
+    const blocks: IRBlock[] = [
+      { type: "heading", level: 3, text: "Kanzler Merz zur Situation im Nahen Osten", pageNumber: 1,
+        bbox: { page: 1, x: 70, y: 675, width: 270, height: 17 }, style: { fontSize: 14, fontName: "TitleBold" } },
+      { type: "paragraph", text: "Der Sprecher der Bundesregierung, Stefan Kornelius, teilt mit:", pageNumber: 1,
+        bbox: { page: 1, x: 70, y: 642, width: 300, height: 13 }, style: { fontSize: 11, fontName: "TitleBold" } },
+      { type: "paragraph", text: "Bundeskanzler Friedrich Merz hat sich nach der neuerlichen Eskalation im Nahen Osten eng mit Verbündeten und Partnern abgestimmt.", pageNumber: 1,
+        bbox: { page: 1, x: 70, y: 598, width: 420, height: 28 }, style: { fontSize: 11, fontName: "Body" } },
+    ]
+    detectPageLeadHeadings(blocks)
+    assert.equal(blocks[0].type, "heading")
+    assert.equal(blocks[0].level, 1)
+    assert.equal(blocks[1].type, "heading")
+    assert.equal(blocks[1].level, 2)
   })
 })
