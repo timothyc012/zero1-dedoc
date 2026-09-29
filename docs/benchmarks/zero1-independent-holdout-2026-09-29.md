@@ -1,6 +1,10 @@
 # Zero1 Dedoc independent Office/PDF/scan holdout
 
-Date: 2026-09-29. Parser commit: `47fc6d3`. Inputs and hashes are in
+Date: 2026-09-29. PR #5 merged parser commit:
+`e6b26ea034676c9675c43e2a9473f47d6e455b3e`. The original measurements
+started on implementation commit `47fc6d3`; its source files were unchanged
+through PR head `269ad29` and the squash merge (only the manifest and docs
+changed). Inputs and hashes are in
 [`bench/independent-holdout-manifest-2026-09-29.json`](../../bench/independent-holdout-manifest-2026-09-29.json).
 These files were not part of the original 20-file development comparison.
 
@@ -24,10 +28,18 @@ it is not a four-document PPTX layout corpus.
 ## Independent PDF
 
 The German federal government strategic-partnership PDF (14 pages) parsed
-successfully. The title was initially emitted as H3; the generic header-table
-lead fix in this branch now emits it as H1. The numbered section
+successfully. The title was initially emitted as H3; the first-page
+header-table lead fix now emits it as H1. The numbered section
 `1. Partnerschaft für ein sichereres Europa` remains H2. Existing press-release
 heading tests and the full Zero1 suite still pass after this change.
+
+PR #5 also made a middle-page compact table promote the following H2 section
+to H1, and could promote a middle-page paragraph to H1. The follow-up fix
+`ce11c6d` confines header-table title promotion to page 1, preserves H2, and
+allows a first-page H3 document title to become H1. The real 14-page German
+PDF still emits its first title as H1 and its page 5 section as H2.
+The follow-up passed typecheck, build, the hash-pinned German tax/form smoke,
+and the full suite (2,655 passed, 10 skipped, 0 failed on macOS).
 
 ### BMF XLSX-backed PDF cell gold
 
@@ -57,6 +69,18 @@ rerun after the fix: 200/200 corpus parsing remained successful. The selected
 documents averaged overall **0.95052**, NID **0.94630**, TEDS **0.98716** over
 four table-scored documents, and MHS **0.90776** over five heading-scored
 documents.
+
+### Full ODL200 heading regression check
+
+The unmodified public evaluator at `7af1d8f4d0c09f51ea1a5c6ba5f66e993286d109`
+was rerun on all 200 fixed PDFs. PR #5 merge `e6b26ea` and the follow-up fix
+`ce11c6d` both parsed **200/200**. Their 200 prediction Markdown files and
+evaluator JSON were byte-for-byte identical. MHS was **0.932713617** over 107
+scored documents; overall was **0.937073892**, NID **0.938037332** over 200,
+and TEDS **0.935699400** over 42. Per-document MHS, NID, TEDS, and overall
+delta counts were all **zero**. The complete 200-document evaluator output is
+[`data/zero1-page-lead-guard-odl200.json`](data/zero1-page-lead-guard-odl200.json),
+SHA-256 `4f51a16d22b3436e9329e2fbb06559090c0e78f6b5ec2bb14593205e8739c284`.
 
 ## Scan OCR
 
@@ -114,7 +138,9 @@ passed, 10 skipped, 0 failed.
 
 ## WSL status
 
-The saved WSL endpoint `onto@172.30.14.143` was retried again from the final
-candidate run and timed out on SSH port 22. OCR verification used local Docker
-Desktop with `--network none`; no WSL success is claimed until that endpoint is
-reachable.
+The saved SSH target `onto@172.30.14.143` timed out from the Mac host. That is
+a stale, restart-sensitive WSL address, not evidence that WSL or Docker is
+down: the operator reported working `wsl.exe` Docker access on the Windows
+host. The specific candidate OCR image in this report was verified in local
+Docker Desktop with `--network none`; a WSL run of that image has not been
+recorded here.

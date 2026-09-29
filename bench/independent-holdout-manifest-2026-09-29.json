@@ -1,7 +1,9 @@
 {
   "schema_version": "zero1-independent-holdout.v1",
   "evaluated_on": "2026-09-29",
-  "parser_commit": "47fc6d3",
+  "parser_commit": "e6b26ea034676c9675c43e2a9473f47d6e455b3e",
+  "original_evaluation_commit": "47fc6d3d190d11ed98c4053d0e7fce96877f862f",
+  "merged_pr_head_commit": "269ad297d4eaeda00538c25c7a33fb55165a16bc",
   "office": [
     {
       "id": "ffc-docx",
