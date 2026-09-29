@@ -209,13 +209,15 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 
 ### O2. 기존 ONNX 엔진에 프로필 적용·품질 신호 전달
 
-**상태:** 기본 프로필 연결 구현 완료. 동일 이미지 전용 PDF에서 English와 Latin/German 프로필이 각각 `HORIZON CLEAN AVIATION 2026`과 `TOPIC CALL BUDGET`을 복원했다. 실제 독일어·영어 문서군 CER/WER holdout은 남아 있다.
+**상태:** 기본 프로필 연결 구현 완료. 동일 이미지 전용 PDF에서 English와 Latin/German 프로필이 각각 `HORIZON CLEAN AVIATION 2026`과 `TOPIC CALL BUDGET`을 복원했다. 추가 OCR 개선은 `codex/lidl-ad-ocr-tiles`에서 독일어 광고용 적응형 검출·다중 해상도 줄 병합으로 구현했고, 이미지 전용 Lidl 페이지 2 시각 gold 30/30을 통과했다. 독립 독일어·영어 문서군 CER/WER 게이트는 아직 미완료다.
 
 **범위 M:** `src/ocr/engine.ts`, `src/ocr/models.ts`, `src/ocr/pdf-ocr.ts`, `src/ocr/image-ocr.ts`, `src/pdf/parser.ts`, `src/types.ts`, `tests/ocr.test.ts`.
 
 - [x] O1의 입력/출력 계약에 맞춰 인식을 수행하고 한국어 전용 후처리가 독일어·영어에 적용되지 않게 한다. 텍스트층/스캔 혼합 PDF에서 필요한 페이지만 OCR한다.
 - [x] 기존 `pageQuality`, `qualitySummary`, `NEEDS_OCR`, 내부 `ocrApplied` 신호를 일관되게 노출한다. `ocr:false`, 모델 없음, 인식 실패, 인식 후 충분한 본문을 구분한다. `success=true`의 파싱 계약은 유지한다.
 - [x] 영문 합성 1쪽과 de/en smoke에서 OCR 결과·숫자·식별자를 확인했다. 실제 언어별 CER/WER holdout은 별도 평가로 남긴다.
+- [x] 복잡한 독일어 광고의 이미지 전용 holdout 한 쪽에서 수동 고정한 중요 콘텐츠 구성요소 30/30을 보존하고, 상품명·가격을 각각 한 번씩 출력했다.
+- [ ] 독일어·영어 각각 독립 문서 10개 이상, 언어별 20쪽 이상에 대한 CER/WER corpus와 중요 식별자·가격 gold를 고정한다.
 
 **검증:** OCR unit tests, 해시 고정 de/en scan corpus, 이미지 전용/혼합 PDF의 offline Docker 실행. 누락 모델·낮은 신뢰도·빈 인식 음성 시나리오 포함. **의존성:** O1.
 
