@@ -38,6 +38,28 @@ The packed `zero1-dedoc@4.16.1-zero1.1` tarball from commit `92e2d6c` was also i
 
 The follow-up package was tested in a new WSL Docker image `02ontology/zero1-dedoc-eval:final-20260929` (Node 20.20.2, `--network none`). Both hash-pinned PDFs passed again, including the final seven-cell tax total. Peak Node RSS was 177 MiB. The image reuses the previous image's installed dependencies and replaces its Zero1 Dedoc package contents with the newly packed tarball; it is an evaluation image, not a production deployment.
 
+The current `4.16.1-zero1.1` package was rebuilt once more in local Docker
+Desktop from the same pinned tarball. Image
+`02ontology/zero1-dedoc-eval:latest-20260929` uses Node 20.20.2 and has digest
+`sha256:9f6d314199592ceb2bdfd3806b04ee7094ecb48e50dd70801f98a57c2a0cb2c8`.
+With `--network none` and the bounded `parse-worker` protocol:
+
+- An English text-layer fixture retained `HORIZON CLEAN AVIATION 2026`, the
+  topic budget heading, and the `HE-CL4-2026-01` row.
+- A German text-layer fixture retained `Schäferstraße Köln – Fußgängerzone`,
+  `0420`, `0970`, and `123,45 EUR`.
+- The German tax-table page parsed successfully with `Gemeindesteuern`,
+  `Lohnsteuer`, and `1.449.637` present in the 5,686-character Markdown result;
+  peak worker RSS was 125,431,808 bytes.
+- An image-only German scan returned the expected `OCR_FAILED` and `NEEDS_OCR`
+  warnings because the lean evaluation image intentionally omits optional
+  PDFium/OCR model packages. It did not download anything or silently claim
+  OCR success.
+
+The image is an evaluation artifact, not a production deployment. The WSL
+address used by the earlier run was unavailable during this repeat; the local
+Docker result verifies the same network-isolated package and worker contract.
+
 Cross-page ruled tables now require a repeated header or matching caption before merging. This prevents unrelated tables with the same geometry and numeric column roles from merging. A genuine continuation without either cue may remain split; it needs a separate labeled test case before adding a looser rule.
 
 ## Korean and OCR coverage
