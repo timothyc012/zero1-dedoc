@@ -1,12 +1,13 @@
 /** kordoc MCP 도구 — 생성 — extract_profile·generate_document */
 
 import { z } from "zod"
-import { readFile, mkdir, realpath } from "fs/promises"
-import { resolve, dirname, join } from "path"
+import { readFile, mkdir } from "fs/promises"
+import { dirname } from "path"
 import { markdownToHwpx, unknownFontWarnings, usesGaejosikMunche, PRESET_ALIAS, incompatibleGongmunWarnings, gongmunLintWarnings, muncheLintWarnings } from "../index.js"
 import type { GongmunOptions } from "../index.js"
 import { buildGongmunOptions, BODY_FONTS, H2_MARKERS, BULLET2_CHARS, FONT_ROLE_KEYS, SIZE_KEYS, DOC_HEAD_KEYS, DOC_FOOT_KEYS, DOC_INFO_KEYS, NOTICE_HEAD_KEYS, PRESS_CONTACT_KEYS, BODY_PT_RANGE, LINE_SPACING_RANGE, SIZE_PT_RANGE, APPROVAL_MAX, LEVEL_STYLE_KEYS } from "../hwpx/gongmun-surface.js"
 import { assertWithinRoot } from "../shared/offline.js"
+import { loadGenerationImages } from "../shared/generate-images.js"
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { PROFILE_EXTENSIONS, safePath, safeOutputPath, writeOutputFile, describeError, readValidatedFile } from "./shared.js"
 
@@ -130,21 +131,13 @@ export function registerGenerateTools(server: McpServer): void {
             ...(footer ? { footer } : {}),
           }
           : undefined
-        // 이미지 실데이터 (v4.5.0) — 안전한 파일명 참조만 디렉토리에서 읽는다
+        const genWarnings: string[] = []
         let images: Record<string, Uint8Array> | undefined
         if (image_dir) {
-          const dir = await realpath(resolve(image_dir))
-          assertWithinRoot(dir)
-          for (const m of markdown.matchAll(/!\[[^\]]*\]\(([^)\s]+)\)/g)) {
-            const url = m[1]
-            if (!/^[A-Za-z0-9._-]+\.[A-Za-z0-9]+$/.test(url) || url.includes("..")) continue
-            try {
-              images ??= {}
-              images[url] = new Uint8Array(await readFile(join(dir, url)))
-            } catch { /* 파일 없음 — placeholder 유지 */ }
-          }
+          const loaded = await loadGenerationImages(markdown, image_dir, assertWithinRoot)
+          images = loaded.images
+          genWarnings.push(...loaded.warnings)
         }
-        const genWarnings: string[] = []
         const buf = await markdownToHwpx(markdown, gongmun || profile || page || images
           ? {
             ...(gongmun ? { gongmun } : {}), ...(profile ? { profile } : {}),
