@@ -171,6 +171,8 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 
 ### X1. PPTX 텍스트·슬라이드·노트 읽기
 
+**상태:** 구현 완료 in current implementation branch. 실제 slide relationship 순서, 제목/부제, 텍스트 도형, 표, speaker notes를 IR로 내보낸다. malformed PPTX는 구조화된 `PARSE_ERROR`로 반환한다.
+
 **범위 M:** `src/pptx/parser.ts`(신규), `src/index.ts`, `tests/pptx.test.ts`(신규), `tests/pptx-surfaces.test.ts`.
 
 - [ ] `presentation.xml`과 관계 파일의 실제 슬라이드 순서를 따른다. 제목·본문·노트를 IR로 내고 slide 번호를 `pageNumber`에 남긴다.
