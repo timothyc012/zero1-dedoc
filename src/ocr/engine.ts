@@ -37,6 +37,7 @@ import { edgeTrim, leadingBullet, tallInkCount, grayCrop, inkBounds, inkStats, l
 import { restoreGlyphs } from "./glyph-restore.js"
 import { isDotFragment, joinLeaderItems, restoreBulletItems, restoreSymbols } from "./postprocess.js"
 import { bandBoxes, splitBoxAtCellRules, lineCrop, type Box, REC_HEIGHT } from "./crop.js"
+import { cropRgba, mergeDetectionTiles, mergeOcrPasses, ocrTuningForImage, planDetectionTiles } from "./detection-tiles.js"
 
 /** OCR 인식 결과 한 줄 — 좌표는 입력 이미지 픽셀 (top-left origin, y down) */
 export interface OcrItem {
@@ -211,8 +212,34 @@ export class OcrEngine {
     tuning: Readonly<OcrTuning> = DEFAULT_OCR_TUNING,
     cellRules: Array<{ x1: number; y1: number; y2: number; thicknessPx: number }> = [],
   ): Promise<OcrItem[]> {
+    const detailTuning = ocrTuningForImage(width, height, tuning)
+    if (detailTuning === tuning) {
+      return this.recognizeSinglePass(rgba, width, height, stats, tuning, cellRules, true)
+    }
+
+    const coarseStats: OcrPageStats = { droppedLowConf: 0 }
+    const detailStats: OcrPageStats = { droppedLowConf: 0 }
+    const coarse = await this.recognizeSinglePass(rgba, width, height, coarseStats, tuning, cellRules, false)
+    const detail = await this.recognizeSinglePass(rgba, width, height, detailStats, detailTuning, cellRules, true)
+    if (stats) {
+      stats.droppedLowConf += Math.max(coarseStats.droppedLowConf, detailStats.droppedLowConf)
+      stats.truncatedBoxes = (stats.truncatedBoxes ?? 0) + Math.max(coarseStats.truncatedBoxes ?? 0, detailStats.truncatedBoxes ?? 0)
+    }
+    return mergeOcrPasses(coarse, detail)
+  }
+
+  private async recognizeSinglePass(
+    rgba: Uint8Array,
+    width: number,
+    height: number,
+    stats: OcrPageStats | undefined,
+    tuning: Readonly<OcrTuning>,
+    cellRules: Array<{ x1: number; y1: number; y2: number; thicknessPx: number }>,
+    allowTiles: boolean,
+  ): Promise<OcrItem[]> {
     if (width < DET_MIN_SIZE || height < DET_MIN_SIZE) return []
-    const detected = await this.detect(rgba, width, height, tuning, stats)
+    const pageTuning = tuning
+    const detected = await this.detect(rgba, width, height, tuning, stats, allowTiles)
     const boxes = cellRules.length ? detected.flatMap(b => splitBoxAtCellRules(b, cellRules)) : detected
 
     // 박스 픽셀 분석 → 인식 작업(라인) 목록. group = 한 결과로 합칠 후보 묶음(회전 후보)
@@ -223,12 +250,12 @@ export class OcrEngine {
     for (const b of boxes) {
       const gray = grayCrop(rgba, width, b)
       const ink = inkStats(gray)
-      if (tuning.minInkContrast > 0 && ink.contrast < tuning.minInkContrast) continue
+      if (pageTuning.minInkContrast > 0 && ink.contrast < pageTuning.minInkContrast) continue
       // 잉크가 박스의 1% 미만이면 가는 선·티끌이다 — 연한 배경 도안 띠를 가로지르는 파란 세로선이 대비 검사를
       // 통과시키고 인식기가 도안을 "D D D … O" 로 읽었다(ice-election-cases 표지, 잉크 0.4%). 가장 가는 글자("-")도
       // 여백 포함 박스의 1.5% 안팎이라 남는다. 점 하나("·")는 여기서 빠지지만 isDotFragment 가 어차피 버린다
-      if (tuning.minInkContrast > 0 && ink.inkRatio < MIN_INK_RATIO) continue
-      if (tuning.splitTall && b.h >= b.w * TALL_RATIO) {
+      if (pageTuning.minInkContrast > 0 && ink.inkRatio < MIN_INK_RATIO) continue
+      if (pageTuning.splitTall && b.h >= b.w * TALL_RATIO) {
         const bands = splitRowBands(gray, b.w, b.h, ink, 0.45)
         if (bands.length >= 2) {
           for (const sub of bandBoxes(b, bands, height)) jobs.push({ box: sub, rot: 0, group: group++ })
@@ -242,7 +269,7 @@ export class OcrEngine {
       }
       // 한 줄 박스가 문 위아래 이웃 줄 글자 끝자락·좌우 끝 상자 테두리는 인식 crop 에서 배경으로 지운다 — 인식기가 받침·"|" 로
       // 읽는다 (line-split edgeTrim). 박스를 줄이면 인식 입력 배율이 바뀌어 가운뎃점이 "•" 로 커 보였다 — 박스·좌표는 그대로 둔다
-      const trim = tuning.trimEdges ? edgeTrim(gray, b.w, b.h, ink) : null
+      const trim = pageTuning.trimEdges ? edgeTrim(gray, b.w, b.h, ink) : null
       const keep = trim ? { ...trim, bg: median(gray) } : undefined
       // 목차 리더 점 무리는 인식하지 않고 앞뒤 글만 따로 인식한 뒤, 검출 박스 하나로 다시 합쳐 "제목 … 쪽번호" 아이템
       // 하나를 낸다 — 텍스트층도 목차 줄을 리더 글자까지 한 줄로 준다. 조각을 따로 두면 줄 기하가 바뀌어 뒤 단계가
@@ -250,7 +277,7 @@ export class OcrEngine {
       // 리더를 따로 세우면 클러스터 표가 그것을 열로 삼았다(gwd-info-plan 목차). 리더 앞 조각은 점 한두 개까지 물려
       // 인식하고 물린 점은 결과 끝에서 지운다 — 끝 글자 바로 뒤에서 자르면 인식기가 오른쪽 맥락을 잃어 로마 숫자 Ⅰ 를
       // 1 로 읽었다(eval-rda "전략목표 Ⅰ"·"성과목표 Ⅰ-1", 박스 높이 0.5배 물림으로 Ⅰ·Ⅱ·Ⅲ 11줄 복원)
-      const leaders = tuning.splitLeaders ? leaderRuns(gray, b.w, b.h, ink, LEADER_MIN_DOTS) : []
+      const leaders = pageTuning.splitLeaders ? leaderRuns(gray, b.w, b.h, ink, LEADER_MIN_DOTS) : []
       if (leaders.length) {
         const join = joins.length
         joins.push({ box: b, parts: [], trailDots: false })
@@ -259,7 +286,7 @@ export class OcrEngine {
           const bare = { x: b.x + x0, y: b.y, w: a - x0, h: b.h }
           const end = c > a ? Math.min(c, a + Math.round(b.h * LEADER_CONTEXT)) : a
           x0 = c
-          if (bare.w >= DET_MIN_SIZE && inkStats(grayCrop(rgba, width, bare)).contrast >= Math.max(1, tuning.minInkContrast)) {
+          if (bare.w >= DET_MIN_SIZE && inkStats(grayCrop(rgba, width, bare)).contrast >= Math.max(1, pageTuning.minInkContrast)) {
             jobs.push({ box: { ...bare, w: end - (bare.x - b.x) }, rot: 0, group: group++, join, dotsBefore: dots, trimDots: end > a })
             dots = false
           }
@@ -274,7 +301,7 @@ export class OcrEngine {
       jobs.push({ box: b, rot: 0, group: group++ })
     }
 
-    const results = await this.recognizeJobs(rgba, width, jobs, tuning.recBatch)
+    const results = await this.recognizeJobs(rgba, width, jobs, pageTuning.recBatch)
 
     // 회전 후보 그룹은 최고 신뢰도 하나만
     const best = new Map<number, { job: LineJob; text: string; confidence: number; steps: number[]; stepPx: number }>()
@@ -291,11 +318,11 @@ export class OcrEngine {
     let items: OcrItem[] = []
     for (const { job, text: read, confidence, steps, stepPx } of best.values()) {
       const note: { ringLead?: boolean } = {}
-      const raw = tuning.postprocess && job.rot === 0 ? restoreGlyphs(rgba, width, job.box, read, steps, stepPx, note) : read
-      let text = tuning.postprocess ? restoreSymbols(raw.trim(), note.ringLead) : raw
+      const raw = pageTuning.postprocess && job.rot === 0 ? restoreGlyphs(rgba, width, job.box, read, steps, stepPx, note) : read
+      let text = pageTuning.postprocess ? restoreSymbols(raw.trim(), note.ringLead) : raw
       if (!text.trim()) continue
       // 사전 밖·작은 점으로 읽히거나 빠지는 글머리(◎ ● ▪ □) — 첫 글리프 모양으로 되살린다 (line-split.ts)
-      if (tuning.postprocess && job.rot === 0 && !/^[◎●▪□■○ㅇ]/.test(text)) {
+      if (pageTuning.postprocess && job.rot === 0 && !/^[◎●▪□■○ㅇ]/.test(text)) {
         const chars = [...read], k = chars.findIndex(c => c.trim())
         if (k >= 0 && steps.length === chars.length) {
           const g = grayCrop(rgba, width, job.box)
@@ -311,19 +338,19 @@ export class OcrEngine {
         }
       }
       // 숫자 앞 △·▲ 는 사전 밖이라 빈칸으로 사라진다 — 박스 맨 앞 글자 모양으로 되살린다 (line-split.ts)
-      if (tuning.postprocess && /^\d/.test(text) && job.rot === 0) {
+      if (pageTuning.postprocess && /^\d/.test(text) && job.rot === 0) {
         const g = grayCrop(rgba, width, job.box)
         const tri = leadingTriangle(g, job.box.w, job.box.h, inkStats(g))
         if (tri) text = tri + text
       }
-      if (tuning.postprocess && isDotFragment(text)) continue
-      if (confidence < tuning.textScore) { if (stats) stats.droppedLowConf++; continue }
+      if (pageTuning.postprocess && isDotFragment(text)) continue
+      if (confidence < pageTuning.textScore) { if (stats) stats.droppedLowConf++; continue }
       if (job.join !== undefined) {
         if (job.trimDots) text = text.replace(/[\s.:\u00b7\u2022\u2024\u2025\u2026\u2219\u22c5\u318d]+$/u, "")
         if (text) joins[job.join].parts.push({ x: job.box.x, text, dotsBefore: job.dotsBefore === true, confidence })
         continue
       }
-      items.push({ text, ...this.itemBox(rgba, width, job.box, tuning), confidence })
+      items.push({ text, ...this.itemBox(rgba, width, job.box, pageTuning), confidence })
     }
     const leaderEnds = new Map<OcrItem, { lead: boolean; trail: boolean }>()
     for (const j of joins) {
@@ -332,12 +359,12 @@ export class OcrEngine {
       let text = ""
       for (const p of j.parts) text += (p.dotsBefore ? (text ? " \u2026 " : "\u2026") : text ? " " : "") + p.text
       if (j.trailDots) text += " \u2026"
-      const item = { text, ...this.itemBox(rgba, width, j.box, tuning), confidence: Math.min(...j.parts.map(p => p.confidence)) }
+      const item = { text, ...this.itemBox(rgba, width, j.box, pageTuning), confidence: Math.min(...j.parts.map(p => p.confidence)) }
       items.push(item)
       leaderEnds.set(item, { lead: j.parts[0].dotsBefore, trail: j.trailDots })
     }
     if (leaderEnds.size) items = joinLeaderItems(items, leaderEnds)
-    if (tuning.postprocess) restoreBulletItems(items)
+    if (pageTuning.postprocess) restoreBulletItems(items)
     items.sort((a, b) => (a.y - b.y) || (a.x - b.x))
     return items
   }
@@ -358,7 +385,38 @@ export class OcrEngine {
     height: number,
     tuning: Readonly<OcrTuning>,
     stats?: OcrPageStats,
+    allowTiles = true,
   ): Promise<Box[]> {
+    const tiles = allowTiles ? planDetectionTiles(width, height, tuning.detLongSide) : [{ x: 0, y: 0, width, height }]
+    if (tiles.length === 1) {
+      const result = await this.detectRegion(rgba, width, height, tuning)
+      if (stats) stats.truncatedBoxes = (stats.truncatedBoxes ?? 0) + result.truncatedBoxes
+      return result.boxes
+    }
+
+    // Keep the whole-page pass as a recall anchor. Tiled detector inputs have
+    // different page context and can miss a title/banner that the global pass
+    // sees, so tiles contribute detections instead of replacing that pass.
+    const fullPage = { x: 0, y: 0, width, height }
+    const coarse = await this.detectRegion(rgba, width, height, tuning)
+    const detections = [{ tile: fullPage, boxes: coarse.boxes }]
+    let truncatedBoxes = coarse.truncatedBoxes
+    for (const tile of tiles) {
+      const pixels = cropRgba(rgba, width, tile)
+      const result = await this.detectRegion(pixels, tile.width, tile.height, tuning)
+      truncatedBoxes += result.truncatedBoxes
+      detections.push({ tile, boxes: result.boxes })
+    }
+    if (stats) stats.truncatedBoxes = (stats.truncatedBoxes ?? 0) + truncatedBoxes
+    return mergeDetectionTiles(detections)
+  }
+
+  private async detectRegion(
+    rgba: Uint8Array,
+    width: number,
+    height: number,
+    tuning: Readonly<OcrTuning>,
+  ): Promise<{ boxes: Box[]; truncatedBoxes: number }> {
     const ratio = tuning.detLongSide / Math.max(width, height)
     const dw = Math.max(32, Math.round((width * ratio) / 32) * 32)
     const dh = Math.max(32, Math.round((height * ratio) / 32) * 32)
@@ -386,7 +444,7 @@ export class OcrEngine {
     const probMap = out[this.det.outputNames[0]].data as Float32Array
 
     const rawBoxes = componentBoxes(probMap, dw, dh, tuning.detThresh, tuning.detBoxThresh)
-    if (stats) stats.truncatedBoxes = Math.max(0, rawBoxes.length - DET_MAX_BOXES)
+    const truncatedBoxes = Math.max(0, rawBoxes.length - DET_MAX_BOXES)
     const sx = width / dw
     const sy = height / dh
     const boxes: Box[] = []
@@ -402,7 +460,7 @@ export class OcrEngine {
       if (x2 - x1 < DET_MIN_SIZE || y2 - y1 < DET_MIN_SIZE) continue
       boxes.push({ x: x1, y: y1, w: x2 - x1, h: y2 - y1 })
     }
-    return boxes
+    return { boxes, truncatedBoxes }
   }
 
   // ─── rec ─────────────────────────────────────────────

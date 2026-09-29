@@ -16,7 +16,7 @@ import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { parseCharacterDict, getOcrModelStatus, getOcrModelProfile, normalizeOcrLanguage } from "../src/ocr/models.js"
 import { ctcDecode, componentBoxes, OcrEngine, DEFAULT_OCR_TUNING } from "../src/ocr/engine.js"
-import { runPdfOcr, MAX_OCR_PIXELS } from "../src/ocr/pdf-ocr.js"
+import { runPdfOcr, MAX_OCR_PIXELS, isCloserReadUseful } from "../src/ocr/pdf-ocr.js"
 import type { OcrProvider, ParseWarning } from "../src/types.js"
 
 describe("OCR 사전 파싱 (parseCharacterDict)", () => {
@@ -162,6 +162,13 @@ trailer << /Root 1 0 R >>`
 })
 
 describe("OCR resource bounds", () => {
+  it("does not run a second whole-page image OCR pass, but still re-reads small regions", () => {
+    const page = { x1: 0, y1: 0, x2: 1105, y2: 1875 }
+    const logo = { x1: 850, y1: 450, x2: 1080, y2: 950 }
+    assert.equal(isCloserReadUseful([page], 1105, 1875), false)
+    assert.equal(isCloserReadUseful([page, logo], 1105, 1875), true)
+  })
+
   it("dense detections preserve 1440 boxes and report loss beyond 3000", async () => {
     // Exercise detector postprocessing without loading model weights.
     const side = 320

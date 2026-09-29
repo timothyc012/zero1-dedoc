@@ -29,7 +29,7 @@
       "kind": "pptx",
       "source": "https://github.com/shbernal/ts-pptx/blob/master/test/read/fixtures/group-transform.pptx",
       "sha256": "492fa2a2b69ee5f9b6dc171242c93c0ebd0c4055209f21e779eb9bc318f4481d",
-      "assertion": "seven group labels preserved on both slides"
+      "assertion": "seven labels preserved once per slide; rendered left-to-right/top-to-bottom order matches parser order"
     },
     {
       "id": "pptx-table-merge-encoding",
@@ -46,6 +46,14 @@
       "source": "https://www.bundesregierung.de/resource/blob/974430/2420616/bc530bf3a13e787931fca1086688ff51/2026-04-14-erklaerung-deutsch-ukrianische-regierungskonsultationen-deutsch-data.pdf?download=1",
       "sha256": "5df4c195f5154120df9a8916802923d4eb65667be63152c7ba30a2bae4a76d86",
       "assertion": "14-page parse succeeds; title H1 and section H2"
+    },
+    {
+      "id": "bmf-tax-table-cell-gold",
+      "kind": "pdf-with-xlsx-cell-source",
+      "source": "local acquisition from the public BMF tax-table evaluation set",
+      "pdf_sha256": "1bbaae9366524c2830b52092b9e6a5f9b9bdb5a801402e48dd9e58d32385c4b2",
+      "workbook_sha256": "36dd814e82b1066493201069cee7c638f9e753e9ea77fc52fd00a8a7d7f64f80",
+      "assertion": "pages 1–2: all 47/47 and 50/50 visible cell rows plus projected merges match; pages 6–7 full right-panel cell/merge gold still fails"
     },
     {
       "id": "lidl-brochure",
@@ -92,6 +100,23 @@
       "source_pdf_sha256": "ee4f9deb3b5cff4cc181ea74fbffa4b339e26f6191dff1ec934f1fd6fbefe8a9",
       "scan_pdf_sha256": "ce198eeffd3c8d1e2c09ee00069220e193079d86f5a568f65f2e56f834150962",
       "language": "de"
+    },
+    {
+      "id": "lidl-page2-visual-anchors",
+      "source_pdf_sha256": "ee4f9deb3b5cff4cc181ea74fbffa4b339e26f6191dff1ec934f1fd6fbefe8a9",
+      "scan_pdf_sha256": "9003d51c22224b50f4ad481283f9dc1693d451a42f1c8afded11fd85aa86820c",
+      "rendered_page_png_sha256": "ca8ac5d98ec139bdf787e9243c91f19557128fccf75bb086c7ead0413a7098fb",
+      "page": 2,
+      "language": "de",
+      "gold_method": "30 critical content components checked against the rendered page, independently of the hidden text layer"
+    },
+    {
+      "id": "lidl-page2-upscaled-image-route-probe",
+      "derived_from_png_sha256": "ca8ac5d98ec139bdf787e9243c91f19557128fccf75bb086c7ead0413a7098fb",
+      "upscaled_1_5x_png_sha256": "c1b3c8882932dd76568e4ea2fa3d2d60d1a4c03a7d62311012a78ebefd7f7ec8",
+      "upscaled_2x_png_sha256": "5a0b08cd4d426c0ff0dd997e9ba4c42e8db8d62432c57fd73d93c7c88a32a2eb",
+      "language": "de",
+      "assertion": "direct PNG route scores 28/30 at 1.5x and 27/30 at 2x; same-source derived probes, not independent gold samples"
     }
   ]
 }
