@@ -51,6 +51,8 @@ With `--network none` and the bounded `parse-worker` protocol:
 - The German tax-table page parsed successfully with `Gemeindesteuern`,
   `Lohnsteuer`, and `1.449.637` present in the 5,686-character Markdown result;
   peak worker RSS was 125,431,808 bytes.
+- The bundled Korean `budget.xls` fixture parsed as `xls` with the `2025년 예산`
+  heading and HTML table rows intact; no warnings were emitted.
 - An image-only German scan returned the expected `OCR_FAILED` and `NEEDS_OCR`
   warnings because the lean evaluation image intentionally omits optional
   PDFium/OCR model packages. It did not download anything or silently claim
