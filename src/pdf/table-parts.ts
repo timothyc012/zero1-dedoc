@@ -497,8 +497,8 @@ export function mergeCrossPageTables(blocks: IRBlock[], pageHeights?: Map<number
     // joinClipParts 가 쪼개진 행·반복 머리 행 증거가 있을 때만 옮겨 잇는다 (여기서 옮김을 받으면 연달아 놓인 Q&A 상자가 12×5 로 이어진다)
     const px = TABLE_COLXS.get(prev.table), cx = TABLE_COLXS.get(curr.table)
     if (px && cx && !shiftedSame(px, cx, !CLIP_TABLES.has(prev.table) && !CLIP_TABLES.has(curr.table))) continue
-    // For ruled tables, geometry is necessary but not sufficient. Require a
-    // repeated header/caption or compatible data-column roles across the edge.
+    // For ruled tables, geometry is necessary but not sufficient. A role-only
+    // match (text, number, number) cannot distinguish data from a new header.
     if (ruledPair && !hasRuledContinuationEvidence(prev.table, curr.table)) continue
 
     // 다음 표 첫 행이 앞 표 첫 행과 같은 모양(칸마다 열·행 병합이 같고 세로 병합 칸을 품은 머리)인데 글이 다르면 새 표의 머리다
@@ -561,23 +561,10 @@ function startsIndependentTable(prev: IRTable, curr: IRTable): boolean {
   return leadingFullSpanTitles(curr).some(title => !prior.has(title))
 }
 
-/** Text/number/empty roles supply positive continuation evidence without language-specific labels. */
-function dataRowRoles(row: IRCell[]): string | null {
-  if (row.some(cell => cell.colSpan > 1)) return null
-  const roles = row.map(cell => {
-    const text = cell.text.trim()
-    if (!text) return "_"
-    return /^[+\-]?\d[\d.,\s%]*$/.test(text) ? "N" : "T"
-  })
-  return roles.filter(role => role !== "_").length >= 2 ? roles.join("") : null
-}
-
 function hasRuledContinuationEvidence(prev: IRTable, curr: IRTable): boolean {
   if (prev.cells[0] && curr.cells[0] && rowTextsEqual(prev.cells[0], curr.cells[0])) return true
   if (prev.caption && normalizedCellText(prev.caption) === normalizedCellText(curr.caption ?? "")) return true
-  const previous = [...prev.cells].reverse().map(dataRowRoles).find(Boolean)
-  const next = curr.cells.map(dataRowRoles).find(Boolean)
-  return !!previous && previous === next
+  return false
 }
 
 /**

@@ -210,15 +210,15 @@ describe("normalizeUndersegmentedTable", () => {
 // ─── 페이지 걸친 표 병합 ───────────────────────────────
 
 describe("mergeCrossPageTables", () => {
-  it("열 수 동일 + 좌우 경계 근접한 인접 페이지 표를 병합", () => {
+  it("열 수와 좌우 경계만 같은 인접 페이지 표는 별도 표로 유지", () => {
     const blocks: IRBlock[] = [
       tableBlock([["구분", "내용"], ["1", "가"]], 1),
       tableBlock([["2", "나"], ["3", "다"]], 2),
     ]
     mergeCrossPageTables(blocks)
-    assert.equal(blocks.length, 1)
-    assert.equal(blocks[0].table!.rows, 4)
-    assert.equal(blocks[0].table!.cells[3][1].text, "다")
+    assert.equal(blocks.length, 2)
+    assert.equal(blocks[1].table!.rows, 2)
+    assert.equal(blocks[1].table!.cells[1][1].text, "다")
   })
 
   it("반복 헤더 행 제거", () => {

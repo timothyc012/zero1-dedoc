@@ -146,7 +146,20 @@ describe("mergeCrossPageTables — 클립 표 쪽 넘김 판정", () => {
     mergeCrossPageTables(blocks, PAGE_H)
     assert.equal(blocks.length, 2)
   })
-  it("되풀이된 제목·열 이름표와 같은 데이터 열 스키마는 이어진 표다", () => {
+  it("같은 TNN 열 역할만으로 다른 연도 머리행 표를 잇지 않는다", () => {
+    const xs = [55, 200, 350, 500]
+    const line = (table: IRTable, page: number): IRBlock => {
+      TABLE_COLXS.set(table, xs)
+      return { type: "table", table, pageNumber: page, bbox: { page, x: 55, y: 40, width: 445, height: 730 } }
+    }
+    const product = grid(2, 3, [[0, 0, "Product"], [0, 1, "2025"], [0, 2, "2026"], [1, 0, "A"], [1, 1, "1"], [1, 2, "2"]])
+    const city = grid(2, 3, [[0, 0, "City"], [0, 1, "2026"], [0, 2, "2027"], [1, 0, "Berlin"], [1, 1, "3"], [1, 2, "4"]])
+    const blocks = [line(product, 1), line(city, 2)]
+    mergeCrossPageTables(blocks, PAGE_H)
+    assert.equal(blocks.length, 2)
+    assert.equal(blocks[1].table!.cells[0][0].text, "City")
+  })
+  it("되풀이된 제목·열 이름표는 잇고 모호한 데이터 행만으로는 잇지 않는다", () => {
     const xs = [55, 200, 350, 500]
     const line = (table: IRTable, page: number): IRBlock => {
       TABLE_COLXS.set(table, xs)
@@ -161,7 +174,7 @@ describe("mergeCrossPageTables — 클립 표 쪽 넘김 판정", () => {
     const continuation = grid(1, 3, [[0, 0, "Gamma"], [0, 1, "5"], [0, 2, "6"]])
     const plain = [line(grid(2, 3, [[0, 0, "Name"], [0, 1, "2025"], [0, 2, "2026"], [1, 0, "Alpha"], [1, 1, "1"], [1, 2, "2"]]), 1), line(continuation, 2)]
     mergeCrossPageTables(plain, PAGE_H)
-    assert.equal(plain.length, 1)
+    assert.equal(plain.length, 2)
   })
   it("두 쪽 모두 단위 행으로 시작하면 열이 같아도 별도 표로 둔다", () => {
     const make = (name: string, page: number): IRBlock => {

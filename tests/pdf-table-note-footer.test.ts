@@ -66,6 +66,17 @@ it("물리적 쪽 번호와 일정한 차이로 증가하는 러닝 번호는 �
   }))
   assert.deepEqual(removeHeaderFooterBlocks(numbered, hs, []), [0, 1, 2])
 })
+it("독일어 S.와 영어 p. 쪽번호 약어도 성겨도 제거한다", () => {
+  const pages = [2, 8, 14]
+  const hs = new Map(pages.map(page => [page, 830] as [number, number]))
+  for (const cue of ["S.", "p."]) {
+    const blocks: IRBlock[] = pages.map(page => ({
+      type: "paragraph", text: `${cue} ${page + 10}`, pageNumber: page,
+      bbox: { page, x: 60, y: 20, width: 90, height: 12 },
+    }))
+    assert.deepEqual(removeHeaderFooterBlocks(blocks, hs, []), [0, 1, 2])
+  }
+})
 it("쪽 번호가 바뀌며 되풀이되는 바닥글은 드문드문해도 러닝 푸터다", () => {
   // hwp3-sample11 "DCT Technology Inc.\t55" — 여러 쪽에선 표에 흡수돼 따로 선 등장이 드문드문하다
   const pages = [6, 20, 41, 55]

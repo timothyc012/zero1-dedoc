@@ -375,7 +375,8 @@ describe("dropCoarseClipGrids — 다열 선 격자와 겹친 전폭 클립 조�
   const ruled = colXs.slice(1, -1).map(x => ({ x1: x, x2: x, y1: 42, y2: 512, lineWidth: 1 }))
 
   it("내부 세로 괘선이 관통하는 47×7 표는 거친 클립 조각보다 우선한다", () => {
-    const bands = [clip(300, 410), clip(100, 270), clip(475, 550, [55.4, 260, 475, 685, 785.4]), clip(42, 52)]
+    const top = { ...clip(472, 550, [55.4, 260, 475, 685, 785.4]), rowYs: [550, 512, 472] }
+    const bands = [clip(300, 410), clip(100, 270), top, clip(42, 62)]
     // 병합된 머리·끝 행의 내부 괘선은 끊겨도 표 전체에서 여섯 열 경계가 확인된다.
     const bodyRules = ruled.map(v => ({ ...v, y1: 60, y2: 470 }))
     assert.deepEqual(dropCoarseClipGrids(bands, [line], bodyRules), [])
@@ -389,5 +390,21 @@ describe("dropCoarseClipGrids — 다열 선 격자와 겹친 전폭 클립 조�
     assert.deepEqual(dropCoarseClipGrids([band], [line], ruled.map(v => ({ ...v, y2: 330 }))).length, 1)
     assert.deepEqual(dropCoarseClipGrids([{ ...band, bbox: { ...band.bbox, x1: 110 } }], [line], ruled).length, 1)
     assert.deepEqual(dropCoarseClipGrids([clip(42, 512)], [line], ruled).length, 1)
+  })
+
+  it("본문 표의 아래쪽에 있는 별도 전폭 메모 클립은 전역 괘선만으로 삭제하지 않는다", () => {
+    const separateNote = clip(75, 85)
+    const bodyRules = ruled.map(v => ({ ...v, y1: 100, y2: 470 }))
+    assert.deepEqual(dropCoarseClipGrids([separateNote], [line], bodyRules), [separateNote])
+  })
+
+  it("괘선이 끊긴 합계행은 기존 열에 정렬된 숫자 텍스트가 있으면 선 격자에 맡긴다", () => {
+    const total = clip(42, 54)
+    const bodyRules = ruled.map(v => ({ ...v, y1: 60, y2: 470 }))
+    const values = colXs.slice(0, -1).map((x, i) => ({
+      text: i === 0 ? "Total" : String(i * 100), x: x + 4, y: 46, w: 24, h: 5,
+    }))
+    assert.deepEqual(dropCoarseClipGrids([total], [line], bodyRules, values), [])
+    assert.deepEqual(dropCoarseClipGrids([total], [line], bodyRules, values.slice(0, 2)), [total])
   })
 })

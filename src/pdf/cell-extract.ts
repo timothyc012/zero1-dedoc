@@ -7,7 +7,7 @@
  * https://github.com/opendataloader-project/opendataloader-pdf
  */
 
-import type { LineSegment, TableGrid, ExtractedCell } from "./line-types.js"
+import type { LineSegment, TableGrid, ExtractedCell, TextItem } from "./line-types.js"
 import { VERTEX_MERGE_FACTOR } from "./line-types.js"
 
 // ─── 셀 구조 추출 (Vertex 기반 정밀 병합 셀 감지) ─────
@@ -24,6 +24,7 @@ export function extractCells(
   grid: TableGrid,
   horizontals: LineSegment[],
   verticals: LineSegment[],
+  items: Pick<TextItem, "text" | "x" | "y" | "w" | "h">[] = [],
 ): ExtractedCell[] {
   const { rowYs, colXs } = grid
   const numRows = rowYs.length - 1
@@ -35,6 +36,31 @@ export function extractCells(
   const vBorders: boolean[][] = Array.from({ length: numRows },
     (_, r) => Array.from({ length: numCols + 1 },
       (_, c) => hasVerticalLine(verticals, colXs[c], rowYs[r], rowYs[r + 1], grid.vertexRadius)))
+  const physicallyRuledRows = vBorders.map(borders => borders.slice(1, -1).filter(Boolean).length >= numCols - 2)
+
+  // Some PDFs omit the vertical strokes in a final numeric row while keeping
+  // every value in the columns established above it. Restore only rows with
+  // text inside every column and a nearby ruled row in the same grid. Sparse
+  // full-width headings and notes retain their intended colSpan.
+  if (numCols >= 4 && items.length) {
+    for (let r = 1; r < numRows; r++) {
+      if (vBorders[r].slice(1, -1).some(Boolean)) continue
+      const priorRuled = physicallyRuledRows.slice(Math.max(0, r - 3), r).some(Boolean)
+      if (!priorRuled) continue
+      const occupied = new Set<number>()
+      let numeric = 0
+      for (const item of items) {
+        const cy = item.y + item.h / 2
+        if (!item.text.trim() || cy > rowYs[r] + 1 || cy < rowYs[r + 1] - 1) continue
+        const col = colXs.findIndex((x, i) => i < numCols && item.x >= x - 2 && item.x + item.w <= colXs[i + 1] + 2)
+        if (col < 0 || occupied.has(col)) continue
+        occupied.add(col)
+        if (/^[+-]?(?:\d[\d.,\s]*|[xX–—-])%?$/.test(item.text.trim())) numeric++
+      }
+      if (occupied.size !== numCols || numeric < Math.ceil((numCols - 1) / 2)) continue
+      for (let c = 1; c < numCols; c++) vBorders[r][c] = true
+    }
+  }
 
   // hBorders[r][c] = rowYs[r]에 col c 구간의 수평선이 있는지
   const hBorders: boolean[][] = Array.from({ length: numRows + 1 },
@@ -135,4 +161,3 @@ function hasHorizontalLine(
   }
   return false
 }
-
