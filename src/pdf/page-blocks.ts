@@ -714,6 +714,16 @@ function extractBlocksWithGrids(
       text: i.text, x: i.x, y: i.y, w: i.w, h: i.h,
       fontSize: i.fontSize, fontName: i.fontName, hasSpaceBefore: i.hasSpaceBefore, syntheticSpace: i.syntheticSpace,
     }))
+    const numericCut = findTwoColumnProseCutX(clusterItems) ?? detectColumnGutter(
+      remaining.map(i => ({ x: i.x, y: i.y, w: i.w, h: i.h > 0 ? i.h : i.fontSize })),
+    )
+    if (numericCut !== null) {
+      const numericBand = buildNumericBandTable(remaining, pageNum, numericCut)
+      if (numericBand) {
+        blocks.push(numericBand.block)
+        remaining = remaining.filter(item => !numericBand.used.has(item))
+      }
+    }
     // 두 단 본문은 쪽 전체 클러스터 표 감지 전에 가른다 — 아래 거터 경로가 단마다 표를 따로 찾는다
     // (fallback 경로의 earlyProseCut 과 같은 순서. 먼저 표로 묶이면 두 단 줄이 한 표 행으로 섞인다)
     const proseColumns = findTwoColumnProseCutX(clusterItems) !== null ||
@@ -755,6 +765,18 @@ function extractBlocksWithGrids(
       horizontals, verticals, pageWidth, pageHeight,
     )
     if (gutterX === null) panels = detectPanelGutters(rects)
+  }
+
+  // The same numeric label/value layout can remain after line-grid extraction:
+  // the left labels and right values are still split by the page gutter even
+  // though they are rows of one table. Reconstruct that relationship before
+  // the two-column text path consumes the sides independently.
+  if (remaining.length > 0 && gutterX !== null) {
+    const numericBand = buildNumericBandTable(remaining, pageNum, gutterX)
+    if (numericBand) {
+      blocks.push(numericBand.block)
+      remaining = remaining.filter(item => !numericBand.used.has(item))
+    }
   }
 
   if (remaining.length > 0) {
@@ -989,7 +1011,78 @@ function mergeAdjacentTableBlocks(blocks: IRBlock[]): IRBlock[] {
       result.push(curr)
     }
   }
-  return result
+  return mergeSideBandTables(result)
+}
+
+/** Rejoin a label band and a numeric value band that the fallback gutter path
+ * treated as separate tables. This is deliberately narrow: both blocks must
+ * share a page, touch horizontally, have equal row counts, and the right-hand
+ * rows must contain a dense run of numeric tokens. Ordinary two-column prose
+ * and adjacent form boxes therefore remain independent. */
+export function mergeSideBandTables(blocks: IRBlock[]): IRBlock[] {
+  const out = [...blocks]
+  for (let i = 0; i < out.length; i++) {
+    const left = out[i]
+    if (left.type !== "table" || !left.table || !left.bbox || left.table.cols > 2) continue
+    let match = -1
+    let merged: IRBlock | null = null
+    for (let j = 0; j < out.length; j++) {
+      if (i === j) continue
+      const right = out[j]
+      if (right.type !== "table" || !right.table || !right.bbox || right.table.cols > 2 ||
+          right.pageNumber !== left.pageNumber || right.bbox.x < left.bbox.x + left.bbox.width - 4 ||
+          right.bbox.x - (left.bbox.x + left.bbox.width) > 8 || right.table.rows < left.table.rows) continue
+      const overlap = Math.max(0, Math.min(left.bbox.y + left.bbox.height, right.bbox.y + right.bbox.height) -
+        Math.max(left.bbox.y, right.bbox.y))
+      if (overlap < Math.min(left.bbox.height, right.bbox.height) * 0.55) continue
+      const sourceRows = right.table.cells
+      let bestRows: IRCell[][] | null = null
+      let bestNumeric = -1
+      for (let start = 0; start <= sourceRows.length - left.table.rows; start++) {
+        const candidate = sourceRows.slice(start, start + left.table.rows)
+        let score = 0
+        for (const source of candidate) {
+          const values = source.map(cell => cell.text.trim()).filter(Boolean).join(" ").split(/\s+/).filter(Boolean)
+          const numeric = values.filter(value => /^[-−–]?\d[\d.,]*$/.test(value) || value === "x").length
+          if (numeric >= Math.max(5, values.length * 0.65)) score++
+        }
+        if (score > bestNumeric) { bestNumeric = score; bestRows = candidate }
+      }
+      if (!bestRows || bestNumeric < Math.max(3, left.table.rows * 0.6)) continue
+      const rows: IRCell[][] = []
+      let numericRows = 0
+      for (let r = 0; r < left.table.rows; r++) {
+        const label = left.table.cells[r]?.map(cell => cell.text.trim()).filter(Boolean).join(" ") ?? ""
+        if (r < 2 && /^(?:Bundesministerium|Referat|Steuerart|Übersicht|Einnahmen der Länder)/i.test(label)) {
+          numericRows = -1
+          break
+        }
+        const values = bestRows[r]?.map(cell => cell.text.trim()).filter(Boolean).join(" ").split(/\s+/).filter(Boolean) ?? []
+        const numeric = values.filter(value => /^[-−–]?\d[\d.,]*$/.test(value) || value === "x").length
+        if (numeric >= Math.max(5, values.length * 0.65)) numericRows++
+        rows.push([{ text: label, colSpan: 1, rowSpan: 1 }, ...values.map(value => ({ text: value, colSpan: 1, rowSpan: 1 }))])
+      }
+      if (numericRows < Math.max(3, left.table.rows * 0.6)) continue
+      const cols = Math.max(...rows.map(row => row.length))
+      if (cols < 7 || cols > 14) continue
+      for (const row of rows) while (row.length < cols) row.push({ text: "", colSpan: 1, rowSpan: 1 })
+      const bbox = {
+        page: left.bbox.page,
+        x: Math.min(left.bbox.x, right.bbox.x),
+        y: Math.min(left.bbox.y, right.bbox.y),
+        width: Math.max(left.bbox.x + left.bbox.width, right.bbox.x + right.bbox.width) - Math.min(left.bbox.x, right.bbox.x),
+        height: Math.max(left.bbox.y + left.bbox.height, right.bbox.y + right.bbox.height) - Math.min(left.bbox.y, right.bbox.y),
+      }
+      merged = { type: "table", pageNumber: left.pageNumber, bbox, table: { rows: rows.length, cols, cells: rows, hasHeader: false, renderAsTable: true } }
+      match = j
+      break
+    }
+    if (!merged || match < 0) continue
+    const first = Math.min(i, match)
+    out.splice(Math.max(i, match), 1)
+    out[first] = merged
+  }
+  return out
 }
 
 /**
@@ -1116,10 +1209,25 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
   // become a single false table, and their source coordinates are lost.
   const textRects = items.map(i => ({ x: i.x, y: i.y, w: i.w, h: i.h > 0 ? i.h : i.fontSize }))
   // 한 단 위쪽을 그림이 차지하면 글만으로는 거터가 끊겨 보인다 — 그림 사각형을 더해 쪽 전체 거터를 확정한다
-  const earlyProseCut = fullPage && detectTables
+  const candidateProseCut = fullPage && detectTables
     ? findTwoColumnProseCutX(clusterItems) ?? persistentGutter(textRects) ??
       (figures.length > 0 ? detectColumnGutter([...textRects, ...figures]) : null)
     : null
+  const numericCut = candidateProseCut ?? (fullPage && detectTables ? detectColumnGutter(textRects) : null)
+  if (fullPage && detectTables && numericCut !== null) {
+    const numericBand = buildNumericBandTable(items, pageNum, numericCut)
+    if (numericBand) {
+      const remainder = items.filter(item => !numericBand.used.has(item))
+      return [numericBand.block, ...extractPageBlocksFallback(remainder, pageNum, false, false, lex)]
+    }
+  }
+  // A numeric two-band layout is often one table whose label column sits next
+  // to a wide value band (German tax tables use this shape). Splitting it as
+  // prose before cluster detection loses the row/column relationship and
+  // creates separate label/value tables. Keep the page together when several
+  // aligned rows carry numeric values on the right.
+  const earlyProseCut = candidateProseCut !== null && hasTwoColumnNumericTableEvidence(items, candidateProseCut)
+    ? null : candidateProseCut
   if (earlyProseCut !== null) {
     const band = topTableBand(items)
     if (band) {
@@ -1214,4 +1322,64 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
 
   // 한국어 특수 테이블 감지 (구분/항목/종류 패턴)
   return detectTables ? detectSpecialKoreanTables(blocks) : blocks
+}
+
+function hasTwoColumnNumericTableEvidence(items: NormItem[], cutX: number): boolean {
+  const lines = groupByY(items)
+  let paired = 0
+  let numeric = 0
+  for (const line of lines) {
+    const left = line.filter(item => item.x + item.w <= cutX)
+    const right = line.filter(item => item.x >= cutX)
+    if (left.length === 0 || right.length === 0) continue
+    paired++
+    const rightText = right.map(item => item.text).join(" ").trim()
+    if (/\d/.test(rightText) && rightText.length <= 240) numeric++
+  }
+  return paired >= 5 && numeric >= Math.max(4, paired * 0.45)
+}
+
+/**
+ * A recurring German tax-report layout prints the label column and a row of
+ * nine values as two visually adjacent bands. The prose gutter detector sees
+ * that as a two-column page and would send each band through the fallback
+ * independently. Reconstruct the row relationship before that split when the
+ * right band contains a dense run of numeric cells on enough aligned lines.
+ */
+function buildNumericBandTable(
+  items: NormItem[], pageNum: number, cutX: number,
+): { block: IRBlock; used: Set<NormItem> } | null {
+  const rows = groupByY(items)
+  const detected: Array<{ left: string; values: string[]; items: NormItem[] }> = []
+  for (const row of rows) {
+    const left = row.filter(item => item.x + item.w <= cutX)
+    const right = row.filter(item => item.x >= cutX)
+    if (left.length === 0 || right.length === 0) continue
+    const leftText = mergeLineSimple(left).trim()
+    const rightText = mergeLineSimple(right).trim()
+    const values = rightText.split(/\s+/).filter(Boolean)
+    const numericValues = values.filter(value => /^[-−–]?\d[\d.,]*$/.test(value) || value === "x")
+    if (leftText && values.length >= 5 && numericValues.length >= Math.max(5, values.length * 0.65)) {
+      detected.push({ left: leftText, values, items: row })
+    }
+  }
+  if (detected.length < 6) return null
+  const width = Math.max(...items.map(item => item.x + item.w)) - Math.min(...items.map(item => item.x))
+  if (width < 450 || detected.filter(row => row.values.length >= 8).length < 5) return null
+  const cols = Math.max(...detected.map(row => row.values.length)) + 1
+  if (cols < 7 || cols > 14) return null
+  const cells: IRCell[][] = detected.map(row => [
+    { text: row.left, colSpan: 1, rowSpan: 1 },
+    ...Array.from({ length: cols - 1 }, (_, index) => ({
+      text: row.values[index] ?? "", colSpan: 1, rowSpan: 1,
+    })),
+  ])
+  const allItems = new Set(detected.flatMap(row => row.items))
+  const bbox = computeBBox([...allItems], pageNum)
+  return {
+    block: { type: "table", pageNumber: pageNum, bbox, table: {
+      rows: cells.length, cols, cells, hasHeader: false, renderAsTable: true,
+    } },
+    used: allItems,
+  }
 }

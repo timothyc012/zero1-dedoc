@@ -72,6 +72,14 @@ evaluation variants; neither changes the default parser route. An English
 image-only fixture also returned `OCR_APPLIED` and retained
 `HORIZON CLEAN AVIATION 2026` and `TOPIC CALL BUDGET`.
 
+The full 11-page BMF PDF was re-downloaded from the documented public URL and
+matched its SHA-256 `1bbaae9366524c2830b52092b9e6a5f9b9bdb5a801402e48dd9e58d32385c4b2`.
+The German smoke now checks pages 1–3 (47×7, 50×7, 44×7), pages 5 and 9
+(31×11), and the reconstructed label/value bands on pages 6, 7, 10, and 11
+(8×10 or 7×10). The same run retained the Lohnsteuer and final-tax gold rows;
+the 29-page solvency-form PDF still retained all five form titles and its
+six-column table.
+
 Cross-page ruled tables now require a repeated header or matching caption before merging. This prevents unrelated tables with the same geometry and numeric column roles from merging. A genuine continuation without either cue may remain split; it needs a separate labeled test case before adding a looser rule.
 
 ## Korean and OCR coverage

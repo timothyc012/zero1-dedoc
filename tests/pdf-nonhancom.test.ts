@@ -13,9 +13,11 @@ import type { TableGrid } from "../src/pdf/line-types.js"
 import { parsePdfDocument } from "../src/pdf/parser.js"
 import { extractLines, chainShortSegments } from "../src/pdf/line-extract.js"
 import { detectClusterTables, type ClusterItem } from "../src/pdf/cluster-detector.js"
+import { mergeSideBandTables } from "../src/pdf/page-blocks.js"
 import { cellTextToString, mapTextToCells } from "../src/pdf/cell-text.js"
 import { cleanPdfText } from "../src/pdf/text-clean.js"
 import { extractPageBlocksWithLines } from "../src/pdf/page-blocks.js"
+import type { IRBlock } from "../src/types.js"
 
 const ti = (str: string, x: number, y: number, width: number, size: number): PdfTextItem =>
   ({ str, transform: [size, 0, 0, size, x, y], width, height: size })
@@ -423,5 +425,33 @@ describe("dropCoarseClipGrids — 다열 선 격자와 겹친 전폭 클립 조�
     assert.deepEqual(dropCoarseClipGrids([total], [report], [], values), [total])
     const bodyRules = cols.slice(1, -1).map(x => ({ x1: x, x2: x, y1: 80, y2: 500, lineWidth: 1 }))
     assert.deepEqual(dropCoarseClipGrids([total], [report], bodyRules, values), [])
+  })
+})
+
+describe("mergeSideBandTables — numeric label/value bands", () => {
+  const table = (texts: string[][], x: number, y: number, width: number): IRBlock => ({
+    type: "table", pageNumber: 6, bbox: { page: 6, x, y, width, height: texts.length * 12 },
+    table: { rows: texts.length, cols: texts[0].length, hasHeader: false, cells: texts.map(row => row.map(text => ({ text, colSpan: 1, rowSpan: 1 }))) },
+  })
+
+  it("joins aligned labels and nine numeric values into one table", () => {
+    const labels = table([["Lohnsteuer"], ["Kindergeld"], ["Zerlegung"]], 60, 100, 180)
+    const values = table([
+      ["1 2 3 4 5 6 7 8 9"],
+      ["-1 0 0 0 0 0 0 0 -1"],
+      ["10 20 30 40 50 60 70 80 90"],
+    ], 242, 100, 540)
+    const merged = mergeSideBandTables([labels, values])
+    assert.equal(merged.length, 1)
+    assert.equal(merged[0].table?.cols, 10)
+    assert.equal(merged[0].table?.cells[2][9].text, "90")
+  })
+
+  it("does not join prose or mismatched row counts", () => {
+    const labels = table([["Title"], ["Body"], ["End"]], 60, 100, 180)
+    const prose = table([["this is prose"], ["with words"], ["and more"]], 242, 100, 540)
+    const short = table([["1 2 3 4 5 6 7 8 9"]], 242, 100, 540)
+    assert.equal(mergeSideBandTables([labels, prose]).length, 2)
+    assert.equal(mergeSideBandTables([labels, short]).length, 2)
   })
 })
