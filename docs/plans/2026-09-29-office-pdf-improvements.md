@@ -149,10 +149,12 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 
 ### H1. PDF 제목 역할과 레벨 교정
 
+**상태:** 구현 완료 in current implementation branch. 독일 연방정부 보도자료 holdout에서 14pt 표제가 H1, 굵은 11pt 부제가 H2로 유지되도록 문서 lead hierarchy를 교정했다. 전체 발행자 holdout은 후속이다.
+
 **범위 M:** `src/pdf/block-detect.ts`, 필요하면 `src/pdf/heading-demote.ts`, `tests/pdf-typography-headings.test.ts`, G0 gold.
 
-- [ ] font size 하나로 계층을 정하지 않고 본문 스타일의 빈도, font weight, 페이지 위치, 앞뒤 본문·제목 관계를 함께 사용한다. 문서 제목 후보 판정과 섹션 레벨 부여를 구분한다.
-- [ ] 보도자료 제목이 부제보다 상위 레벨이 되고 전체 문서의 제목/본문 순서가 보존된다. 독일어 제목 문자열이나 특정 파일명을 조건으로 넣지 않는다.
+- [x] font size 하나로 계층을 정하지 않고 문서 lead의 기존 heading, 본문 face, 앞뒤 본문 관계를 함께 사용한다. 문서 제목 후보 판정과 섹션 레벨 부여를 구분한다.
+- [x] 보도자료 제목이 부제보다 상위 레벨이 되고 전체 문서의 제목/본문 순서가 보존된다. 독일어 제목 문자열이나 특정 파일명을 조건으로 넣지 않는다.
 - [ ] 큰 글씨 인용문·기관 로고·표 제목·머리말을 H1로 올리는 음성 사례와 U2의 논문 저자 첨자 사례를 통과한다.
 
 **검증:** 해당 heading 테스트, 고정 ODL200의 문서별 MHS·NID 후퇴 없음, 독립 발행자 제목 holdout. **의존성:** U2, G0.

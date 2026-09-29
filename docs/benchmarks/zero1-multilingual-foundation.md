@@ -80,6 +80,11 @@ The German smoke now checks pages 1–3 (47×7, 50×7, 44×7), pages 5 and 9
 the 29-page solvency-form PDF still retained all five form titles and its
 six-column table.
 
+The frozen German federal press-release PDF was also re-run after the heading
+fix. Its lead now emits `Kanzler Merz zur Situation im Nahen Osten` as H1 and
+`Der Sprecher der Bundesregierung, Stefan Kornelius, teilt mit:` as H2; the
+following body remains paragraph text.
+
 Cross-page ruled tables now require a repeated header or matching caption before merging. This prevents unrelated tables with the same geometry and numeric column roles from merging. A genuine continuation without either cue may remain split; it needs a separate labeled test case before adding a looser rule.
 
 ## Korean and OCR coverage
