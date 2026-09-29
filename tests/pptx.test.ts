@@ -49,4 +49,70 @@ describe("PPTX parser", () => {
     assert.ok(result.blocks.some(block => block.table?.cells[0]?.[0]?.colSpan === 2))
     assert.ok(result.warnings?.some(warning => warning.code === "UNSUPPORTED_ELEMENT" && /image/.test(warning.message)))
   })
+
+  it("honors slide ranges for library, CLI, worker, and MCP parse_pages", async () => {
+    const result = await parse(await makePptx(), { pages: "2" })
+    assert.equal(result.success, true)
+    if (!result.success) return
+    assert.equal(result.pageCount, 2)
+    assert.ok(result.blocks.every(block => block.pageNumber === 2))
+    assert.match(result.markdown, /Conclusion/)
+    assert.doesNotMatch(result.markdown, /Quarterly Report|Revenue increased|Speaker note/)
+  })
+
+  it("uses DrawingML grid columns without counting hMerge/vMerge continuation cells twice", async () => {
+    const zip = await JSZip.loadAsync(await makePptx())
+    const tc = (text: string, attrs = "") => `<a:tc ${attrs}><a:txBody><a:p><a:r><a:t>${text}</a:t></a:r></a:p></a:txBody></a:tc>`
+    const table = `<a:tbl><a:tblGrid><a:gridCol/><a:gridCol/><a:gridCol/></a:tblGrid>
+      <a:tr>${tc("merged",'rowSpan="2" gridSpan="2"')}${tc("",'hMerge="1" rowSpan="2"')}${tc("right")}</a:tr>
+      <a:tr>${tc("",'vMerge="1" gridSpan="2"')}${tc("",'hMerge="1" vMerge="1"')}${tc("below")}</a:tr>
+      <a:tr>${tc("left")}${tc("middle")}${tc("tail")}</a:tr></a:tbl>`
+    zip.file("ppt/slides/slide1.xml", `<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:cSld><p:spTree><p:graphicFrame><a:graphic><a:graphicData>${table}</a:graphicData></a:graphic></p:graphicFrame></p:spTree></p:cSld></p:sld>`)
+    const result = await parse(await zip.generateAsync({ type: "arraybuffer" }))
+    assert.equal(result.success, true)
+    if (!result.success) return
+    const actual = result.blocks.find(block => block.type === "table" && block.pageNumber === 1)?.table
+    assert.ok(actual)
+    assert.deepEqual([actual.rows, actual.cols], [3, 3])
+    assert.deepEqual([actual.cells[0][0].text, actual.cells[0][0].rowSpan, actual.cells[0][0].colSpan], ["merged", 2, 2])
+    assert.equal(actual.cells[0][2].text, "right")
+    assert.equal(actual.cells[1][2].text, "below")
+    assert.equal(actual.cells[2][2].text, "tail")
+  })
+
+  it("keeps paragraph boundaries inside a merged table cell", async () => {
+    const zip = await JSZip.loadAsync(await makePptx())
+    const path = "ppt/slides/slide1.xml"
+    const xml = await zip.file(path)!.async("text")
+    zip.file(path, xml.replace("<a:t>Metric</a:t></a:r></a:p>", "<a:t>Metric</a:t></a:r></a:p><a:p><a:r><a:t>Label</a:t></a:r></a:p>"))
+    const result = await parse(await zip.generateAsync({ type: "arraybuffer" }))
+    assert.equal(result.success, true)
+    if (!result.success) return
+    const table = result.blocks.find(block => block.type === "table")?.table
+    assert.equal(table?.cells[0][0].text, "Metric\nLabel")
+  })
+
+  it("uses transformed positions for text inside a horizontally flipped group", async () => {
+    const zip = await JSZip.loadAsync(await makePptx())
+    const shape = (text: string, x: number) => `<p:sp><p:nvSpPr><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${x}" y="0"/><a:ext cx="100000" cy="100000"/></a:xfrm></p:spPr><p:txBody><a:p><a:r><a:t>${text}</a:t></a:r></a:p></p:txBody></p:sp>`
+    const group = `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="1" name="flipped"/></p:nvGrpSpPr><p:grpSpPr><a:xfrm flipH="1"><a:off x="0" y="0"/><a:ext cx="400000" cy="200000"/><a:chOff x="0" y="0"/><a:chExt cx="400000" cy="200000"/></a:xfrm></p:grpSpPr>${shape("Right visually",50000)}${shape("Left visually",250000)}</p:grpSp>`
+    zip.file("ppt/slides/slide1.xml", `<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:cSld><p:spTree>${group}</p:spTree></p:cSld></p:sld>`)
+    const result = await parse(await zip.generateAsync({ type: "arraybuffer" }), { pages: "1" })
+    assert.equal(result.success, true)
+    if (!result.success) return
+    assert.deepEqual(result.blocks.map(block => block.text).filter(text => text?.includes("visually")), ["Left visually", "Right visually"])
+  })
+
+  it("excludes the notes slide-number placeholder from speaker notes", async () => {
+    const zip = await JSZip.loadAsync(await makePptx())
+    const path = "ppt/notesSlides/notesSlide1.xml"
+    const xml = await zip.file(path)!.async("text")
+    const marker = `<p:sp><p:nvSpPr><p:nvPr><p:ph type="sldNum"/></p:nvPr></p:nvSpPr><p:txBody><a:p><a:r><a:t>1</a:t></a:r></a:p></p:txBody></p:sp>`
+    zip.file(path, xml.replace("</p:spTree>", `${marker}</p:spTree>`))
+    const result = await parse(await zip.generateAsync({ type: "arraybuffer" }))
+    assert.equal(result.success, true)
+    if (!result.success) return
+    const note = result.blocks.find(block => block.text?.includes("Speaker note"))
+    assert.equal(note?.text, "Speaker note")
+  })
 })

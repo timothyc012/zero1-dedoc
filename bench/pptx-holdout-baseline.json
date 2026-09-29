@@ -1,0 +1,362 @@
+{
+  "schema_version": "zero1-pptx-holdout-result.v1",
+  "parser_revision": "e87a6589668e230edbb3c82917a29136acfa9d3f",
+  "documents": [
+    {
+      "id": "ffc-pptx",
+      "sha256": "9fc6795c961c622a9017a5843e54d367e2e9dc2e36f05c9f0bbb9dfa938e82b1",
+      "slides": 1,
+      "sourceParagraphs": 1,
+      "text": {
+        "totalUnits": 1,
+        "presentUnits": 1,
+        "orderedUnits": 1,
+        "exactUnitRecallWeighted": 1
+      },
+      "tableShapes": [],
+      "firstCellSpans": [],
+      "warnings": [],
+      "visualLabels": [],
+      "checks": {
+        "slides": true,
+        "sourceParagraphs": true,
+        "textPresence": true,
+        "textOrder": true,
+        "visualLabels": true,
+        "tableShapes": true,
+        "mergeSpans": true,
+        "warnings": true,
+        "anchors": true,
+        "chartLimitation": true,
+        "speakerNotes": true,
+        "imageLimitation": true
+      },
+      "passed": true
+    },
+    {
+      "id": "group-transform",
+      "sha256": "492fa2a2b69ee5f9b6dc171242c93c0ebd0c4055209f21e779eb9bc318f4481d",
+      "slides": 2,
+      "sourceParagraphs": 16,
+      "text": {
+        "totalUnits": 16,
+        "presentUnits": 16,
+        "orderedUnits": 16,
+        "exactUnitRecallWeighted": 1
+      },
+      "tableShapes": [],
+      "firstCellSpans": [],
+      "warnings": [],
+      "visualLabels": [
+        {
+          "slide": 1,
+          "label": "rot30",
+          "positions": [
+            {
+              "slide": 1,
+              "index": 1,
+              "count": 1
+            },
+            {
+              "slide": 2,
+              "index": 1,
+              "count": 1
+            }
+          ]
+        },
+        {
+          "slide": 2,
+          "label": "flipH",
+          "positions": [
+            {
+              "slide": 1,
+              "index": 2,
+              "count": 1
+            },
+            {
+              "slide": 2,
+              "index": 2,
+              "count": 1
+            }
+          ]
+        },
+        {
+          "slide": 3,
+          "label": "flipV",
+          "positions": [
+            {
+              "slide": 1,
+              "index": 3,
+              "count": 1
+            },
+            {
+              "slide": 2,
+              "index": 3,
+              "count": 1
+            }
+          ]
+        },
+        {
+          "slide": 4,
+          "label": "rot330-flipHV",
+          "positions": [
+            {
+              "slide": 1,
+              "index": 4,
+              "count": 1
+            },
+            {
+              "slide": 2,
+              "index": 4,
+              "count": 1
+            }
+          ]
+        },
+        {
+          "slide": 5,
+          "label": "scale-rot",
+          "positions": [
+            {
+              "slide": 1,
+              "index": 5,
+              "count": 1
+            },
+            {
+              "slide": 2,
+              "index": 5,
+              "count": 1
+            }
+          ]
+        },
+        {
+          "slide": 6,
+          "label": "childrot-in-rot",
+          "positions": [
+            {
+              "slide": 1,
+              "index": 6,
+              "count": 1
+            },
+            {
+              "slide": 2,
+              "index": 6,
+              "count": 1
+            }
+          ]
+        },
+        {
+          "slide": 7,
+          "label": "nested-rot-in-scale",
+          "positions": [
+            {
+              "slide": 1,
+              "index": 7,
+              "count": 1
+            },
+            {
+              "slide": 2,
+              "index": 7,
+              "count": 1
+            }
+          ]
+        }
+      ],
+      "checks": {
+        "slides": true,
+        "sourceParagraphs": true,
+        "textPresence": true,
+        "textOrder": true,
+        "visualLabels": true,
+        "tableShapes": true,
+        "mergeSpans": true,
+        "warnings": true,
+        "anchors": true,
+        "chartLimitation": true,
+        "speakerNotes": true,
+        "imageLimitation": true
+      },
+      "passed": true
+    },
+    {
+      "id": "table-merge-encoding",
+      "sha256": "c2756f8f042c92c8a05236e4c426846f4d344c07d51f54665983b786e27a9132",
+      "slides": 5,
+      "sourceParagraphs": 50,
+      "text": {
+        "totalUnits": 50,
+        "presentUnits": 50,
+        "orderedUnits": 50,
+        "exactUnitRecallWeighted": 1
+      },
+      "tableShapes": [
+        [
+          3,
+          3
+        ],
+        [
+          4,
+          4
+        ],
+        [
+          3,
+          3
+        ],
+        [
+          3,
+          3
+        ],
+        [
+          3,
+          3
+        ]
+      ],
+      "firstCellSpans": [
+        [
+          2,
+          2
+        ],
+        [
+          3,
+          3
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          1
+        ]
+      ],
+      "warnings": [],
+      "visualLabels": [],
+      "checks": {
+        "slides": true,
+        "sourceParagraphs": true,
+        "textPresence": true,
+        "textOrder": true,
+        "visualLabels": true,
+        "tableShapes": true,
+        "mergeSpans": true,
+        "warnings": true,
+        "anchors": true,
+        "chartLimitation": true,
+        "speakerNotes": true,
+        "imageLimitation": true
+      },
+      "passed": true
+    },
+    {
+      "id": "apache-poi-scatter-chart",
+      "sha256": "946d17760f23822950d97a02aeeedbac773fe8ba5afd61bb26a9ee5fd8db53be",
+      "slides": 1,
+      "sourceParagraphs": 1,
+      "text": {
+        "totalUnits": 1,
+        "presentUnits": 1,
+        "orderedUnits": 1,
+        "exactUnitRecallWeighted": 1
+      },
+      "tableShapes": [],
+      "firstCellSpans": [],
+      "warnings": [
+        "UNSUPPORTED_ELEMENT"
+      ],
+      "visualLabels": [],
+      "checks": {
+        "slides": true,
+        "sourceParagraphs": true,
+        "textPresence": true,
+        "textOrder": true,
+        "visualLabels": true,
+        "tableShapes": true,
+        "mergeSpans": true,
+        "warnings": true,
+        "anchors": true,
+        "chartLimitation": true,
+        "speakerNotes": true,
+        "imageLimitation": true
+      },
+      "passed": true
+    },
+    {
+      "id": "python-pptx-notes",
+      "sha256": "664dc13965c7ea24688256d1ecd869936ca51a2e94d2aefe0f614bb8554976ea",
+      "slides": 1,
+      "sourceParagraphs": 0,
+      "text": {
+        "totalUnits": 0,
+        "presentUnits": 0,
+        "orderedUnits": 0,
+        "exactUnitRecallWeighted": 1
+      },
+      "tableShapes": [],
+      "firstCellSpans": [],
+      "warnings": [],
+      "visualLabels": [],
+      "checks": {
+        "slides": true,
+        "sourceParagraphs": true,
+        "textPresence": true,
+        "textOrder": true,
+        "visualLabels": true,
+        "tableShapes": true,
+        "mergeSpans": true,
+        "warnings": true,
+        "anchors": true,
+        "chartLimitation": true,
+        "speakerNotes": true,
+        "imageLimitation": true
+      },
+      "passed": true
+    },
+    {
+      "id": "python-pptx-picture",
+      "sha256": "20b6295563e217804af81f8b5fee5e5cef9e766ac401d825d536ffe6d674edd0",
+      "slides": 2,
+      "sourceParagraphs": 0,
+      "text": {
+        "totalUnits": 0,
+        "presentUnits": 0,
+        "orderedUnits": 0,
+        "exactUnitRecallWeighted": 1
+      },
+      "tableShapes": [],
+      "firstCellSpans": [],
+      "warnings": [
+        "UNSUPPORTED_ELEMENT",
+        "UNSUPPORTED_ELEMENT",
+        "UNSUPPORTED_ELEMENT",
+        "UNSUPPORTED_ELEMENT"
+      ],
+      "visualLabels": [],
+      "checks": {
+        "slides": true,
+        "sourceParagraphs": true,
+        "textPresence": true,
+        "textOrder": true,
+        "visualLabels": true,
+        "tableShapes": true,
+        "mergeSpans": true,
+        "warnings": true,
+        "anchors": true,
+        "chartLimitation": true,
+        "speakerNotes": true,
+        "imageLimitation": true
+      },
+      "passed": true
+    }
+  ],
+  "summary": {
+    "documents": 6,
+    "passed": 6,
+    "slides": 12,
+    "sourceParagraphs": 68,
+    "presentParagraphs": 68,
+    "orderedParagraphs": 68
+  }
+}

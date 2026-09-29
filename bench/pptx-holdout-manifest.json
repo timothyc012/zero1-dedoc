@@ -1,0 +1,68 @@
+{
+  "schema_version": "zero1-pptx-holdout.v1",
+  "corpus_role": "six hash-pinned public PPTX documents; independent of the original Office/PDF development corpus",
+  "options": { "ocr": false, "images": false },
+  "documents": [
+    {
+      "id": "ffc-pptx",
+      "filename": "ffc.pptx",
+      "sha256": "9fc6795c961c622a9017a5843e54d367e2e9dc2e36f05c9f0bbb9dfa938e82b1",
+      "source_url": "https://raw.githubusercontent.com/alexschiller/file-format-commons/0d508180dfeece7ac8b3e87bd2093755e3f356b1/files/ffc.pptx",
+      "slides": 1,
+      "source_paragraphs": 1,
+      "anchors": ["file format commons pptx"]
+    },
+    {
+      "id": "group-transform",
+      "filename": "group-transform.pptx",
+      "sha256": "492fa2a2b69ee5f9b6dc171242c93c0ebd0c4055209f21e779eb9bc318f4481d",
+      "source_url": "https://raw.githubusercontent.com/shbernal/ts-pptx/d0600033e9b1538eafe076fc9a9eceeba40d8ccf/test/read/fixtures/group-transform.pptx",
+      "slides": 2,
+      "source_paragraphs": 16,
+      "visual_labels_each_slide": ["rot30", "flipH", "flipV", "rot330-flipHV", "scale-rot", "childrot-in-rot", "nested-rot-in-scale"],
+      "warnings": []
+    },
+    {
+      "id": "table-merge-encoding",
+      "filename": "table-merge-encoding.pptx",
+      "sha256": "c2756f8f042c92c8a05236e4c426846f4d344c07d51f54665983b786e27a9132",
+      "source_url": "https://raw.githubusercontent.com/shbernal/ts-pptx/d0600033e9b1538eafe076fc9a9eceeba40d8ccf/test/read/fixtures/table-merge-encoding.pptx",
+      "slides": 5,
+      "source_paragraphs": 50,
+      "table_shapes": [[3, 3], [4, 4], [3, 3], [3, 3], [3, 3]],
+      "first_cell_spans": [[2, 2], [3, 3], [2, 2], [1, 2], [2, 1]],
+      "warnings": []
+    },
+    {
+      "id": "apache-poi-scatter-chart",
+      "filename": "scatter-chart.pptx",
+      "sha256": "946d17760f23822950d97a02aeeedbac773fe8ba5afd61bb26a9ee5fd8db53be",
+      "source_url": "https://raw.githubusercontent.com/apache/poi/93b6a820f4aaefd7b062615f843799947872cb24/test-data/slideshow/scatter-chart.pptx",
+      "slides": 1,
+      "source_paragraphs": 1,
+      "anchors": ["My Scatter Chart"],
+      "warnings": ["UNSUPPORTED_ELEMENT"],
+      "unsupported_chart_data_expected": true
+    },
+    {
+      "id": "python-pptx-notes",
+      "filename": "prs-notes.pptx",
+      "sha256": "664dc13965c7ea24688256d1ecd869936ca51a2e94d2aefe0f614bb8554976ea",
+      "source_url": "https://raw.githubusercontent.com/scanny/python-pptx/278b47b1dedd5b46ee84c286e77cdfb0bf4594be/features/steps/test_files/prs-notes.pptx",
+      "slides": 1,
+      "source_paragraphs": 0,
+      "required_notes": ["Notes"],
+      "warnings": []
+    },
+    {
+      "id": "python-pptx-picture",
+      "filename": "shp-picture.pptx",
+      "sha256": "20b6295563e217804af81f8b5fee5e5cef9e766ac401d825d536ffe6d674edd0",
+      "source_url": "https://raw.githubusercontent.com/scanny/python-pptx/278b47b1dedd5b46ee84c286e77cdfb0bf4594be/features/steps/test_files/shp-picture.pptx",
+      "slides": 2,
+      "source_paragraphs": 0,
+      "image_warning_count": 4,
+      "warnings": ["UNSUPPORTED_ELEMENT", "UNSUPPORTED_ELEMENT", "UNSUPPORTED_ELEMENT", "UNSUPPORTED_ELEMENT"]
+    }
+  ]
+}

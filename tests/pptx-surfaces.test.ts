@@ -38,6 +38,20 @@ function makePptx(): Promise<Buffer> {
   })
 }
 
+function makeValidPptx(): Promise<Buffer> {
+  const ns = `xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
+  const title = (text: string) => `<p:sp><p:nvSpPr><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr><p:txBody><a:p><a:r><a:t>${text}</a:t></a:r></a:p></p:txBody></p:sp>`
+  return makeZip({
+    "[Content_Types].xml": `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/></Types>`,
+    "ppt/presentation.xml": `<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:sldIdLst><p:sldId id="256" r:id="rId2"/><p:sldId id="257" r:id="rId1"/></p:sldIdLst></p:presentation>`,
+    "ppt/_rels/presentation.xml.rels": `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide2.xml"/></Relationships>`,
+    "ppt/slides/slide2.xml": `<p:sld ${ns}><p:cSld><p:spTree>${title("Surface slide one")}<p:graphicFrame><a:graphic><a:graphicData><a:tbl><a:tr><a:tc><a:txBody><a:p><a:r><a:t>Metric</a:t></a:r></a:p></a:txBody></a:tc><a:tc><a:txBody><a:p><a:r><a:t>42</a:t></a:r></a:p></a:txBody></a:tc></a:tr></a:tbl></a:graphicData></a:graphic></p:graphicFrame></p:spTree></p:cSld></p:sld>`,
+    "ppt/slides/slide1.xml": `<p:sld ${ns}><p:cSld><p:spTree>${title("Surface slide two")}</p:spTree></p:cSld></p:sld>`,
+    "ppt/slides/_rels/slide2.xml.rels": `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide" Target="../notesSlides/notesSlide1.xml"/></Relationships>`,
+    "ppt/notesSlides/notesSlide1.xml": `<p:notes ${ns}><p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>Presenter note</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:notes>`,
+  })
+}
+
 for (const format of ["markdown", "json", "chunks"]) {
   test(`#80 CLI ${format}: PPTX returns failure JSON and leaves output untouched`, { timeout: 30000 }, async () => {
     const dir = mkdtempSync(join(tmpdir(), "kordoc-pptx-cli-"))
@@ -68,6 +82,36 @@ for (const format of ["markdown", "json", "chunks"]) {
     }
   })
 }
+
+test("PPTX CLI and NDJSON worker parse the same valid slides", { timeout: 30000 }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), "zero1-pptx-surfaces-"))
+  try {
+    const input = join(dir, "valid.pptx")
+    writeFileSync(input, await makeValidPptx())
+    const cli = spawnSync(process.execPath, ["--import", "tsx", CLI, input, "--format", "json", "--silent"],
+      { cwd: ROOT, encoding: "utf-8", timeout: 20000 })
+    assert.equal(cli.status, 0, cli.stderr)
+    const result = JSON.parse(cli.stdout)
+    assert.equal(result.success, true)
+    assert.equal(result.fileType, "pptx")
+    assert.equal(result.pageCount, 2)
+    assert.match(result.markdown, /Surface slide one[\s\S]*Surface slide two/)
+    assert.match(result.markdown, /Presenter note/)
+
+    const worker = spawnSync(process.execPath, ["--import", "tsx", CLI, "parse-worker"], {
+      cwd: ROOT, encoding: "utf-8", timeout: 20000,
+      input: `${JSON.stringify({ id: 1, file: input, images: false, ocr: "off" })}\n${JSON.stringify({ cmd: "quit" })}\n`,
+    })
+    assert.equal(worker.status, 0, worker.stderr)
+    const response = worker.stdout.trim().split("\n").map(line => JSON.parse(line))
+    assert.equal(response[0].ready, true)
+    assert.equal(response[1].result.success, true)
+    assert.equal(response[1].result.fileType, "pptx")
+    assert.equal(response[1].result.markdown, result.markdown)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
 
 test("#80 MCP: unsupported PPTX and supported ZIP metadata stay distinct", { timeout: 60000 }, async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "kordoc-pptx-mcp-"))
@@ -146,12 +190,62 @@ test("#80 MCP: unsupported PPTX and supported ZIP metadata stay distinct", { tim
       })
     }
 
-    for (const tool of ["detect_format", "parse_document", "parse_metadata"]) {
-      await t.test(`${tool} continues to reject the unsupported .pptx extension`, async () => {
+    await t.test("detect_format accepts the native .pptx extension", async () => {
+      const result = await callTool("detect_format", original)
+      assert.notEqual(result.isError, true, result.text)
+      assert.equal(result.text, `${original}: pptx`)
+    })
+    for (const tool of ["parse_document", "parse_metadata"]) {
+      await t.test(`${tool} reports a malformed PPTX package, not an extension error`, async () => {
         const result = await callTool(tool, original)
         assert.equal(result.isError, true, result.text)
-        assert.match(result.text, /지원하지 않는 확장자/)
-        assert.match(result.text, /\.pptx/)
+        assert.match(result.text, /PPTX/)
+        assert.doesNotMatch(result.text, /지원하지 않는 확장자/)
+      })
+    }
+
+    const valid = join(dir, "valid.pptx")
+    writeFileSync(valid, await makeValidPptx())
+    await t.test("parse_document reads PPTX slide, table, and notes", async () => {
+      const result = await callTool("parse_document", valid)
+      assert.notEqual(result.isError, true, result.text)
+      assert.match(result.text, /Surface slide one[\s\S]*Surface slide two/)
+      assert.match(result.text, /Presenter note/)
+    })
+    await t.test("parse_metadata reports PPTX title and slide count", async () => {
+      const result = await callTool("parse_metadata", valid)
+      assert.notEqual(result.isError, true, result.text)
+      const metadata = JSON.parse(result.text)
+      assert.equal(metadata.format, "pptx")
+      assert.equal(metadata.title, TITLE)
+      assert.equal(metadata.pageCount, 2)
+    })
+    await t.test("parse_pages restricts PPTX to the selected slide", async () => {
+      const result = await client.callTool({ name: "parse_pages", arguments: { file_path: valid, pages: "2" } }, undefined, { timeout: 10000 })
+      const text = (result.content as { type: string; text?: string }[]).map(item => item.text ?? "").join("\n")
+      assert.notEqual(result.isError, true, text)
+      assert.match(text, /Surface slide two/)
+      assert.doesNotMatch(text, /Surface slide one|Presenter note/)
+    })
+    await t.test("parse_table and parse_chunks accept PPTX parse output", async () => {
+      const table = await client.callTool({ name: "parse_table", arguments: { file_path: valid, table_index: 0 } }, undefined, { timeout: 10000 })
+      const tableText = (table.content as { type: string; text?: string }[]).map(item => item.text ?? "").join("\n")
+      assert.notEqual(table.isError, true, tableText)
+      assert.match(tableText, /Metric.*42/)
+      const chunks = await client.callTool({ name: "parse_chunks", arguments: { file_path: valid } }, undefined, { timeout: 10000 })
+      const chunkText = (chunks.content as { type: string; text?: string }[]).map(item => item.text ?? "").join("\n")
+      assert.notEqual(chunks.isError, true, chunkText)
+      assert.match(chunkText, /Surface slide one/)
+    })
+    for (const tool of ["fill_form", "patch_document"]) {
+      await t.test(`${tool} still rejects PPTX editing`, async () => {
+        const args = tool === "fill_form"
+          ? { file_path: valid, fields: { name: "x" }, output_format: "hwpx-preserve" }
+          : { file_path: valid, edited_markdown: "x", output_path: join(dir, "patched.hwpx") }
+        const result = await client.callTool({ name: tool, arguments: args }, undefined, { timeout: 10000 })
+        const text = (result.content as { type: string; text?: string }[]).map(item => item.text ?? "").join("\n")
+        assert.equal(result.isError, true, text)
+        assert.match(text, /\.pptx|pptx/i)
       })
     }
 

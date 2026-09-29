@@ -24,6 +24,7 @@ from the manifest-pinned fixture. On each slide, the visible label order was
 `childrot-in-rot` → `nested-rot-in-scale`; the parser returned that order once
 per slide with no warnings. This closes that fixture's visual-order assertion;
 it is not a four-document PPTX layout corpus.
+The later [six-document PPTX gate](pptx-holdout-and-surfaces.md) expands this check to notes, images, charts, and exact merged-cell grids.
 
 ## Independent PDF
 
