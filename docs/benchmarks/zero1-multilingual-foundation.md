@@ -34,7 +34,7 @@ npm run bench:german-smoke -- /path/to/bmf-tax-tables.pdf /path/to/solvency-form
 
 On the final Apple M4 local run, the smoke passed in 350 ms for the 11-page tax PDF and 280 ms for the 29-page form PDF, peak Node RSS 231 MiB. These are observed wall times, not a controlled engine-to-engine speed comparison.
 
-The packed `zero1-dedoc@4.16.1-zero1.1` tarball was also installed into an isolated **WSL Docker Node 20.20.2** image (`02ontology/zero1-dedoc-eval:4.16.1-zero1.1`, image digest `sha256:f490ca9afdd3d8e0f935dab9acc7b5725654ee22fdd0d3ea31f3903bb679a309`) with PDF.js and no optional OCR/model packages. With `--network none`, the same two official PDFs passed all table/value/form-title assertions; observed peak Node RSS was 190 MiB. The text-layer result was correct despite PDF.js warning that optional canvas rendering was unavailable in this lean image. The existing 02ontology operating Compose was not changed.
+The packed `zero1-dedoc@4.16.1-zero1.1` tarball from commit `92e2d6c` was also installed into an isolated **WSL Docker Node 20.20.2** image (`02ontology/zero1-dedoc-eval:92e2d6c`, image ID `sha256:1ad57e9a3d97b308558e247cb008f667b997da82feac416a047e89f342caf1b0`) with PDF.js and no optional OCR/model packages. With `--network none`, the same two official PDFs passed all table/value/form-title assertions; observed peak Node RSS was 182 MiB. The text-layer result was correct despite PDF.js warning that optional canvas rendering was unavailable in this lean image. The existing 02ontology operating Compose was not changed.
 
 ## Korean and OCR coverage
 
