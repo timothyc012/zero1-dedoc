@@ -1,0 +1,407 @@
+{
+  "schema_version": "zero1-bmf-page-score.v1",
+  "pdf_sha256": "1bbaae9366524c2830b52092b9e6a5f9b9bdb5a801402e48dd9e58d32385c4b2",
+  "xlsx_sha256": "36dd814e82b1066493201069cee7c638f9e753e9ea77fc52fd00a8a7d7f64f80",
+  "parser_revision": "63e6bc13adb0911734235e8ff6148844a0cb339c",
+  "parser_package_version": "4.16.1-zero1.1",
+  "pages": [
+    {
+      "page": 4,
+      "expectedRows": 36,
+      "expectedCols": 11,
+      "tableShapes": [
+        [
+          3,
+          3
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          31,
+          11
+        ]
+      ],
+      "exactFullTable": false,
+      "expectedDisplayValues": 310,
+      "exactDisplayValues": 310,
+      "valueRecall": 1,
+      "alignedValueCells": 0,
+      "alignedLabels": 0,
+      "alignedHeaderCells": 0,
+      "alignedSectionSpans": 0,
+      "expectedFullSpanRows": 4,
+      "outputFullSpanRows": null,
+      "footerInsideTable": true,
+      "fullCellGoldPass": false
+    },
+    {
+      "page": 5,
+      "expectedRows": 38,
+      "expectedCols": 11,
+      "tableShapes": [
+        [
+          1,
+          1
+        ],
+        [
+          31,
+          11
+        ]
+      ],
+      "exactFullTable": false,
+      "expectedDisplayValues": 310,
+      "exactDisplayValues": 310,
+      "valueRecall": 1,
+      "alignedValueCells": 0,
+      "alignedLabels": 0,
+      "alignedHeaderCells": 0,
+      "alignedSectionSpans": 0,
+      "expectedFullSpanRows": 6,
+      "outputFullSpanRows": null,
+      "footerInsideTable": true,
+      "fullCellGoldPass": false
+    },
+    {
+      "page": 6,
+      "expectedRows": 36,
+      "expectedCols": 10,
+      "tableShapes": [
+        [
+          4,
+          1
+        ],
+        [
+          8,
+          10
+        ],
+        [
+          3,
+          1
+        ],
+        [
+          5,
+          10
+        ],
+        [
+          3,
+          1
+        ],
+        [
+          5,
+          10
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          6,
+          10
+        ],
+        [
+          3,
+          1
+        ],
+        [
+          3,
+          1
+        ]
+      ],
+      "exactFullTable": false,
+      "expectedDisplayValues": 279,
+      "exactDisplayValues": 207,
+      "valueRecall": 0.7419354838709677,
+      "alignedValueCells": 0,
+      "alignedLabels": 0,
+      "alignedHeaderCells": 0,
+      "alignedSectionSpans": 0,
+      "expectedFullSpanRows": 4,
+      "outputFullSpanRows": null,
+      "footerInsideTable": false,
+      "fullCellGoldPass": false
+    },
+    {
+      "page": 7,
+      "expectedRows": 38,
+      "expectedCols": 10,
+      "tableShapes": [
+        [
+          1,
+          2
+        ],
+        [
+          7,
+          10
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          4,
+          1
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          6,
+          1
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          4,
+          10
+        ],
+        [
+          6,
+          1
+        ],
+        [
+          5,
+          2
+        ],
+        [
+          2,
+          1
+        ]
+      ],
+      "exactFullTable": false,
+      "expectedDisplayValues": 279,
+      "exactDisplayValues": 155,
+      "valueRecall": 0.5555555555555556,
+      "alignedValueCells": 0,
+      "alignedLabels": 0,
+      "alignedHeaderCells": 0,
+      "alignedSectionSpans": 0,
+      "expectedFullSpanRows": 6,
+      "outputFullSpanRows": null,
+      "footerInsideTable": false,
+      "fullCellGoldPass": false
+    },
+    {
+      "page": 8,
+      "expectedRows": 36,
+      "expectedCols": 11,
+      "tableShapes": [
+        [
+          3,
+          3
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          33,
+          11
+        ]
+      ],
+      "exactFullTable": false,
+      "expectedDisplayValues": 310,
+      "exactDisplayValues": 310,
+      "valueRecall": 1,
+      "alignedValueCells": 0,
+      "alignedLabels": 0,
+      "alignedHeaderCells": 0,
+      "alignedSectionSpans": 0,
+      "expectedFullSpanRows": 4,
+      "outputFullSpanRows": null,
+      "footerInsideTable": true,
+      "fullCellGoldPass": false
+    },
+    {
+      "page": 9,
+      "expectedRows": 38,
+      "expectedCols": 11,
+      "tableShapes": [
+        [
+          1,
+          1
+        ],
+        [
+          31,
+          11
+        ]
+      ],
+      "exactFullTable": false,
+      "expectedDisplayValues": 310,
+      "exactDisplayValues": 310,
+      "valueRecall": 1,
+      "alignedValueCells": 0,
+      "alignedLabels": 0,
+      "alignedHeaderCells": 0,
+      "alignedSectionSpans": 0,
+      "expectedFullSpanRows": 6,
+      "outputFullSpanRows": null,
+      "footerInsideTable": true,
+      "fullCellGoldPass": false
+    },
+    {
+      "page": 10,
+      "expectedRows": 36,
+      "expectedCols": 10,
+      "tableShapes": [
+        [
+          4,
+          1
+        ],
+        [
+          8,
+          10
+        ],
+        [
+          3,
+          1
+        ],
+        [
+          5,
+          10
+        ],
+        [
+          3,
+          1
+        ],
+        [
+          5,
+          10
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          6,
+          10
+        ],
+        [
+          3,
+          1
+        ],
+        [
+          3,
+          1
+        ]
+      ],
+      "exactFullTable": false,
+      "expectedDisplayValues": 279,
+      "exactDisplayValues": 208,
+      "valueRecall": 0.7455197132616488,
+      "alignedValueCells": 0,
+      "alignedLabels": 0,
+      "alignedHeaderCells": 0,
+      "alignedSectionSpans": 0,
+      "expectedFullSpanRows": 4,
+      "outputFullSpanRows": null,
+      "footerInsideTable": false,
+      "fullCellGoldPass": false
+    },
+    {
+      "page": 11,
+      "expectedRows": 38,
+      "expectedCols": 10,
+      "tableShapes": [
+        [
+          1,
+          2
+        ],
+        [
+          7,
+          10
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          4,
+          1
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          6,
+          1
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          4,
+          10
+        ],
+        [
+          6,
+          1
+        ],
+        [
+          5,
+          2
+        ],
+        [
+          2,
+          1
+        ]
+      ],
+      "exactFullTable": false,
+      "expectedDisplayValues": 279,
+      "exactDisplayValues": 155,
+      "valueRecall": 0.5555555555555556,
+      "alignedValueCells": 0,
+      "alignedLabels": 0,
+      "alignedHeaderCells": 0,
+      "alignedSectionSpans": 0,
+      "expectedFullSpanRows": 6,
+      "outputFullSpanRows": null,
+      "footerInsideTable": false,
+      "fullCellGoldPass": false
+    }
+  ],
+  "summary": {
+    "passedPages": 0,
+    "totalPages": 8,
+    "displayValues": 2356,
+    "exactDisplayValues": 1965
+  }
+}
