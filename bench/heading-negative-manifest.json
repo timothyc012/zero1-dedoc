@@ -1,0 +1,48 @@
+{
+  "schema_version": "zero1-heading-negative-holdout.v1",
+  "corpus_role": "two independent public issuers plus one ODL185 author-superscript regression cross-check",
+  "options": { "ocr": false, "images": false },
+  "documents": [
+    {
+      "id": "ecb-bundesbank-money-2026",
+      "filename": "bundesbank-money.pdf",
+      "sha256": "163bde0c71d52106500cc636bee72a733e8808d68a5b6180f8d495ed8943d8fd",
+      "source_url": "https://www.bundesbank.de/resource/blob/988688/301029e85c8ac038cd5e88131e2ad8d1/472B63F073F071307366337C94F8C870/2026-01-29-geldmenge-download.pdf",
+      "page_count": 9,
+      "headings": [
+        { "page": 1, "level": 1, "text": "Geldmengenentwicklung im Euroraum: Januar 2026" },
+        { "page": 1, "level": 2, "text": "Komponenten der weit gefassten Geldmenge M3" },
+        { "page": 3, "level": 2, "text": "Gegenposten der weit gefassten Geldmenge M3" },
+        { "page": 4, "level": 2, "text": "Forderungen an Nicht-MFIs im Euroraum" }
+      ],
+      "forbid_h1": ["Pressemitteilung", "Europäische Zentralbank", "26. Februar 2026", "Abbildung 2", "Tabelle 1 bis 4"],
+      "forbid_heading": ["Pressemitteilung / 26. Februar 2026"]
+    },
+    {
+      "id": "destatis-bip-statement-2026",
+      "filename": "destatis-bip-statement.pdf",
+      "sha256": "3edb2e6b33b72d1683b5053de204ed7a46cab69112ac96eb223511a7a4880909",
+      "source_url": "https://www.destatis.de/DE/Presse/Pressekonferenzen/2026/bip2025/statement-bip.pdf?__blob=publicationFile&v=4",
+      "page_count": 20,
+      "headings": [
+        { "page": 1, "level": 1, "text": "Bruttoinlandsprodukt 2025 für Deutschland" },
+        { "page": 6, "level": 2, "text": "4. Die privaten Haushalte konsumierten wieder mehr als im Vorjahr" },
+        { "page": 17, "level": 2, "text": "10. Die Realeinkommen sind leicht gestiegen" },
+        { "page": 18, "level": 2, "text": "11. Die deutsche Wirtschaft liegt international weiter im Schlussfeld" }
+      ],
+      "forbid_h1": ["Pressekonferenz", "Statistisches Bundesamt", "Schaubild 1a", "Bruttoinlandsprodukt in Deutschland", "– Es gilt das gesprochene Wort –"],
+      "forbid_heading": ["– Es gilt das gesprochene Wort –", "Schaubild 1a"]
+    },
+    {
+      "id": "odl185-solar-author-line",
+      "filename": "odl185.pdf",
+      "sha256": "b639c25ab157f6f4ecbdb7cd31724bf4c8869f03134f5e606c49dd5fbee2bb54",
+      "source_url": "https://raw.githubusercontent.com/opendataloader-project/opendataloader-bench/7af1d8f4d0c09f51ea1a5c6ba5f66e993286d109/pdfs/01030000000185.pdf",
+      "page_count": 1,
+      "options": { "scriptTags": true },
+      "required_text": ["Dahyun Kim<sup>∗</sup>", "Chanjun Park<sup>∗†</sup>"],
+      "forbid_h1": ["Dahyun Kim", "Upstage AI"],
+      "forbid_heading": ["Dahyun Kim", "Upstage AI"]
+    }
+  ]
+}

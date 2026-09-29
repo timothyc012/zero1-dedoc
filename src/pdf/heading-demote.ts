@@ -15,6 +15,61 @@ const EQUATION_NUMBER = /\t\(\d{1,3}[a-z]?\)\s*$/
 /** 별행 수식 — 관계 기호·근호·큰 연산자가 든 줄은 절 제목이 아니다 (#89 "MultiHead(Q, K, V) = Concat(…)") */
 const DISPLAY_MATH = /=|[√∑∏∫∂∇≤≥≈≠∈∀∃]/
 
+/**
+ * Resolve first-page title roles after the typography passes. A short masthead
+ * can use the same face and size as the document title; later sections often
+ * reuse that face at a smaller size. The relationship between these blocks is
+ * stronger evidence than the absolute font size alone.
+ */
+export function refineLeadDocumentTitleRoles(blocks: IRBlock[], pageHeights: Map<number, number>): void {
+  // Same-baseline title fragments can be separate PDF text objects even when
+  // they form one printed line (for example a bold phrase followed by "für …").
+  for (let i = 0; i + 1 < blocks.length; i++) {
+    const title = blocks[i], next = blocks[i + 1]
+    const size = title.style?.fontSize ?? 0
+    if (title.type !== "heading" || title.level !== 1 || title.pageNumber !== 1 || size < 14 ||
+        (next.type !== "paragraph" && next.type !== "heading") || next.pageNumber !== 1 || !title.bbox || !next.bbox || !next.text ||
+        next.style?.fontName !== title.style?.fontName || Math.abs((next.style?.fontSize ?? 0) - size) > 0.5 ||
+        Math.abs(next.bbox.y - title.bbox.y) > 2 || !/^[a-zäöüß]/.test(next.text.trim()) ||
+        next.text.trim().length > 40) continue
+    const gap = next.bbox.x - (title.bbox.x + title.bbox.width)
+    if (gap < -1 || gap > size * 0.75) continue
+    title.text = `${title.text?.trim()} ${next.text.trim()}`
+    title.bbox = { ...title.bbox, width: next.bbox.x + next.bbox.width - title.bbox.x,
+      height: Math.max(title.bbox.height, next.bbox.height) }
+    blocks.splice(i + 1, 1)
+  }
+
+  const firstIndex = blocks.findIndex(block => block.pageNumber === 1 && block.type === "heading" && block.level === 1)
+  if (firstIndex < 0) return
+  const secondIndex = blocks.findIndex((block, index) => index > firstIndex && block.pageNumber === 1 && block.type === "heading" && block.level === 1)
+  if (secondIndex < 0) return
+  const first = blocks[firstIndex], title = blocks[secondIndex]
+  const pageHeight = pageHeights.get(1)
+  const firstSize = first.style?.fontSize ?? 0, titleSize = title.style?.fontSize ?? 0
+  const between = blocks.slice(firstIndex + 1, secondIndex)
+  const letters = first.text?.match(/\p{L}/gu)?.join("") ?? ""
+  const wordmark = !!first.bbox && !!title.bbox && letters.length >= 8 && letters === letters.toUpperCase() &&
+    first.text!.trim().split(/\s+/).length >= 2 && firstSize >= 8 && firstSize <= titleSize * 0.8 &&
+    first.bbox.x > title.bbox.x + title.bbox.width * 0.2
+  const masthead = firstSize >= 12 && titleSize >= firstSize * 0.85 && titleSize <= firstSize * 1.2
+  if (!first.text || !title.text || !first.bbox || !title.bbox || !pageHeight || titleSize < 12 ||
+      (!masthead && !wordmark) ||
+      /\d/.test(first.text) ||
+      first.text.trim().length > 32 || title.text.trim().length < first.text.trim().length * 1.2 ||
+      first.bbox.y + first.bbox.height < pageHeight * 0.7 ||
+      first.bbox.y <= title.bbox.y + title.bbox.height ||
+      first.bbox.y - (title.bbox.y + title.bbox.height) > pageHeight * 0.3 ||
+      between.some(block => block.type === "paragraph" || block.type === "table" || block.type === "list")) return
+
+  first.type = "paragraph"
+  first.level = undefined
+  for (let i = secondIndex + 1; i < blocks.length; i++) {
+    const block = blocks[i], size = block.style?.fontSize ?? 0
+    if (block.type === "heading" && block.level === 1 && size > 0 && size <= titleSize * 0.85) block.level = 2
+  }
+}
+
 /** A running head sits in the outer band of the page with nothing beyond it and
  * spreads its parts to the page edges (tab-separated), usually with a page number. */
 function isRunningHead(block: IRBlock, page: IRBlock[], pageHeight: number | undefined): boolean {
