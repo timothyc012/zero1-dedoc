@@ -1,5 +1,6 @@
 /** HWP 5.x 레코드 리더, UTF-16LE 텍스트 추출, 스트림 압축해제 */
 
+import type { ScriptKind } from "../script-tags.js"
 import { inflateRawSync, inflateSync } from "zlib"
 import { KordocError } from "../utils.js"
 
@@ -380,6 +381,13 @@ export interface ParaTextState {
   /** 리터럴 "$" 를 LITERAL_DOLLAR_MARK 한 글자로 — 본문 파서만 켠다. 필드 범위가 글자 위치라
    *  두 글자 "\$" 를 바로 넣지 않고, 필드 처리 뒤 본문 파서가 "\$" 로 바꾼다(escapeLiteralDollar 규약) */
   dollarMark?: boolean
+  /** 글자 위치(문단 WCHAR 순번)의 첨자 종류 — 문단 글자 모양(PARA_CHAR_SHAPE) 위치표로 본문 파서가 채운다.
+   *  있으면 첨자 글자를 <sup>·<sub> 로 감싼다(제어 문자·개체 자리에서는 닫는다) */
+  scriptAt?: (pos: number) => ScriptKind | null
+  /** 지금 열린 첨자 태그 */
+  script?: ScriptKind | null
+  /** 앞 PARA_TEXT 레코드까지의 WCHAR 수 — 글자 모양 위치는 문단 전체 기준 */
+  wpos?: number
 }
 
 /** 채움 탭 표지 — 뒤는 목차 쪽번호라 본문 파서가 문단 텍스트를 여기서 자른다 (HWPX section-walker 와 같은 문자) */
@@ -427,6 +435,15 @@ export function isExtendedOnlyCtrlChar(ch: number): boolean {
 export function appendParaText(state: ParaTextState, data: Buffer, resolveControl?: IndexedControlResolver): void {
   let result = ""
   let i = 0
+  const wbase = state.wpos ?? 0
+  // 첨자 태그 전환 — 보이는 글자 앞에서 그 자리 글자 모양대로 열고, 제어 문자 앞에서는 닫는다
+  const setScript = (want: ScriptKind | null): void => {
+    const cur = state.script ?? null
+    if (cur === want) return
+    if (cur) result += `</${cur}>`
+    if (want) result += `<${want}>`
+    state.script = want
+  }
   // 필드 범위는 state.text 기준 인덱스로 기록
   const base = state.text.length
 
@@ -440,6 +457,7 @@ export function appendParaText(state: ParaTextState, data: Buffer, resolveContro
 
   while (i + 1 < data.length) {
     const ch = data.readUInt16LE(i)
+    if (state.scriptAt) setScript(ch >= 0x0020 ? state.scriptAt(wbase + i / 2) : null)
     i += 2
 
     switch (ch) {
@@ -517,6 +535,8 @@ export function appendParaText(state: ParaTextState, data: Buffer, resolveContro
     }
   }
 
+  if (state.scriptAt) setScript(null)
+  state.wpos = wbase + Math.floor(data.length / 2)
   state.text += result
 }
 

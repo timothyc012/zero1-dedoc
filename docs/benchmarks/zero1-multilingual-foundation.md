@@ -6,14 +6,19 @@
 
 The same 200 PDFs were parsed before and after the German PDF changes. Both runs used `bench/odl-bench.mjs` with `KORDOC_OFFLINE=1` and an empty isolated `HOME`, so the OCR model cache was absent. The unmodified `src/evaluator.py --engine kordoc` then scored both outputs. The `kordoc` engine directory name is retained by the inherited prediction script; the second run contains Zero1 Dedoc predictions.
 
-| Metric | Upstream base | Zero1 Dedoc | Difference |
+| Metric | Previous locked result | Zero1 Dedoc refresh | Difference |
 | --- | ---: | ---: | ---: |
-| Overall | 0.93705155 | 0.93705155 | 0 |
-| Reading order (NID) | 0.93802742 | 0.93802742 | 0 |
-| Table structure (TEDS) | 0.93569940 | 0.93569940 | 0 |
-| Heading hierarchy (MHS) | 0.93264864 | 0.93264864 | 0 |
+| Overall | 0.937051555 | 0.937073892 | +0.000022337 |
+| Reading order (NID) | 0.938027420 | 0.938037332 | +0.000009912 |
+| Table structure (TEDS) | 0.935699400 | 0.935699400 | 0 |
+| Heading hierarchy (MHS) | 0.932648642 | 0.932713617 | +0.000064975 |
 
-All **200/200 PDFs** parsed in each run. The seven per-document score fields are identical for all 200 documents; 0 improved, 0 regressed. The table metric has 42 scored documents and heading metric 107 according to the public evaluator. [Baseline evaluation JSON](data/kordoc-v4.16.1-odl200.json) · [Zero1 evaluation JSON](data/zero1-dedoc-odl200.json).
+All **200/200 PDFs** parsed in both runs. The table metric has 42 scored documents and heading metric 107 according to the public evaluator. Three documents moved by less than `0.00026` NID, with no material negative document delta; the table score was unchanged. [Baseline evaluation JSON](data/kordoc-v4.16.1-odl200.json) · [Zero1 evaluation JSON](data/zero1-dedoc-odl200.json).
+
+The post-T1/H1 and numeric side-band refresh is recorded in
+[zero1-odl200-refresh-2026-09-29.md](zero1-odl200-refresh-2026-09-29.md):
+200/200 still parse, table score is unchanged, and reading-order and heading
+means improve slightly against the locked result.
 
 This is evidence of **non-regression** on an English-heavy public corpus, not measured English-language improvement. Kordoc's preexisting score is already high on this corpus. The full benchmark is separate from the German failure cases and from the private Korean corpus.
 
@@ -38,8 +43,56 @@ The packed `zero1-dedoc@4.16.1-zero1.1` tarball from commit `92e2d6c` was also i
 
 The follow-up package was tested in a new WSL Docker image `02ontology/zero1-dedoc-eval:final-20260929` (Node 20.20.2, `--network none`). Both hash-pinned PDFs passed again, including the final seven-cell tax total. Peak Node RSS was 177 MiB. The image reuses the previous image's installed dependencies and replaces its Zero1 Dedoc package contents with the newly packed tarball; it is an evaluation image, not a production deployment.
 
+The current `4.16.1-zero1.1` package was rebuilt once more in local Docker
+Desktop from the same pinned tarball. Image
+`02ontology/zero1-dedoc-eval:latest-20260929` uses Node 20.20.2 and has digest
+`sha256:83b9e66482e849d0062a713aba9a0fdc6e7edc374360e26b37d17cff257ba88e`.
+With `--network none` and the bounded `parse-worker` protocol:
+
+- An English text-layer fixture retained `HORIZON CLEAN AVIATION 2026`, the
+  topic budget heading, and the `HE-CL4-2026-01` row.
+- A German text-layer fixture retained `Schäferstraße Köln – Fußgängerzone`,
+  `0420`, `0970`, and `123,45 EUR`.
+- The German tax-table page parsed successfully with `Gemeindesteuern`,
+  `Lohnsteuer`, and `1.449.637` present in the 5,686-character Markdown result;
+  peak worker RSS was 125,431,808 bytes.
+- The bundled Korean `budget.xls` fixture parsed as `xls` with the `2025년 예산`
+  heading and HTML table rows intact; no warnings were emitted.
+- An image-only German scan returned the expected `OCR_FAILED` and `NEEDS_OCR`
+  warnings because the lean evaluation image intentionally omits optional
+  PDFium/OCR model packages. It did not download anything or silently claim
+  OCR success.
+
+The image is an evaluation artifact, not a production deployment. The WSL
+address used by the earlier run was unavailable during this repeat; the local
+Docker result verifies the same network-isolated package and worker contract.
+
+An explicit OCR-enabled evaluation image was also built with the same package,
+`ZERO1_ENABLE_OCR=1`, and `ZERO1_OCR_LANGUAGES="en de"`. Its digest is
+`sha256:4b5580b52b487dbfb1c0ae1d3d6ac4ef6d622d63d90422ad6f16a2ebeece8891`
+and source revision `75a8d2a2d7b29b995b824dca6f812fd229f33592`.
+With `--network none`, the high-resolution German image-only fixture returned
+`OCR_APPLIED` and exactly preserved `Schäferstraße Köln – Fußgängerzone
+123,45 EUR`. The model-free image and the OCR-enabled image are separate
+evaluation variants; neither changes the default parser route. An English
+image-only fixture also returned `OCR_APPLIED` and retained
+`HORIZON CLEAN AVIATION 2026` and `TOPIC CALL BUDGET`.
+
+The full 11-page BMF PDF was re-downloaded from the documented public URL and
+matched its SHA-256 `1bbaae9366524c2830b52092b9e6a5f9b9bdb5a801402e48dd9e58d32385c4b2`.
+The German smoke now checks pages 1–3 (47×7, 50×7, 44×7), pages 5 and 9
+(31×11), and the reconstructed label/value bands on pages 6, 7, 10, and 11
+(8×10 or 7×10). The same run retained the Lohnsteuer and final-tax gold rows;
+the 29-page solvency-form PDF still retained all five form titles and its
+six-column table.
+
+The frozen German federal press-release PDF was also re-run after the heading
+fix. Its lead now emits `Kanzler Merz zur Situation im Nahen Osten` as H1 and
+`Der Sprecher der Bundesregierung, Stefan Kornelius, teilt mit:` as H2; the
+following body remains paragraph text.
+
 Cross-page ruled tables now require a repeated header or matching caption before merging. This prevents unrelated tables with the same geometry and numeric column roles from merging. A genuine continuation without either cue may remain split; it needs a separate labeled test case before adding a looser rule.
 
 ## Korean and OCR coverage
 
-The repository's follow-up `npm test` passed **2,610 tests**, with **10 skips** and **0 failures** after the table-continuation and missing-gridline fixes. The first sandboxed attempt failed six tests requiring localhost, Chromium, or filesystem watch; the same suite passed when allowed to use those resources. The private Korean PDF/HWPX corpus required by `npm run bench:gate` was not present in this checkout, so that gate is **unverified**. OCR is not part of these results. The bundled recognition model remains Korean PP-OCRv5; German and English scanned PDFs need a separate model-selection and gold-set evaluation.
+The repository's current `npm test` passed **2,635 tests**, with **10 skips** and **0 failures** after the numeric label/value band reconstruction. The private Korean PDF/HWPX corpus required by `npm run bench:gate` was not present in this checkout, so that gate is **unverified**. The Docker OCR smoke proves the en/de model profiles and offline cache contract; a larger language-specific CER/WER holdout remains separate from this smoke.

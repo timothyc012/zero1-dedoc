@@ -81,6 +81,19 @@ describe("DOCX 파서", () => {
     assert.ok(result.markdown.includes("두 번째 문단"))
   })
 
+  it("인라인 OMML 수식은 원본 run 사이 위치를 유지한다", async () => {
+    const buffer = await createDocx(`
+      <w:p><w:r><w:t>For </w:t></w:r>
+        <m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:r><m:t>m=1</m:t></m:r></m:oMath>
+        <w:r><w:t>,</w:t></w:r>
+      </w:p>
+    `)
+    const result = await parse(buffer)
+    assert.equal(result.success, true)
+    if (!result.success) return
+    assert.match(result.markdown, /For \$m=1\$,/)
+  })
+
   it("헤딩 스타일 감지 (outlineLvl)", async () => {
     const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">

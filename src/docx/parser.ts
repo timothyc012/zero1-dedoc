@@ -5,6 +5,7 @@
  * w:p → paragraph/heading, w:tbl → table, w:drawing → image.
  */
 
+import { wrapScript, tidyScriptTags } from "../script-tags.js"
 import JSZip from "jszip"
 import { ListCounter } from "./numbering.js"
 import { DOMParser } from "@xmldom/xmldom"
@@ -283,37 +284,6 @@ function parseFootnotes(xml: string): Map<string, string> {
   return notes
 }
 
-// ─── OMML 수집 ────────────────────────────────────────
-
-/**
- * paragraph 내부의 최상위 OMML 엘리먼트(`<m:oMath>` / `<m:oMathPara>`) 수집.
- * `<m:oMathPara>` 안의 중첩 `<m:oMath>` 는 중복 제외.
- */
-function collectOmmlRoots(p: Element): Element[] {
-  const out: Element[] = []
-  const walk = (node: Element) => {
-    const children = node.childNodes
-    if (!children) return
-    for (let i = 0; i < children.length; i++) {
-      const child = children[i]
-      if (child.nodeType !== 1) continue
-      const el = child as Element
-      const tag = el.localName || el.tagName?.replace(/^[^:]+:/, "") || ""
-      if (tag === "oMath" || tag === "oMathPara") {
-        out.push(el)
-        // 내부는 재귀하지 않음 (oMathPara 안의 oMath 중복 방지)
-      } else if (tag === "txbxContent" || tag === "Fallback") {
-        // 텍스트박스 내용은 별도 블록으로 처리되고 mc:Fallback은 mc:Choice의 사본 —
-        // 여기서 재귀하면 같은 수식이 앵커 문단 + 텍스트박스 블록으로 이중/삼중 방출
-      } else {
-        walk(el)
-      }
-    }
-  }
-  walk(p)
-  return out
-}
-
 // ─── Run 텍스트 추출 ──────────────────────────────────
 
 interface RunResult {
@@ -337,6 +307,10 @@ function extractRun(r: Element): RunResult {
   if (rPrEls.length > 0) {
     bold = getChildElements(rPrEls[0], "b").length > 0
     italic = getChildElements(rPrEls[0], "i").length > 0
+    // 위·아래첨자 — w:vertAlign(직접 서식). 글자 스타일(rStyle)로 건 첨자는 보지 않는다
+    const va = getChildElements(rPrEls[0], "vertAlign")[0]
+    const v = va ? getAttr(va, "val") : null
+    if (v === "superscript" || v === "subscript") text = wrapScript(text, v === "superscript" ? "sup" : "sub")
   }
 
   return { text, bold, italic }
@@ -416,6 +390,13 @@ function collectInline(
   }
 
   for (const el of effectiveChildElements(p)) {
+    const tag = el.localName || el.tagName?.replace(/^[^:]+:/, "") || ""
+    if (tag === "oMath" || tag === "oMathPara") {
+      const latex = ommlElementToLatex(el)
+      if (latex) parts.push(isDisplayMath(el) ? " $$" + latex + "$$ " : "$" + latex + "$")
+      continue
+    }
+
     if (matchesLocal(el, "hyperlink")) {
       const rId = getAttr(el, "id")
       const anchor = getAttr(el, "anchor")
@@ -471,17 +452,7 @@ function collectInline(
   }
   flushField() // 닫히지 않은 필드 방어
 
-  // OMML 수식 — <m:oMath> / <m:oMathPara> 를 LaTeX 로 변환해 덧붙임.
-  // 인라인 수식은 `$...$`, display 는 `$$...$$`. 순서는 run 뒤로 몰리지만
-  // 대부분 한 단락 내 수식/텍스트가 분리돼 있어 실용상 무해.
-  for (const om of collectOmmlRoots(p)) {
-    const latex = ommlElementToLatex(om)
-    if (!latex) continue
-    if (isDisplayMath(om)) parts.push(" $$" + latex + "$$ ")
-    else parts.push(" $" + latex + "$ ")
-  }
-
-  const text = parts.join("").replace(/[ \t]{2,}/g, " ").trim()
+  const text = tidyScriptTags(parts.join("")).replace(/[ \t]{2,}/g, " ").trim()
   return { text, bold, italic, footnoteText }
 }
 

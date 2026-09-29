@@ -77,6 +77,7 @@ export function stripMarkup(text) {
   return stripMarkdownTable(text)
     .replace(/\[([^\[\]]*)\]\((?:https?:|mailto:|tel:|#)[^)\s]*\)/gi, "$1")
     .replace(/<\/?u>/g, "")
+    .replace(/<\/?su[bp]>/g, "")
     .replace(/~~/g, "")
 }
 

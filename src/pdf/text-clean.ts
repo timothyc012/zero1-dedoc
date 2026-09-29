@@ -167,6 +167,7 @@ export function cleanPdfText(text: string, opts?: { keepLoneNumbers?: boolean })
     .replace(/~~~~/g, "")
     // 내용이 사라져 빈 밑줄 쌍(<u></u>) 정리 (escapeGfm은 <>를 건드리지 않아 복원 불필요)
     .replace(/<u>\s*<\/u>/g, "")
+    .replace(/<(sup|sub)>\s*<\/\1>/g, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim()
 }

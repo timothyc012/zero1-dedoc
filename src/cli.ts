@@ -28,6 +28,7 @@ program
   .option("--no-tables", "PDF 표 감지 끄기 — 테두리 박스를 표로 오인해 읽기 순서가 뒤집히는 문서(2단 시험지 등)에서 자연 읽기순 텍스트만 뽑는다 (#64)")
   .option("--formula-ocr", "PDF 수식 OCR 활성화 (MFD+MFR ONNX, 첫 사용 시 모델 ~155MB 자동 다운로드)")
   .option("--ocr", "스캔/이미지 PDF 텍스트 OCR (내장 PP-OCRv5 korean, 첫 사용 시 모델 ~18MB 자동 다운로드 — OCR 필요 페이지만 인식)")
+  .option("--ocr-language <lang>", "내장 OCR 언어: korean, en, de (모델을 먼저 사이드로드해야 함)")
   .option("--ocr-force", "전 페이지 강제 OCR (텍스트층이 있어도 무시하고 재인식)")
   .option("--dedupe-headers", "HWP5 레이아웃 표 페이지 반복 러닝 헤더 중복 제거 (기본 off — 붙임별 재번호 오삭제 주의)")
   .option("--keep-empty-cols", "표 오른쪽 끝 빈 열(서식 입력란) 보존 (#47, 기본 off: 후행 빈 열 트림)")
@@ -37,6 +38,8 @@ program
   .option("--image-refs", "--format json 에서 이미지 바이트를 인라인하지 않고 파일 참조(images/<문서 이름>/<파일명>)만 남김 (#65 — 이미지가 수백 장인 문서의 직렬화 한계 회피, -o/-d 와 함께 사용)")
   .option("--password <pw>", "암호로 보호된 문서의 열기 암호 (#59, HWPX·HWP3·HWP5. 한컴 DRM 문서는 해당 없음)")
   .option("--html-tables", "모든 표를 HTML 로 — 파이프 표도 HTML 표로, 태그마다 한 줄씩 들여써 냄")
+  .option("--script-tags", "위·아래첨자를 <sup>·<sub> 로 표기 — PDF 는 기본 끔(논문·수식 PDF 에 권장), HWPX·HWP·DOCX 는 기본 켬")
+  .option("--no-script-tags", "첨자 표기 끄기 — 모든 형식에서 평문(\"104 m2\")")
   .option("--plain", "평문 Markdown — 그림 자리 표시·링크 URL·밑줄/굵게 표기를 빼고 글만 (제목·목록·표 구조는 유지, 색인·RAG 용)")
   .option("--no-images", "이미지 바이트를 추출·출력하지 않음: 글자만 필요할 때 (그림 자리 표시는 남김, PDF 는 PNG 인코딩을 건너뜀)")
   .option("--silent", "진행 메시지 숨기기")
@@ -80,6 +83,7 @@ program
         if (opts.formulaOcr) parseOptions.formulaOcr = true
         if (opts.ocrForce) parseOptions.ocr = "force"
         else if (opts.ocr) parseOptions.ocr = true
+        if (opts.ocrLanguage) parseOptions.ocrLanguage = opts.ocrLanguage as "korean" | "en" | "de"
         if (opts.dedupeHeaders) parseOptions.dedupeRunningHeaders = true
         if (opts.keepEmptyCols) parseOptions.keepTrailingEmptyCols = true
         if (opts.keepEmptyParagraphs) parseOptions.keepEmptyParagraphs = true
@@ -88,6 +92,7 @@ program
         if (opts.password) parseOptions.password = opts.password as string
         if (opts.images === false) parseOptions.images = false
         if (opts.plain) parseOptions.plain = true
+        if (opts.scriptTags !== undefined) parseOptions.scriptTags = opts.scriptTags as boolean
         if (opts.htmlTables) parseOptions.htmlTables = true
         if (!opts.silent) {
           parseOptions.onProgress = (current: number, total: number) => {

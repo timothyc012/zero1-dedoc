@@ -10,6 +10,7 @@
 
 import type { ExtractedCell, TextItem } from "./line-types.js"
 import { sortLineByX, isCjkLatinAutospace } from "./text-line.js"
+import { tagScripts } from "./script-items.js"
 
 /** 시도·전국 이름표 — 두 음절 배분 칸을 문서 어휘 증거 없이도 붙이는 닫힌 목록. "전 체"·"구 분" 같은 표 머리글은 원고에서 띄어 쓰기도
  *  해서(해외직접투자 보도자료 정답 "전 체") 넣지 않는다 */
@@ -198,7 +199,9 @@ export function cellTextToString(items: TextItem[], wrap?: { box: { x1: number; 
     return result
   })
 
-  if (!wrap) return mergeCellTextLines(textLines)
+  // 첨자 태그는 줄 병합 판정(평문)을 다 한 뒤에 — 판정은 글 끝 글자를 본다
+  const scripted = (s: string) => tagScripts(s, merged.map(l => sortLineByX([...l])))
+  if (!wrap) return scripted(mergeCellTextLines(textLines))
   // 줄마다 "다음 줄로 꺾여 넘어갔나" — 다음 줄 첫 글자가 이 줄 뒤에 칸 안쪽으로 못 들어갈 때
   let contentLeft = Infinity
   for (const it of items) if (it.x < contentLeft) contentLeft = it.x
@@ -213,7 +216,7 @@ export function cellTextToString(items: TextItem[], wrap?: { box: { x1: number; 
   for (const e of lineEnds) if (e.right > cellRight) cellRight = e.right
   const wraps = lineEnds.slice(0, -1).map((a, i) => cellLineWraps(wrap.box, contentLeft, a.right, a.fontSize, lineEnds[i + 1].firstCharW)
     || (lineEnds.length >= 3 && !textLines[i + 1].startsWith("(") && cellLineFills(wrap.box, contentLeft, cellRight, a.right, a.fontSize)))
-  return mergeCellTextLines(textLines, { wraps, lex: wrap.lex })
+  return scripted(mergeCellTextLines(textLines, { wraps, lex: wrap.lex }))
 }
 
 /** 첨자 행 병합 — cellTextToString 행 그룹핑 결과에 적용 (규칙은 text-line.ts와 동일) */

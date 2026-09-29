@@ -1,4 +1,4 @@
-/** #80: unsupported PPTX must remain an explicit failure across CLI and MCP. */
+/** PPTX parse failures remain explicit across CLI and MCP for malformed packages. */
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
@@ -57,9 +57,9 @@ for (const format of ["markdown", "json", "chunks"]) {
       const failure = JSON.parse(result.stdout)
       assert.equal(failure.success, false)
       assert.equal(failure.fileType, "pptx")
-      assert.equal(failure.code, "UNSUPPORTED_FORMAT")
+      assert.equal(failure.code, "PARSE_ERROR")
       assert.match(failure.error, /PPTX/)
-      assert.match(failure.error, /지원하지 않/)
+      assert.match(failure.error, /presentation parts are missing/)
       assert.match(result.stderr, /PPTX/)
       if (format === "json") assert.equal(readFileSync(output, "utf-8"), "existing output")
       else assert.equal(existsSync(output), false)
@@ -111,7 +111,7 @@ test("#80 MCP: unsupported PPTX and supported ZIP metadata stay distinct", { tim
         const result = await callTool(tool, renamed)
         assert.equal(result.isError, true, result.text)
         assert.match(result.text, /PPTX/)
-        assert.match(result.text, /지원하지 않/)
+        assert.match(result.text, /PPTX/)
       })
     }
 

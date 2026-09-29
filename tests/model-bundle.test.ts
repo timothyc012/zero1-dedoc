@@ -22,8 +22,8 @@ after(() => {
 })
 
 describe("모델 사이드로드", () => {
-  it("모델군은 텍스트 OCR·수식 OCR 두 갈래이고 캐시 하위 디렉토리 이름이 곧 번들 경로", () => {
-    assert.deepEqual(MODEL_GROUPS.map((g) => g.subdir), ["ppocr", "pix2text"])
+  it("모델군은 언어별 텍스트 OCR과 수식 OCR이고 캐시 하위 디렉토리 이름이 곧 번들 경로", () => {
+    assert.deepEqual(MODEL_GROUPS.map((g) => g.subdir), ["ppocr", "ppocr/en", "ppocr/de", "pix2text"])
   })
 
   it("번들이 비어 있으면 전부 missing 으로 보고하고 실패 처리한다", async () => {
@@ -49,10 +49,10 @@ describe("모델 사이드로드", () => {
     assert.equal(existsSync(installed), false)
   })
 
-  it("상태 조회는 다운로드·복사 없이 두 모델군을 모두 보고한다", async () => {
+  it("상태 조회는 다운로드·복사 없이 모든 모델군을 보고한다", async () => {
     const before = readdirSync(cache).length
     const status = await modelCacheStatus()
-    assert.equal(status.length, 2)
+    assert.equal(status.length, 4)
     assert.ok(status.every((g) => g.allReady === false))
     assert.equal(readdirSync(cache).length, before)
   })

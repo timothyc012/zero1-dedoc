@@ -21,6 +21,7 @@ interface ParseWorkerRequest {
   images?: boolean
   /** "off"(기본) | "auto"(OCR 필요 페이지만) | "force"(전 페이지) */
   ocr?: "off" | "auto" | "force"
+  ocrLanguage?: "korean" | "en" | "de"
   formulaOcr?: boolean
   password?: string | null
 }
@@ -40,6 +41,7 @@ async function parseOne(req: ParseWorkerRequest & { file: string }): Promise<Par
     if (req.images === false) options.images = false
     if (req.ocr === "force") options.ocr = "force"
     else if (req.ocr === "auto") options.ocr = true
+    if (req.ocrLanguage) options.ocrLanguage = req.ocrLanguage
     if (req.formulaOcr) options.formulaOcr = true
     if (req.password) options.password = req.password
     return await parse(toArrayBuffer(readFileSync(absPath)), options)

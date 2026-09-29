@@ -14,7 +14,7 @@ import {
   getModelStatusIn,
   getModelsDir,
 } from "../pdf/formula/models.js"
-import { ALL_OCR_MODELS } from "../ocr/models.js"
+import { ALL_OCR_MODELS, getOcrModelProfile } from "../ocr/models.js"
 
 /** 모델군 — 캐시 하위 디렉토리 이름이 곧 번들 디렉토리 이름 */
 export interface ModelGroup {
@@ -25,6 +25,8 @@ export interface ModelGroup {
 
 export const MODEL_GROUPS: ReadonlyArray<ModelGroup> = [
   { subdir: "ppocr", label: "텍스트 OCR (PP-OCRv5 korean)", specs: ALL_OCR_MODELS },
+  { subdir: "ppocr/en", label: "텍스트 OCR (PP-OCRv5 English)", specs: (() => { const p = getOcrModelProfile("en"); return [p.det, p.rec, p.dict] })() },
+  { subdir: "ppocr/de", label: "텍스트 OCR (PP-OCRv5 Latin/German)", specs: (() => { const p = getOcrModelProfile("de"); return [p.det, p.rec, p.dict] })() },
   { subdir: "pix2text", label: "수식 OCR (Pix2Text)", specs: ALL_FORMULA_MODELS },
 ]
 

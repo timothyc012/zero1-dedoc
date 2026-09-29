@@ -4,6 +4,7 @@
  * HWP, HWPX, PDF → Markdown 변환 통합 라이브러리
  */
 
+import { stripScriptTags } from "./script-tags.js"
 import { toPlainMarkdown } from "./plain-markdown.js"
 import { toHtmlTables } from "./html-tables.js"
 import { readFile } from "fs/promises"
@@ -19,7 +20,8 @@ import { parseXlsxDocument } from "./xlsx/parser.js"
 import { parseXlsDocument } from "./xls/parser.js"
 import { parseDocxDocument } from "./docx/parser.js"
 import { parseHwpmlDocument } from "./hwpml/parser.js"
-import type { ParseResult, ParseOptions, IRBlock } from "./types.js"
+import { parsePptxDocument } from "./pptx/parser.js"
+import type { ParseResult, ParseSuccess, ParseOptions, IRBlock } from "./types.js"
 import { classifyError, sanitizeError, toArrayBuffer } from "./utils.js"
 import { fillFormFields } from "./form/filler.js"
 import type { FillResult } from "./form/filler.js"
@@ -123,9 +125,7 @@ async function dispatch(
       const zipFormat = await detectZipFormat(buffer)
       if (zipFormat === "xlsx") return parseXlsx(buffer, opts)
       if (zipFormat === "docx") return parseDocx(buffer, opts)
-      if (zipFormat === "pptx") {
-        return { success: false, fileType: "pptx", error: "PPTX 파일은 지원하지 않는 파일 형식입니다.", code: "UNSUPPORTED_FORMAT" }
-      }
+      if (zipFormat === "pptx") return parsePptx(buffer, opts)
       // unknown은 손상 ZIP·비표준 섹션 경로의 HWPX 복구를 위해 기존 파서로 전달
       return parseHwpx(buffer, opts)
     }
@@ -148,11 +148,18 @@ async function dispatch(
   }
 }
 
+/** 첨자 표기 끔 — 태그만 걷는다(ParseOptions.scriptTags) */
+function scriptsOff(r: ParseSuccess, off: boolean): ParseSuccess {
+  return off ? stripScriptTags(r) : r
+}
+
 /** 이미지(PNG/JPEG/WebP)를 OCR 로 Markdown 변환 — 텍스트층이 없으므로 OCR 상시 적용 */
 export async function parseImage(buffer: ArrayBuffer, options?: ParseOptions): Promise<ParseResult> {
   try {
     const { parseImageDocument } = await import("./ocr/image-ocr.js")
     const { blocks, warnings } = await parseImageDocument(buffer, options)
+    // OCR 글은 첨자를 가르지 않는다(검출 박스로는 기준선을 믿을 수 없다) — scriptTags 와 무관하게 평문
+    stripScriptTags({ blocks })
     return {
       success: true,
       fileType: "image",
@@ -183,7 +190,7 @@ export async function parseHwp3(buffer: ArrayBuffer, options?: ParseOptions): Pr
 export async function parseHwpx(buffer: ArrayBuffer, options?: ParseOptions): Promise<ParseResult> {
   try {
     const { markdown, blocks, metadata, outline, warnings, images } = await parseHwpxDocument(buffer, options)
-    return { success: true, fileType: "hwpx", markdown, blocks, metadata, outline, warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount }
+    return scriptsOff({ success: true, fileType: "hwpx", markdown, blocks, metadata, outline, warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount }, options?.scriptTags === false)
   } catch (err) {
     return { success: false, fileType: "hwpx", error: sanitizeError(err), code: classifyError(err) }
   }
@@ -216,7 +223,7 @@ export async function parseHwp(buffer: ArrayBuffer, options?: ParseOptions): Pro
       }
     }
 
-    return { success: true, fileType: "hwp", markdown, blocks, metadata, outline, warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount }
+    return scriptsOff({ success: true, fileType: "hwp", markdown, blocks, metadata, outline, warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount }, options?.scriptTags === false)
   } catch (err) {
     return { success: false, fileType: "hwp", error: sanitizeError(err), code: classifyError(err) }
   }
@@ -237,7 +244,8 @@ export async function parsePdf(buffer: ArrayBuffer, options?: ParseOptions): Pro
   }
   try {
     const { markdown, blocks, metadata, outline, warnings, isImageBased, pageQuality, qualitySummary, images, pages } = await parsePdfDocument(buffer, options)
-    return { success: true, fileType: "pdf", markdown, blocks, metadata, outline, warnings, isImageBased, pageQuality, qualitySummary, images, pages, pageCount: metadata?.pageCount }
+    // 첨자 표기 — PDF 는 기하 추정이라 기본 끔(scriptTags: true 로 켠다)
+    return scriptsOff({ success: true, fileType: "pdf", markdown, blocks, metadata, outline, warnings, isImageBased, pageQuality, qualitySummary, images, pages, pageCount: metadata?.pageCount }, options?.scriptTags !== true)
   } catch (err) {
     const isImageBased = err instanceof Error && "isImageBased" in err ? true : undefined
     return { success: false, fileType: "pdf", error: sanitizeError(err), code: classifyError(err), isImageBased }
@@ -268,9 +276,19 @@ export async function parseXls(buffer: ArrayBuffer, options?: ParseOptions): Pro
 export async function parseDocx(buffer: ArrayBuffer, options?: ParseOptions): Promise<ParseResult> {
   try {
     const { markdown, blocks, metadata, outline, warnings, images } = await parseDocxDocument(buffer, options)
-    return { success: true, fileType: "docx", markdown, blocks, metadata, outline, warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount }
+    return scriptsOff({ success: true, fileType: "docx", markdown, blocks, metadata, outline, warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount }, options?.scriptTags === false)
   } catch (err) {
     return { success: false, fileType: "docx", error: sanitizeError(err), code: classifyError(err) }
+  }
+}
+
+/** PPTX 파일을 슬라이드 순서에 따라 Markdown으로 변환 */
+export async function parsePptx(buffer: ArrayBuffer, options?: ParseOptions): Promise<ParseResult> {
+  try {
+    const { markdown, blocks, metadata, warnings } = await parsePptxDocument(buffer, options)
+    return { success: true, fileType: "pptx", markdown, blocks, metadata, warnings, pageCount: metadata?.pageCount }
+  } catch (err) {
+    return { success: false, fileType: "pptx", error: sanitizeError(err), code: classifyError(err) }
   }
 }
 

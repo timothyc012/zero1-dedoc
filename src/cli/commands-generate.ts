@@ -1,9 +1,10 @@
 /** kordoc CLI 명령 — 생성·검수 — generate·profile·lint·redact */
 
 import { readFileSync, writeFileSync, mkdirSync, statSync } from "fs"
-import { basename, dirname, isAbsolute, relative, resolve } from "path"
+import { basename, dirname, resolve } from "path"
 import { detectFormat, markdownToHwpx, hwpxToProfile, PRESET_ALIAS, unknownFontWarnings, incompatibleGongmunWarnings, lintGongmunText, gongmunLintWarnings, lintMuncheText, muncheLintWarnings, usesGaejosikMunche } from "../index.js"
 import { parseFormatProfileJson } from "../hwpx/profile-io.js"
+import { loadGenerationImages } from "../shared/generate-images.js"
 import { buildGongmunOptions, BODY_FONTS, H2_MARKERS, BULLET2_CHARS, parseLevelsSpec, levelFontRecord } from "../hwpx/gongmun-surface.js"
 import type { FormatProfile } from "../hwpx/gen-profile.js"
 import { toArrayBuffer, sanitizeError } from "../utils.js"
@@ -200,27 +201,15 @@ export function registerGenerateCommands(program: Command): void {
             ...(opts.footer ? { footer: String(opts.footer) } : {}),
           }
         }
-        // 이미지 실데이터 (v4.5.0) — 참조가 --image-dir 아래 파일이고 실재할 때만. 경로 탈출은 글자 종류가 아니라 경로로 막는다:
-        // 종전 ASCII 이름 검사는 한글 이름 그림("재고-합계.png")을 경고 없이 뺐다(#95). URL 인코딩된 이름도 풀어 찾고, 건너뛴 참조는 알린다
+        // MCP와 같은 Unicode·실경로 검증을 적용한다.
         let imageBytes: Record<string, Uint8Array> | undefined
         if (opts.imageDir) {
           const dir = resolve(String(opts.imageDir))
-          const skipped: string[] = []
-          for (const m of md.matchAll(/!\[[^\]]*\]\(([^)\s]+)\)/g)) {
-            const url = m[1]
-            if (/^[a-z][a-z0-9+.-]*:/i.test(url)) continue // http:·data: 등 원격·인라인 참조는 대상 아님
-            let name = url
-            try { name = decodeURIComponent(url) } catch { /* 잘못된 % 인코딩 — 원문 그대로 */ }
-            const file = resolve(dir, name)
-            const rel = relative(dir, file)
-            if (!rel || rel.startsWith("..") || isAbsolute(rel)) { skipped.push(`${url} (이미지 폴더 밖)`); continue }
-            try {
-              ;(imageBytes ??= {})[url] = new Uint8Array(readFileSync(file))
-            } catch { skipped.push(`${url} (파일 없음)`) } // placeholder 유지
-          }
+          const loaded = await loadGenerationImages(md, dir)
+          imageBytes = loaded.images
           if (!silent) {
             process.stderr.write(`[kordoc] 이미지 임베드: ${Object.keys(imageBytes ?? {}).length}개 (${dir})\n`)
-            for (const s of skipped) process.stderr.write(`[kordoc] ⚠ 이미지 건너뜀: ${s}\n`)
+            for (const warning of loaded.warnings) process.stderr.write(`[kordoc] ⚠ ${warning}\n`)
           }
         }
 

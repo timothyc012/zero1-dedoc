@@ -462,15 +462,6 @@ export function dropCoarseClipGrids(
     const inner = l.colXs.slice(1, -1)
     const ruled = inner.filter(x => verticalCoverage(x, low, high) >= overlap * 0.75)
     if (ruled.length >= Math.ceil(inner.length / 2)) return true
-    const wholeGridRuled = inner.every(x => verticalCoverage(x, l.bbox.y1, l.bbox.y2) >= lineHeight * 0.75)
-    if (!wholeGridRuled) return false
-    // A table can have full-span heading or total rows with no local vertical
-    // rules. Use the table's row boundaries (or text in its existing columns)
-    // to distinguish those rows from a separate clip on the same page.
-    const aligned = c.rowYs.filter(y => l.rowYs.some(lineY => near(y, lineY))).length
-    const trailingRowsAlign = c.rowYs.length >= 3 && c.rowYs.slice(-3).every(y => l.rowYs.some(lineY => near(y, lineY)))
-    if ((aligned >= 2 && aligned * 2 >= c.rowYs.length) || trailingRowsAlign) return true
-    if (aligned === 0) return false
     const occupied = new Set<number>()
     let numeric = 0
     for (const item of items) {
@@ -480,6 +471,22 @@ export function dropCoarseClipGrids(
       occupied.add(col)
       if (/^[+-]?(?:\d[\d.,\s]*|[xX–—-])%?$/.test(item.text.trim())) numeric++
     }
+    // Some multi-column reports draw a row as one broad text clip while the
+    // physical line grid establishes the columns elsewhere. Distributed text
+    // is stronger evidence than the clip's missing local strokes, provided
+    // most columns contain numeric values. A one-column note cannot satisfy it.
+    const distributedNumericRow = clipCols === 1 && lineCols >= 10 &&
+      occupied.size >= Math.ceil(lineCols * 0.75) && numeric >= Math.ceil(lineCols / 2)
+    if (distributedNumericRow) return true
+    const wholeGridRuled = inner.every(x => verticalCoverage(x, l.bbox.y1, l.bbox.y2) >= lineHeight * 0.75)
+    if (!wholeGridRuled) return false
+    // A table can have full-span heading or total rows with no local vertical
+    // rules. Use the table's row boundaries (or text in its existing columns)
+    // to distinguish those rows from a separate clip on the same page.
+    const aligned = c.rowYs.filter(y => l.rowYs.some(lineY => near(y, lineY))).length
+    const trailingRowsAlign = c.rowYs.length >= 3 && c.rowYs.slice(-3).every(y => l.rowYs.some(lineY => near(y, lineY)))
+    if ((aligned >= 2 && aligned * 2 >= c.rowYs.length) || trailingRowsAlign) return true
+    if (aligned === 0) return false
     return occupied.size >= Math.ceil(lineCols * 0.75) && numeric >= Math.ceil(lineCols / 2)
   }))
 }

@@ -7,6 +7,7 @@
  */
 
 import { KordocError, sanitizeHref, stripDtd } from "../utils.js"
+import { wrapScript, tidyScriptTags } from "../script-tags.js"
 import { convertTableToText, escapeLiteralDollar, MAX_COLS, MAX_ROWS } from "../table/builder.js"
 import type { IRBlock, IRCell, IRSpan, IRTable, InlineStyle, ParseWarning } from "../types.js"
 import { hmlToLatex } from "./equation.js"
@@ -882,6 +883,18 @@ function isInDeletedRange(ctx?: WalkCtx): boolean {
   return (ctx?.shared.track.deleteDepth ?? 0) > 0
 }
 
+/** run 의 자식이 글(hp:t)·조판 캐시뿐인지 — 첨자 감싸기 대상 */
+function runHasOnlyText(run: Element): boolean {
+  const kids = run.childNodes
+  for (let i = 0; i < (kids?.length ?? 0); i++) {
+    const k = kids![i] as Element
+    if (k.nodeType !== 1) continue
+    const t = (k.tagName || k.localName || "").replace(/^[^:]+:/, "")
+    if (t !== "t" && t !== "linesegarray") return false
+  }
+  return true
+}
+
 function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: WalkCtx): ParagraphInfo {
   let text = ""
   let href: string | undefined
@@ -1123,11 +1136,18 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
           break
         }
 
-        // run 요소에서 charPrIDRef 추출
-        case "r": {
+        // run 요소 — hp:r 은 charPrIDRef 를 문단 대표 스타일로. 첨자 글자 모양이면 이 run 이 더한 글을 <sup>·<sub> 로
+        // (개체·각주 등 컨트롤을 품은 run·필드 경계가 걸친 run 은 글 위치가 섞여 감싸지 않는다)
+        case "r": case "run": {
           const runCharPr = child.getAttribute("charPrIDRef")
-          if (runCharPr && !charPrId) charPrId = runCharPr
+          if (tag === "r" && runCharPr && !charPrId) charPrId = runCharPr
+          const script = runCharPr ? styleMap?.charProperties.get(runCharPr)?.script : undefined
+          const start = text.length, nLinks = linkRanges.length, nOpen = openFields.length
           walk(child, depth + 1)
+          if (script && linkRanges.length === nLinks && openFields.length === nOpen && runHasOnlyText(child)) {
+            const added = text.slice(start)
+            if (added && !/[\x1E\x1F\n$]/.test(added)) text = text.slice(0, start) + wrapScript(added, script)
+          }
           break
         }
 
@@ -1157,6 +1177,8 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
   // 목차 리더 마커(\x1F) 이후 텍스트(페이지번호) 제거
   const leaderIdx = text.indexOf("\x1F")
   if (leaderIdx >= 0) text = text.substring(0, leaderIdx)
+  // run 마다 감싼 첨자 태그 정리(이웃 합치기·공백은 밖으로) — 링크 치환이 글 위치를 다 쓴 뒤
+  text = tidyScriptTags(text)
 
   const cleanParaText = (raw: string): string => {
     let t = raw.replace(/[ \t]+/g, " ").trim()
