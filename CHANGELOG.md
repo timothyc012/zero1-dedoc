@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+- Adopted the upstream v4.16.3 image-path confinement fix with Unicode image-name support.
+- Adopted upstream script-tag support for superscript/subscript and PDF two-column author affiliations.
+- Fixed DOCX inline OMML equations so they stay in their original position relative to surrounding runs.
+
 ## [4.16.1-zero1.1] - 2026-09-29 (source preview)
 
 - Forked Kordoc v4.16.1 as Zero1 Dedoc, preserving its history, license, public API, and third-party notices. Added distinct `zero1-dedoc` package, CLI, and MCP identities that can coexist with Kordoc.
