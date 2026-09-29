@@ -117,11 +117,13 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 
 ### P1. PDF 분절 원인과 페이지별 정답 확정
 
-**범위 M:** `bench/pdf-grid-trace.mjs`(신규), `src/pdf/page-blocks.ts`의 opt-in 진단 지점, `bench/office-pdf-gold.json`(신규).
+**상태:** 공식 PDF/XLSX에서 4–11쪽 인쇄 분할·표시값 2,356개·병합 범위를 고정했다. Poppler 독립 추출이 각 쪽의 표시값 2,356/2,356을 확인했다. 선 단계에서는 8쪽 모두 정답 36/38×10/11 격자지만 넓은 clip container 필터가 모두 버린다. 현 IR은 값 1,965/2,356, 완전 표 0/8이다. 자세한 근거는 `docs/benchmarks/bmf-page-grid-diagnosis.md`.
 
-- [ ] BMF 4–11쪽의 선·클립·최종 격자와 텍스트 소속을 파일로 시각화하여 어느 단계에서 10/11열이 조각나는지 확정한다. 좌표계·페이지 회전·클립 경계와 기존 필터의 영향을 구별한다.
-- [ ] 공식 XLSX와 원본 PDF를 함께 확인해 각 PDF 페이지의 표시 열·병합 셀·반복 헤더·합계 행을 정답으로 고정한다. workbook 전체 열 수를 PDF 페이지 열 수로 가정하지 않는다.
-- [ ] 같은 증거로 재현되는 최소 양성/음성 예제를 만든다. 별도 표·주석 박스·중첩 표를 하나로 합치는 오탐도 포함한다.
+**범위 M:** `bench/pdf-grid-trace.mjs`(신규), `bench/build-bmf-gold.mjs`·`bench/verify-bmf-gold.mjs`·`bench/score-bmf-gold.mjs`(신규), `bench/office-pdf-gold.json`(신규). 운영 파서는 수정하지 않고 exported 선·클립 단계를 별도 opt-in 스크립트에서 재실행한다.
+
+- [x] BMF 4–11쪽의 선·클립·최종 격자와 텍스트 소속을 SVG/JSON으로 시각화했다. 0도 회전·원점 `(0,0)`을 확인했고, line grid는 정상이나 `dropGridsInside`의 container 경로가 삭제하는 단계를 확정했다.
+- [x] 공식 XLSX와 PDF를 함께 확인해 표시 열·병합 셀·반복 헤더·합계 행을 페이지별 gold로 고정했다. 26열 workbook을 11열/10열의 인쇄 패널로 나눴다.
+- [x] 양성 사례는 BMF의 밀집 선 표+넓은 인쇄 클립, 음성 사례는 기존 지정서의 얕은 3×3 form container 테스트다. scorer는 분절·값 누락·표 안 footer를 별도 실패로 검출한다. 별도 표·주석을 한 표로 합치는 오탐은 T1 검증에 포함한다.
 
 **검증:** 디버그 출력을 꺼도 기존 parser 결과가 같고, 정답은 ODL 출력만 복사해 만들지 않았음을 문서화한다. **의존성:** U2. 고위험 작업이므로 기능 확장 전에 진단한다.
 
