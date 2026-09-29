@@ -1,7 +1,7 @@
 {
-  "name": "kordoc",
-  "version": "4.16.1",
-  "description": "Parse Korean documents (HWP3-5, HWPX, HWPML, PDF, XLS(X), DOCX) to Markdown — CLI + MCP server with lossless patch/roundtrip, form-filler, document diff, print & layout-preserving SVG renderer",
+  "name": "zero1-dedoc",
+  "version": "4.16.1-zero1.1",
+  "description": "Zero1 Dedoc — multilingual text-layer PDF parsing and Korean HWP/HWPX, Office, CLI and MCP tools; a Kordoc fork",
   "type": "module",
   "exports": {
     ".": {
@@ -14,8 +14,8 @@
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "kordoc": "./dist/cli.js",
-    "kordoc-mcp": "./dist/mcp.js"
+    "zero1-dedoc": "./dist/cli.js",
+    "zero1-dedoc-mcp": "./dist/mcp.js"
   },
   "files": [
     "dist",
@@ -30,6 +30,7 @@
     "typecheck": "tsc --noEmit",
     "bench:gate": "node bench/verify-pages.mjs --gate && node bench/score.mjs && node bench/roundtrip.mjs --gate && node bench/pdf-table-gt.mjs --gate --no-ocr && node bench/pdf-text-gt.mjs --gate && node bench/formats-sweep.mjs --gate && node bench/fuzz-sweep.mjs --gate && node bench/verify-reflow.mjs --gate && node bench/redact-bench.mjs --gate && node bench/ocr-accuracy.mjs --gate",
     "bench:visual": "node bench/visual/verify-visual.mjs --gate",
+    "bench:german-smoke": "node bench/zero1-german-smoke.mjs",
     "sync-meta": "node scripts/sync-meta.mjs",
     "prepublishOnly": "node scripts/sync-meta.mjs --check && node scripts/check-notices.mjs && npm run typecheck && npm run test && npm run build && node bench/gate-if-corpus.mjs"
   },
@@ -39,6 +40,9 @@
     "hancom",
     "hangul",
     "korean",
+    "german",
+    "english",
+    "multilingual",
     "document",
     "parser",
     "pdf",
@@ -54,11 +58,12 @@
     "print",
     "puppeteer"
   ],
-  "author": "chrisryugj",
+  "author": "timothyc012",
+  "contributors": ["chrisryugj"],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/chrisryugj/kordoc.git"
+    "url": "https://github.com/timothyc012/zero1-dedoc.git"
   },
   "engines": {
     "node": ">=20"

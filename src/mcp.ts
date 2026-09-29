@@ -1,4 +1,4 @@
-/** kordoc MCP 서버 — Claude/Cursor에서 문서 파싱 도구로 사용. 도구 정의는 mcp/ 아래 도구군 모듈 */
+/** Zero1 Dedoc MCP server; the document tools remain in mcp/ modules. */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
@@ -15,7 +15,7 @@ export { ALLOWED_EXTENSIONS, PARSE_EXTENSIONS, IMAGE_EXTENSIONS, PROFILE_EXTENSI
 export { buildFillInputs } from "./mcp/tools-form.js"
 
 const server = new McpServer({
-  name: "kordoc",
+  name: "zero1-dedoc",
   version: VERSION,
 })
 
@@ -37,7 +37,7 @@ export async function startMcpServer(): Promise<void> {
   const root = getAccessRoot()
   if (isOfflineMode() || root) {
     const flags = [isOfflineMode() ? "offline" : null, root ? `root=${root}` : null].filter(Boolean)
-    process.stderr.write(`[kordoc-mcp] 제한 모드: ${flags.join(", ")}\n`)
+    process.stderr.write(`[zero1-dedoc-mcp] 제한 모드: ${flags.join(", ")}\n`)
   }
   const transport = new StdioServerTransport()
   await server.connect(transport)
