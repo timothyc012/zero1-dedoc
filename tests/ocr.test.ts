@@ -38,6 +38,11 @@ describe("OCR 사전 파싱 (parseCharacterDict)", () => {
   it("character_dict 없으면 빈 배열", () => {
     assert.deepEqual(parseCharacterDict("Global:\n  model: x\n"), [])
   })
+
+  it("RapidOCR plain dictionary도 한 글자 줄 목록으로 읽는다", () => {
+    const plain = Array.from({ length: 40 }, (_, i) => String.fromCharCode(33 + i)).join("\n")
+    assert.equal(parseCharacterDict(plain).length, 40)
+  })
 })
 
 describe("OCR 언어 프로필", () => {

@@ -165,7 +165,12 @@ export function parseCharacterDict(yml: string): string[] {
     // 들여쓰기가 얕아지면 블록 종료 (빈 줄은 통과)
     if (line.trim() !== "") break
   }
-  return chars
+  if (chars.length > 0) return chars
+  // RapidOCR's PP-OCRv5 English/Latin bundles ship the same CTC alphabet as
+  // a plain one-character-per-line dictionary rather than inference.yml.
+  const plain = lines.map(line => line.replace(/^\uFEFF/, "").trimEnd()).filter(line => line.length > 0)
+  if (plain.length >= 32 && plain.every(line => [...line].length <= 2)) return plain
+  return []
 }
 
 export function ocrModelPath(spec: ModelSpec): string {

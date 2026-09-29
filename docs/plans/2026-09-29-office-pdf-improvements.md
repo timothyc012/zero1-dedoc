@@ -199,13 +199,15 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 
 - [ ] `ocrLanguage` 또는 동등한 명시 옵션으로 언어→recognizer/dictionary/preprocessing 프로필을 선택한다. Docling/RapidOCR의 언어 해석을 참고하며 `de`를 이름만 바꾼 한국어 모델로 처리하지 않는다.
 - [ ] 모델·사전 SHA, 라이선스, 입력 크기·채널 순서·정규화·출력 class 차원을 함께 고정한다. 독일어 ä/ö/ü/ß, 영어, 유럽식 소수·천 단위를 실제 모델에서 검증한다.
-- [ ] 모델 준비 명령과 parse 실행을 구분한다. offline+캐시 없음/해시 불일치에서 명확히 실패 또는 `NEEDS_OCR`를 반환하고 런타임이 몰래 다운로드하지 않는다.
+- [x] 모델 준비 명령과 parse 실행을 구분한다. offline+캐시 없음/해시 불일치에서 명확히 실패 또는 `NEEDS_OCR`를 반환하고 런타임이 몰래 다운로드하지 않는다.
 
-**검증:** 언어 해석/캐시/해시 테스트, 준비된 모델을 `--network none`에서 로드. **의존성:** U2, G0. 선택한 모델의 native ONNX 출력 호환성을 이 단계에서 실증한다.
+**검증:** 언어 해석/캐시/해시 테스트, English와 Latin/German 모델을 실제로 SHA 검증해 준비하고 이미지 전용 PDF를 각각 인식했다. **의존성:** U2, G0. 선택한 모델의 native ONNX 출력 호환성을 실증했다.
 
 ### O2. 기존 ONNX 엔진에 프로필 적용·품질 신호 전달
 
-**범위 M:** `src/ocr/engine.ts`, `src/ocr/postprocess.ts`, `src/pdf/parser.ts`, `src/types.ts`, `tests/pdf-auto-ocr.test.ts`.
+**상태:** 기본 프로필 연결 구현 완료. 동일 이미지 전용 PDF에서 English와 Latin/German 프로필이 각각 `HORIZON CLEAN AVIATION 2026`과 `TOPIC CALL BUDGET`을 복원했다. 실제 독일어·영어 문서군 CER/WER holdout은 남아 있다.
+
+**범위 M:** `src/ocr/engine.ts`, `src/ocr/models.ts`, `src/ocr/pdf-ocr.ts`, `src/ocr/image-ocr.ts`, `src/pdf/parser.ts`, `src/types.ts`, `tests/ocr.test.ts`.
 
 - [ ] O1의 입력/출력 계약에 맞춰 인식을 수행하고 한국어 전용 후처리가 독일어·영어에 적용되지 않게 한다. 텍스트층/스캔 혼합 PDF에서 필요한 페이지만 OCR한다.
 - [ ] 기존 `pageQuality`, `qualitySummary`, `NEEDS_OCR`, 내부 `ocrApplied` 신호를 일관되게 노출한다. `ocr:false`, 모델 없음, 인식 실패, 인식 후 충분한 본문을 구분한다. `success=true`의 파싱 계약은 유지한다.
