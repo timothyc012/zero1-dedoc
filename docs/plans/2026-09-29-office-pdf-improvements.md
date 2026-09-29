@@ -91,6 +91,8 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 
 ### U1. upstream 이미지 접근 수정 반영
 
+**상태:** 구현 완료 in `694c1d2`.
+
 **범위:** 원본 보안 패치 6개 파일을 하나의 PR로 유지한다.
 
 - [ ] `git cherry-pick -x 1a70bc16b00e96646c8c1f12e335f5f8ba3c0abd`를 별도 `codex/*` 브랜치에서 수행하고 출처를 유지한다.
@@ -100,6 +102,8 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 **검증:** `node --import tsx --test tests/generate-image-dir.test.ts tests/mcp-generate-images.test.ts`, typecheck/build. **의존성:** 없음. 계획 승인 후 첫 반영 PR.
 
 ### U2. upstream 첨자/저자 줄 기능 반영
+
+**상태:** 구현 완료 in `b9562b6`.
 
 **범위:** `cc1fca2`는 다수 파서·공통 렌더러를 함께 바꾸므로 원자적 upstream PR로 취급한다.
 
@@ -131,7 +135,9 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 
 ### D1. DOCX inline 수식 순서 수정
 
-**범위 S:** `src/docx/parser.ts`, `tests/docx-equation.test.ts`.
+**상태:** 구현 완료 in `78c7062`.
+
+**범위 S:** `src/docx/parser.ts`, `tests/docx.test.ts`.
 
 - [ ] `collectInline()`이 XML 자식 순서대로 일반 run·수식·하이퍼링크·필드를 처리하도록 한다. 마지막에 모든 OMML을 덧붙이는 처리를 제거하고 중첩 `oMathPara/oMath` 중복 방출을 막는다.
 - [ ] `For $m=1$,`과 `The angle is $…$.`가 원본 순서를 유지한다. 한 문단의 여러 수식, 표 셀·링크 내부 수식, display math를 포함한다.
