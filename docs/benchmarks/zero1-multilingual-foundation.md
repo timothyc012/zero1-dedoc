@@ -6,14 +6,14 @@
 
 The same 200 PDFs were parsed before and after the German PDF changes. Both runs used `bench/odl-bench.mjs` with `KORDOC_OFFLINE=1` and an empty isolated `HOME`, so the OCR model cache was absent. The unmodified `src/evaluator.py --engine kordoc` then scored both outputs. The `kordoc` engine directory name is retained by the inherited prediction script; the second run contains Zero1 Dedoc predictions.
 
-| Metric | Upstream base | Zero1 Dedoc | Difference |
+| Metric | Previous locked result | Zero1 Dedoc refresh | Difference |
 | --- | ---: | ---: | ---: |
-| Overall | 0.93705155 | 0.93705155 | 0 |
-| Reading order (NID) | 0.93802742 | 0.93802742 | 0 |
-| Table structure (TEDS) | 0.93569940 | 0.93569940 | 0 |
-| Heading hierarchy (MHS) | 0.93264864 | 0.93264864 | 0 |
+| Overall | 0.937051555 | 0.937073892 | +0.000022337 |
+| Reading order (NID) | 0.938027420 | 0.938037332 | +0.000009912 |
+| Table structure (TEDS) | 0.935699400 | 0.935699400 | 0 |
+| Heading hierarchy (MHS) | 0.932648642 | 0.932713617 | +0.000064975 |
 
-All **200/200 PDFs** parsed in each run. The seven per-document score fields are identical for all 200 documents; 0 improved, 0 regressed. The table metric has 42 scored documents and heading metric 107 according to the public evaluator. [Baseline evaluation JSON](data/kordoc-v4.16.1-odl200.json) · [Zero1 evaluation JSON](data/zero1-dedoc-odl200.json).
+All **200/200 PDFs** parsed in both runs. The table metric has 42 scored documents and heading metric 107 according to the public evaluator. Three documents moved by less than `0.00026` NID, with no material negative document delta; the table score was unchanged. [Baseline evaluation JSON](data/kordoc-v4.16.1-odl200.json) · [Zero1 evaluation JSON](data/zero1-dedoc-odl200.json).
 
 The post-T1/H1 refresh is recorded in
 [zero1-odl200-refresh-2026-09-29.md](zero1-odl200-refresh-2026-09-29.md):
