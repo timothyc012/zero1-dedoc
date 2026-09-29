@@ -22,6 +22,7 @@ import { normalizeOcrLanguage, type OcrLanguage } from "./models.js"
 import { deskewPage } from "./deskew.js"
 import { ensureOcrModels } from "./models.js"
 import { OPTIONAL_DEP_INSTALL_HINT } from "../utils.js"
+import { mergeOcrPasses } from "./detection-tiles.js"
 
 /** OCR 렌더 스케일 (72dpi × 3 = 216dpi) — 10pt 본문이 rec 입력 높이(48px)에 근접 */
 const OCR_RENDER_SCALE = 3
@@ -33,6 +34,15 @@ const OCR_RENDER_SCALE = 3
 export const MAX_OCR_PIXELS = 24_000_000
 /** 페이지 하나당 OCR 타임아웃 — det+rec 수십 라인 기준 넉넉히 */
 const PAGE_TIMEOUT_MS = 120_000
+
+export function isCloserReadUseful(
+  regions: Array<{ x1: number; y1: number; x2: number; y2: number }>,
+  pageWidth: number,
+  pageHeight: number,
+): boolean {
+  const pageArea = Math.max(1, pageWidth * pageHeight)
+  return regions.some(r => Math.max(0, r.x2 - r.x1) * Math.max(0, r.y2 - r.y1) < pageArea * 0.8)
+}
 
 export type OcrMode = "builtin" | OcrProvider
 
@@ -124,7 +134,8 @@ async function ocrOnePage(
   }
   // 그림 영역만 읽는 쪽은 두 배로 한 번 그려 영역 다시 읽기(closer)에 쓰고, 쪽 배율 래스터는 2×2 평균으로 줄여 만든다
   // (pdfium 은 같은 쪽을 두 번 그리면 wasm 서명 오류가 난다)
-  const closer = regions && mode === "builtin" && renderScale * 2 <= Math.sqrt(MAX_OCR_PIXELS / Math.max(1, pdfW * pdfH))
+  const closer = regions && mode === "builtin" && isCloserReadUseful(regions, pdfW, pdfH) &&
+    renderScale * 2 <= Math.sqrt(MAX_OCR_PIXELS / Math.max(1, pdfW * pdfH))
   const rendered = await page.render({
     scale: closer ? renderScale * 2 : renderScale,
     render: async ({ data }) => data,
@@ -159,12 +170,14 @@ async function ocrOnePage(
         const cx = (it.x + it.w / 2) / scale, cy = pdfH - (it.y + it.h / 2) / scale
         return cx >= r.x1 && cx <= r.x2 && cy >= r.y1 && cy <= r.y2
       }
-      const reads = hiRgba ? await closerReads(hiRgba, rw * 2, rh * 2, pdfH, scale * 2, regions, engine!) : []
+      const reads = hiRgba ? await closerReads(hiRgba, rw * 2, rh * 2, pdfW, pdfH, scale * 2, regions, engine!) : []
       return regions.flatMap((r, k) => {
         let own = items.filter(it => inside(it, r))
-        // 그림 속 글은 작다(차트 눈금·범례 6~8pt) — 영역만 두 배로 다시 읽어 글자 수로 가중한 평균 신뢰도가 높은 쪽을 쓴다
+        // 그림 속 글은 작다(차트 눈금·범례 6~8pt) — 영역만 두 배로 다시 읽고
+        // 겹치는 줄마다 더 많은 글자를 보존한 후보를 합친다. 페이지 전체 평균 신뢰도는
+        // 큰 표제 몇 줄이 점수를 끌어올려 작은 가격·각주를 통째로 버릴 수 있다.
         const near = reads[k]
-        if (near?.length && meanConfidence(near) > meanConfidence(own)) own = near
+        if (near?.length) own = mergeOcrPasses(own, near)
         return own.length ? ocrItemsToBlocks(own, pageNo, pdfW, pdfH, scale, ruling && rulingToPdfLines(ruling, scale, pdfH), detectTables) : []
       })
     }
@@ -213,20 +226,16 @@ function halve(src: Uint8Array, w: number, h: number): { rgba: Uint8Array; width
 /** 그림 영역만 읽을 때 — 끝자락 지우기를 끈다 (engine OcrTuning.trimEdges 주석) */
 const REGION_TUNING: Readonly<OcrTuning> = Object.freeze({ ...DEFAULT_OCR_TUNING, trimEdges: false })
 
-function meanConfidence(items: OcrItem[]): number {
-  let n = 0, sum = 0
-  for (const it of items) { const len = [...it.text].length; n += len; sum += it.confidence * len }
-  return n ? sum / n : 0
-}
-
 /** 그림 영역마다 두 배 래스터에서 잘라 다시 인식한 글줄 — 좌표는 쪽 배율 래스터 기준으로 되돌린다 */
 async function closerReads(
-  rgba: Uint8Array, rw: number, rh: number, pdfH: number, hi: number,
+  rgba: Uint8Array, rw: number, rh: number, pdfW: number, pdfH: number, hi: number,
   regions: Array<{ x1: number; y1: number; x2: number; y2: number }>,
   engine: NonNullable<Awaited<ReturnType<typeof getOcrEngine>>>,
 ): Promise<Array<OcrItem[] | null>> {
   const out: Array<OcrItem[] | null> = []
   for (const r of regions) {
+    const regionArea = Math.max(0, r.x2 - r.x1) * Math.max(0, r.y2 - r.y1)
+    if (regionArea >= pdfW * pdfH * 0.8) { out.push(null); continue }
     const x0 = Math.max(0, Math.floor(r.x1 * hi)), y0 = Math.max(0, Math.floor((pdfH - r.y2) * hi))
     const cw = Math.min(rw, Math.ceil(r.x2 * hi)) - x0, ch = Math.min(rh, Math.ceil((pdfH - r.y1) * hi)) - y0
     if (cw < 16 || ch < 16) { out.push(null); continue }
