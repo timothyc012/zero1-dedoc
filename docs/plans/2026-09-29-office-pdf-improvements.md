@@ -157,6 +157,8 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 
 ### T1. PDF 표 격자와 텍스트 소속 복원
 
+**상태:** 첫 구현 slice 완료 in working branch. `dropCoarseClipGrids`가 10열 이상 보고서에서 지역 세로선이 끊긴 전폭 숫자행을 텍스트 분포로 판정하고 선 격자에 맡긴다. 31×11 BMF 본문 표가 페이지 5와 9에서 단일 표로 유지되는 것을 smoke에 추가했다. 전체 BMF 뒤쪽 표의 모든 의미 분절은 아직 남아 있어 후속 slice가 필요하다.
+
 **범위 M:** P1에서 확정한 경로를 기준으로 `src/pdf/table-grid.ts`, `src/pdf/page-blocks.ts`, 필요 시 `src/pdf/cell-extract.ts`, `tests/pdf-nonhancom.test.ts`를 중심으로 수정한다. 원인이 다른 모듈에 있으면 진단 결과와 함께 별도 작업으로 나눈다.
 
 - [ ] ODL의 완성된 표 경계와 내용 소속을 먼저 확인하는 방식을 참고해, 행·열 정렬 근거가 있는 영역만 재구성한다. 한 텍스트 토큰은 원본 위치에 맞는 한 셀에 소속돼야 한다.

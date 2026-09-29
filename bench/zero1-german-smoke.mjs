@@ -30,6 +30,8 @@ const tax = results[0].result
 const tables = tax.blocks.filter(block => block.type === "table" && block.table)
 const front = tables.filter(block => block.pageNumber <= 3)
 assert.deepEqual(front.map(block => [block.pageNumber, block.table.rows, block.table.cols]), [[1, 47, 7], [2, 50, 7], [3, 44, 7]])
+assert.ok(tables.some(block => block.pageNumber === 5 && block.table.rows === 31 && block.table.cols === 11), "page 5 overview body table must remain one 31x11 table")
+assert.ok(tables.some(block => block.pageNumber === 9 && block.table.rows === 31 && block.table.cols === 11), "page 9 overview body table must remain one 31x11 table")
 const first = front[0].table
 const lohnsteuer = first.cells.find(row => row.some(cell => cell.text === "Lohnsteuer"))
 assert.deepEqual(lohnsteuer?.map(cell => cell.text), ["Lohnsteuer", "21.890.941", "20.966.969", "4,4", "178.401.148", "170.488.348", "4,6"])

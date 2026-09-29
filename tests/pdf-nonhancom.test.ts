@@ -407,4 +407,21 @@ describe("dropCoarseClipGrids — 다열 선 격자와 겹친 전폭 클립 조�
     assert.deepEqual(dropCoarseClipGrids([total], [line], bodyRules, values), [])
     assert.deepEqual(dropCoarseClipGrids([total], [line], bodyRules, values.slice(0, 2)), [total])
   })
+
+  it("10열 보고서의 전폭 숫자행은 지역 세로선이 없어도 선 격자에 맡긴다", () => {
+    const cols = Array.from({ length: 11 }, (_, i) => 55 + i * 73)
+    const report: TableGrid = {
+      rowYs: Array.from({ length: 41 }, (_, i) => 512 - i * 12),
+      colXs: cols,
+      bbox: { x1: cols[0], y1: 32, x2: cols.at(-1)!, y2: 512 },
+      vertexRadius: 1,
+    }
+    const total = clip(42, 54)
+    const values = cols.slice(0, -1).map((x, i) => ({
+      text: i === 0 ? "Total" : String(i * 100), x: x + 4, y: 46, w: 42, h: 5,
+    }))
+    assert.deepEqual(dropCoarseClipGrids([total], [report], [], values), [total])
+    const bodyRules = cols.slice(1, -1).map(x => ({ x1: x, x2: x, y1: 80, y2: 500, lineWidth: 1 }))
+    assert.deepEqual(dropCoarseClipGrids([total], [report], bodyRules, values), [])
+  })
 })
