@@ -68,7 +68,9 @@ An explicit OCR-enabled evaluation image was also built with the same package,
 With `--network none`, the high-resolution German image-only fixture returned
 `OCR_APPLIED` and exactly preserved `Schäferstraße Köln – Fußgängerzone
 123,45 EUR`. The model-free image and the OCR-enabled image are separate
-evaluation variants; neither changes the default parser route.
+evaluation variants; neither changes the default parser route. An English
+image-only fixture also returned `OCR_APPLIED` and retained
+`HORIZON CLEAN AVIATION 2026` and `TOPIC CALL BUDGET`.
 
 Cross-page ruled tables now require a repeated header or matching caption before merging. This prevents unrelated tables with the same geometry and numeric column roles from merging. A genuine continuation without either cue may remain split; it needs a separate labeled test case before adding a looser rule.
 
