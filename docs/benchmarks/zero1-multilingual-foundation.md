@@ -62,6 +62,14 @@ The image is an evaluation artifact, not a production deployment. The WSL
 address used by the earlier run was unavailable during this repeat; the local
 Docker result verifies the same network-isolated package and worker contract.
 
+An explicit OCR-enabled evaluation image was also built with the same package,
+`ZERO1_ENABLE_OCR=1`, and `ZERO1_OCR_LANGUAGES="en de"`. Its digest is
+`sha256:bb3d46f32c250ff6eb5e773b24d97a6a62f41a42cec9e2ea322c775be0edc995`.
+With `--network none`, the high-resolution German image-only fixture returned
+`OCR_APPLIED` and exactly preserved `Schäferstraße Köln – Fußgängerzone
+123,45 EUR`. The model-free image and the OCR-enabled image are separate
+evaluation variants; neither changes the default parser route.
+
 Cross-page ruled tables now require a repeated header or matching caption before merging. This prevents unrelated tables with the same geometry and numeric column roles from merging. A genuine continuation without either cue may remain split; it needs a separate labeled test case before adding a looser rule.
 
 ## Korean and OCR coverage
