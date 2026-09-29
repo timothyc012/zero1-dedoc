@@ -84,4 +84,4 @@ Cross-page ruled tables now require a repeated header or matching caption before
 
 ## Korean and OCR coverage
 
-The repository's follow-up `npm test` passed **2,610 tests**, with **10 skips** and **0 failures** after the table-continuation and missing-gridline fixes. The first sandboxed attempt failed six tests requiring localhost, Chromium, or filesystem watch; the same suite passed when allowed to use those resources. The private Korean PDF/HWPX corpus required by `npm run bench:gate` was not present in this checkout, so that gate is **unverified**. OCR is not part of these results. The bundled recognition model remains Korean PP-OCRv5; German and English scanned PDFs need a separate model-selection and gold-set evaluation.
+The repository's current `npm test` passed **2,635 tests**, with **10 skips** and **0 failures** after the numeric label/value band reconstruction. The private Korean PDF/HWPX corpus required by `npm run bench:gate` was not present in this checkout, so that gate is **unverified**. The Docker OCR smoke proves the en/de model profiles and offline cache contract; a larger language-specific CER/WER holdout remains separate from this smoke.
