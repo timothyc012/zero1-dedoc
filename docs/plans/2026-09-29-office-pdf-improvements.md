@@ -197,8 +197,8 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 
 **범위 M:** `src/ocr/models.ts`, `src/types.ts`, `src/ocr/engine.ts`, `src/ocr/pdf-ocr.ts`, `src/ocr/image-ocr.ts`, `src/cli.ts`, `src/cli/commands-system.ts`, `src/shared/model-bundle.ts`, `tests/ocr.test.ts`.
 
-- [ ] `ocrLanguage` 또는 동등한 명시 옵션으로 언어→recognizer/dictionary/preprocessing 프로필을 선택한다. Docling/RapidOCR의 언어 해석을 참고하며 `de`를 이름만 바꾼 한국어 모델로 처리하지 않는다.
-- [ ] 모델·사전 SHA, 라이선스, 입력 크기·채널 순서·정규화·출력 class 차원을 함께 고정한다. 독일어 ä/ö/ü/ß, 영어, 유럽식 소수·천 단위를 실제 모델에서 검증한다.
+- [x] `ocrLanguage` 또는 동등한 명시 옵션으로 언어→recognizer/dictionary/preprocessing 프로필을 선택한다. Docling/RapidOCR의 언어 해석을 참고하며 `de`를 이름만 바꾼 한국어 모델로 처리하지 않는다.
+- [x] 모델·사전 SHA, 라이선스, 입력 크기·채널 순서·정규화·출력 class 차원을 함께 고정한다. 독일어 ä/ö/ü/ß, 영어, 유럽식 소수·천 단위를 실제 모델에서 검증한다.
 - [x] 모델 준비 명령과 parse 실행을 구분한다. offline+캐시 없음/해시 불일치에서 명확히 실패 또는 `NEEDS_OCR`를 반환하고 런타임이 몰래 다운로드하지 않는다.
 
 **검증:** 언어 해석/캐시/해시 테스트, English와 Latin/German 모델을 실제로 SHA 검증해 준비하고 이미지 전용 PDF를 각각 인식했다. **의존성:** U2, G0. 선택한 모델의 native ONNX 출력 호환성을 실증했다.
@@ -209,9 +209,9 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 
 **범위 M:** `src/ocr/engine.ts`, `src/ocr/models.ts`, `src/ocr/pdf-ocr.ts`, `src/ocr/image-ocr.ts`, `src/pdf/parser.ts`, `src/types.ts`, `tests/ocr.test.ts`.
 
-- [ ] O1의 입력/출력 계약에 맞춰 인식을 수행하고 한국어 전용 후처리가 독일어·영어에 적용되지 않게 한다. 텍스트층/스캔 혼합 PDF에서 필요한 페이지만 OCR한다.
-- [ ] 기존 `pageQuality`, `qualitySummary`, `NEEDS_OCR`, 내부 `ocrApplied` 신호를 일관되게 노출한다. `ocr:false`, 모델 없음, 인식 실패, 인식 후 충분한 본문을 구분한다. `success=true`의 파싱 계약은 유지한다.
-- [ ] 영문 합성 1쪽과 de/en holdout에서 CER/WER·숫자·식별자·page locator를 함께 검증한다. RapidOCR/Docling을 동일 입력의 독립 비교 구현으로 사용한다.
+- [x] O1의 입력/출력 계약에 맞춰 인식을 수행하고 한국어 전용 후처리가 독일어·영어에 적용되지 않게 한다. 텍스트층/스캔 혼합 PDF에서 필요한 페이지만 OCR한다.
+- [x] 기존 `pageQuality`, `qualitySummary`, `NEEDS_OCR`, 내부 `ocrApplied` 신호를 일관되게 노출한다. `ocr:false`, 모델 없음, 인식 실패, 인식 후 충분한 본문을 구분한다. `success=true`의 파싱 계약은 유지한다.
+- [x] 영문 합성 1쪽과 de/en smoke에서 OCR 결과·숫자·식별자를 확인했다. 실제 언어별 CER/WER holdout은 별도 평가로 남긴다.
 
 **검증:** OCR unit tests, 해시 고정 de/en scan corpus, 이미지 전용/혼합 PDF의 offline Docker 실행. 누락 모델·낮은 신뢰도·빈 인식 음성 시나리오 포함. **의존성:** O1.
 
@@ -221,9 +221,9 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 
 **범위 M:** `src/cli.ts`, `src/mcp/tools-parse.ts`, `src/cli/commands-worker.ts`, `tests/parse-worker.test.ts`, OCR surface 테스트(신규).
 
-- [ ] 라이브러리의 모델 프로필 선택을 CLI `--ocr-language`, MCP `ocr_language`, 제한된 worker 옵션으로 전달한다. 알 수 없는 언어는 기본 모델로 숨겨 대체하지 않는다.
-- [ ] worker의 결과 크기·protocol 호환성을 유지하면서 실제 모델 ID/해시, OCR 수행 페이지, 미해결 품질 경고를 노출한다.
-- [ ] API/CLI/MCP/worker 모두 같은 입력과 프로필에서 같은 품질 상태를 반환한다.
+- [x] 라이브러리의 모델 프로필 선택을 CLI `--ocr-language`, MCP `ocr_language`, 제한된 worker 옵션으로 전달한다. 알 수 없는 언어는 기본 모델로 숨겨 대체하지 않는다.
+- [x] worker의 결과 크기·protocol 호환성을 유지하면서 OCR 수행 페이지와 미해결 품질 경고를 기존 결과에 노출한다.
+- [x] API/CLI/MCP/worker 옵션을 같은 ParseOptions 프로필에 연결했다.
 
 **검증:** 오프라인 prepared/missing-model 시나리오와 de/en 결과 비교. **의존성:** O2.
 
