@@ -349,8 +349,9 @@ export function detectPageLeadHeadings(blocks: IRBlock[]): void {
         second.bbox.height > second.style.fontSize * 1.6 ||
         Math.abs(second.bbox.x - third.bbox.x) > 30) continue
     const distinctFace = third.style?.fontName !== second.style.fontName
+    const subtitleFace = first.style?.fontName === second.style.fontName
     const namedContents = /^Table of Contents$/i.test(second.text.trim())
-    if ((distinctFace && third.text.length >= 60) || namedContents) {
+    if (((distinctFace && subtitleFace && third.text.length >= 60) || namedContents)) {
       // A size-based pass may have assigned the display title H2/H3 because
       // its font is only modestly larger than body text. On a document lead,
       // that first heading is the title and the bold line below it is a
