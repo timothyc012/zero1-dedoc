@@ -42,6 +42,52 @@ import { splitTwoColumnProse, figureColumnBands, topTableBand, tieredHeaderTable
 export interface PageCarry { page?: number; clip?: ClipPage }
 
 /**
+ * A dense physical grid may sit inside a broad print-area clip. The clip is a
+ * drawing boundary, not proof that the ruled cells should be discarded.
+ * Require many rows/columns, a mostly populated cell matrix, and text that
+ * maps to those cells before the ruled grid can outrank overlapping clips.
+ */
+export function preferDenseRuledGrids(
+  lineGrids: TableGrid[], clipGrids: TableGrid[], containers: TableGrid["bbox"][],
+  horizontals: LineSegment[], verticals: LineSegment[], items: TextItem[],
+): TableGrid[] {
+  if (!containers.length) return [...clipGrids, ...dropGridsInside(lineGrids, clipGrids, containers)]
+  const strong = lineGrids.filter(grid => {
+    const rows = grid.rowYs.length - 1, cols = grid.colXs.length - 1
+    if (rows < 20 || cols < 7 || grid.lineNested) return false
+    const inside = items.filter(item => item.text.trim() && item.x + item.w / 2 >= grid.bbox.x1 &&
+      item.x + item.w / 2 <= grid.bbox.x2 && item.y + item.h / 2 >= grid.bbox.y1 && item.y + item.h / 2 <= grid.bbox.y2)
+    if (inside.length < rows * 2) return false
+    const cells = extractCells(grid, horizontals, verticals, inside)
+    if (cells.length < rows * cols * 0.7) return false
+    const mapped = mapTextToCells(inside, cells)
+    const assigned = new Set([...mapped.values()].flat()).size
+    return assigned / inside.length >= 0.85
+  })
+  if (!strong.length) return [...clipGrids, ...dropGridsInside(lineGrids, clipGrids, containers)]
+  const area = (box: TableGrid["bbox"]) => Math.max(0, box.x2 - box.x1) * Math.max(0, box.y2 - box.y1)
+  const overlapFraction = (a: TableGrid["bbox"], b: TableGrid["bbox"]) => {
+    const overlap = Math.max(0, Math.min(a.x2, b.x2) - Math.max(a.x1, b.x1)) *
+      Math.max(0, Math.min(a.y2, b.y2) - Math.max(a.y1, b.y1))
+    return area(a) ? overlap / area(a) : 0
+  }
+  const horizontalCoverage = (a: TableGrid["bbox"], b: TableGrid["bbox"]) =>
+    Math.max(0, Math.min(a.x2, b.x2) - Math.max(a.x1, b.x1)) / Math.max(a.x2 - a.x1, 1)
+  const withinOneCell = (parent: TableGrid["bbox"], grid: TableGrid) => {
+    const col = grid.colXs.some((x, i) => i + 1 < grid.colXs.length &&
+      parent.x1 >= x - 2 && parent.x2 <= grid.colXs[i + 1] + 2)
+    const row = grid.rowYs.some((top, i) => i + 1 < grid.rowYs.length &&
+      parent.y2 <= top + 2 && parent.y1 >= grid.rowYs[i + 1] - 2)
+    return col && row
+  }
+  const retainedClips = clipGrids.filter(clip => !strong.some(grid =>
+    horizontalCoverage(clip.bbox, grid.bbox) >= 0.8 && overlapFraction(clip.bbox, grid.bbox) >= 0.2 &&
+    !(clip.clipParent && withinOneCell(clip.clipParent, grid))))
+  const otherLines = dropGridsInside(lineGrids.filter(grid => !strong.includes(grid)), retainedClips, containers)
+  return [...retainedClips, ...strong, ...otherLines]
+}
+
+/**
  * 선 기반 테이블 감지를 우선 시도, 실패 시 기존 휴리스틱 fallback.
  * @param extraLines 그래픽 ops 밖에서 얻은 선 (래스터 괘선 감지 등, PDF pt·bottom-up)
  * @param carry 쪽 순서대로 부를 때 넘기는 칸 이어짐 상태 — 바로 앞 쪽 것만 쓰고 이 쪽 것으로 바꿔 둔다
@@ -121,7 +167,7 @@ export function extractPageBlocksWithLines(
   wrapUnderlineRuns(items)
 
   // 2단계: 선으로 테이블 그리드 구성 (표 감지 opt-out 시 건너뜀 — #64)
-  const lineGrids = detectTables ? buildTableGrids(horizontals, verticals) : []
+  const lineGrids = detectTables ? buildTableGrids(horizontals, verticals, items) : []
   // 배경 칠한 칸에만 클립을 거는 제작기(cairo·한컴 구버전)의 음영 조각 격자는 버리고 온전한 선 표에 맡긴다 (dropShadingClipGrids)
   // Word 칸 여백 클립(칸 테두리 안쪽 글 영역)의 행 조각 격자도 선 표에 맡긴다 (dropInsetClipGrids)
   // 쪽 넘김 되풀이 머리 행 클립 띠도 선 표에 맡긴다 (dropHeadBandClipGrids)
@@ -129,7 +175,7 @@ export function extractPageBlocksWithLines(
     dropHeadBandClipGrids(dropInsetClipGrids(dropShadingClipGrids(clipGrids, lineGrids, extracted.fillRects, verticals), lineGrids), lineGrids),
     lineGrids, verticals, items,
   )
-  const grids = [...tableClipGrids, ...dropGridsInside(lineGrids, tableClipGrids, clipResult.containers)]
+  const grids = preferDenseRuledGrids(lineGrids, tableClipGrids, clipResult.containers, horizontals, verticals, items)
 
   // A rotated illustration can project a one-cell square far beyond the page.
   // Its lines are not evidence that all page text belongs to one table.

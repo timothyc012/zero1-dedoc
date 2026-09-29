@@ -40,13 +40,16 @@ export function extractCells(
 
   // Some PDFs omit the vertical strokes in a final numeric row while keeping
   // every value in the columns established above it. Restore only rows with
-  // text inside every column and a nearby ruled row in the same grid. Sparse
+  // text inside every column and a nearby ruled row in the same grid. A section
+  // band can leave several unruled rows before a numeric subtotal, so also
+  // accept a ruled row immediately after it. Sparse
   // full-width headings and notes retain their intended colSpan.
   if (numCols >= 4 && items.length) {
     for (let r = 1; r < numRows; r++) {
       if (vBorders[r].slice(1, -1).some(Boolean)) continue
       const priorRuled = physicallyRuledRows.slice(Math.max(0, r - 3), r).some(Boolean)
-      if (!priorRuled) continue
+      const nextRuled = physicallyRuledRows.slice(r + 1, Math.min(numRows, r + 3)).some(Boolean)
+      if (!priorRuled && !nextRuled) continue
       const occupied = new Set<number>()
       let numeric = 0
       for (const item of items) {

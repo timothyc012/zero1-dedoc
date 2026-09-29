@@ -2,7 +2,7 @@
   "schema_version": "zero1-office-pdf-eval.v1",
   "corpus_role": "development-regression; separate independent holdouts required",
   "source_evaluation_commit": "8d815693d2c7c2ec9c2a6309fd8528160abe132a",
-  "approved_parser_baseline_commit": "b357c44fb3b2df87fca998324b7f20899c8e6936",
+  "approved_parser_baseline_commit": "13e89c24064f0044bc3dd39864e6e29700ba553b",
   "parser_package_version": "4.16.1-zero1.1",
   "options": {
     "ocr": false,
@@ -196,7 +196,12 @@
           },
           {
             "page": 3,
-            "rows": 44,
+            "rows": 20,
+            "cols": 7
+          },
+          {
+            "page": 3,
+            "rows": 23,
             "cols": 7
           }
         ]

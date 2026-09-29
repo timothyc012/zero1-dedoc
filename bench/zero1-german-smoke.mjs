@@ -4,6 +4,7 @@ import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
 import { readFile } from "node:fs/promises"
 import { parse } from "../dist/index.js"
+import { scoreBmfPage, scoreBmfFrontPage } from "./lib/bmf-score.mjs"
 
 const [taxPath, formPath] = process.argv.slice(2)
 if (!taxPath || !formPath) {
@@ -29,17 +30,16 @@ for (const input of inputs) {
 const tax = results[0].result
 const tables = tax.blocks.filter(block => block.type === "table" && block.table)
 const front = tables.filter(block => block.pageNumber <= 3)
-assert.deepEqual(front.map(block => [block.pageNumber, block.table.rows, block.table.cols]), [[1, 47, 7], [2, 50, 7], [3, 44, 7]])
-assert.ok(tables.some(block => block.pageNumber === 5 && block.table.rows === 31 && block.table.cols === 11), "page 5 overview body table must remain one 31x11 table")
-assert.ok(tables.some(block => block.pageNumber === 9 && block.table.rows === 31 && block.table.cols === 11), "page 9 overview body table must remain one 31x11 table")
-assert.ok(tables.some(block => block.pageNumber === 6 && block.table.rows === 8 && block.table.cols === 10 && block.table.cells[0]?.[0]?.text === "Lohnsteuer"), "page 6 label/value bands must rejoin into an 8x10 table")
-assert.ok(tables.some(block => block.pageNumber === 7 && block.table.rows === 7 && block.table.cols === 10 && block.table.cells[0]?.[0]?.text === "Körperschaftsteuer"), "page 7 label/value bands must rejoin into a 7x10 table")
-assert.ok(tables.some(block => block.pageNumber === 10 && block.table.rows === 8 && block.table.cols === 10 && block.table.cells[0]?.[0]?.text === "Lohnsteuer"), "page 10 label/value bands must rejoin into an 8x10 table")
-assert.ok(tables.some(block => block.pageNumber === 11 && block.table.rows === 7 && block.table.cols === 10 && block.table.cells[0]?.[0]?.text === "Körperschaftsteuer"), "page 11 label/value bands must rejoin into a 7x10 table")
-const augustStates = tables.find(block => block.pageNumber === 6 && block.table.rows === 8 && block.table.cols === 10)?.table
-assert.deepEqual(augustStates?.cells[1].map(cell => cell.text), ["Lohnsteuer", "1.457.433", "473.347", "236.049", "737.285", "335.632", "339.160", "24.276.071", "2.121.474", "26.397.545"])
-const augustCorporate = tables.find(block => block.pageNumber === 7 && block.table.rows === 7 && block.table.cols === 10)?.table
-assert.deepEqual(augustCorporate?.cells[1].map(cell => cell.text), ["Körperschaftsteuer", "-10.482", "14.115", "-3.022", "-17.420", "10.111", "-1.685", "-283.425", "2.100", "-281.326"])
+const frontGold = JSON.parse(await readFile(new URL("./bmf-front-gold.json", import.meta.url), "utf8"))
+const frontPages = frontGold.pages.map(page => scoreBmfFrontPage(page, tax.blocks.filter(block => block.pageNumber === page.page)))
+assert.ok(frontPages.every(page => page.fullCellGoldPass), `BMF front table gold failed: ${JSON.stringify(frontPages.filter(page => !page.fullCellGoldPass))}`)
+const bmfGold = JSON.parse(await readFile(new URL("./office-pdf-gold.json", import.meta.url), "utf8"))
+const bmfPages = bmfGold.pages.map(page => scoreBmfPage(page, tax.blocks.filter(block => block.pageNumber === page.page)))
+assert.ok(bmfPages.every(page => page.fullCellGoldPass), `BMF full cell/merge gold failed: ${JSON.stringify(bmfPages.filter(page => !page.fullCellGoldPass))}`)
+const augustStates = tables.find(block => block.pageNumber === 6 && block.table.rows === 36 && block.table.cols === 10)?.table
+assert.deepEqual(augustStates?.cells[2].map(cell => cell.text), ["Lohnsteuer", "1.457.433", "473.347", "236.049", "737.285", "335.632", "339.160", "24.276.071", "2.121.474", "26.397.545"])
+const augustCorporate = tables.find(block => block.pageNumber === 7 && block.table.rows === 38 && block.table.cols === 10)?.table
+assert.deepEqual(augustCorporate?.cells[2].map(cell => cell.text), ["Körperschaftsteuer", "-10.482", "14.115", "-3.022", "-17.420", "10.111", "-1.685", "-283.425", "2.100", "-281.326"])
 const first = front[0].table
 const lohnsteuer = first.cells.find(row => row.some(cell => cell.text === "Lohnsteuer"))
 assert.deepEqual(lohnsteuer?.map(cell => cell.text), ["Lohnsteuer", "21.890.941", "20.966.969", "4,4", "178.401.148", "170.488.348", "4,6"])
@@ -58,6 +58,10 @@ console.log(JSON.stringify({
   options: { ocr: false, images: false },
   inputs: inputs.map((input, index) => ({ sha256: input.sha256, elapsedMs: results[index].elapsedMs })),
   taxTables: front.map(block => [block.pageNumber, block.table.rows, block.table.cols]),
+  bmfFrontPages: frontPages.filter(page => page.fullCellGoldPass).length,
+  bmfFrontAlignedValues: frontPages.reduce((sum, page) => sum + page.alignedDisplayValues, 0),
+  bmfFullPages: bmfPages.filter(page => page.fullCellGoldPass).length,
+  bmfAlignedValues: bmfPages.reduce((sum, page) => sum + page.alignedValueCells, 0),
   lohnsteuer: lohnsteuer.map(cell => cell.text),
   finalTaxTotal: first.cells.at(-1).map(cell => cell.text),
   formTitles: forms,

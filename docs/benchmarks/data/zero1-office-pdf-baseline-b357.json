@@ -1,8 +1,8 @@
 {
   "schema_version": "zero1-office-pdf-result.v1",
-  "manifest_sha256": "a510951e7365a75524381d2f389375919d766f4222191189ac226db17b0452fb",
+  "manifest_sha256": "fa2d115da45e9843144adb37cad9d393d311b1eb46d67913229104f3a78f7a74",
   "evaluator_sha256": "959aee01ab031c48ffd7ea22868cba77cd772ebe0f1c83d2b3800bf35946b825",
-  "parser_revision": "13e89c24064f0044bc3dd39864e6e29700ba553b",
+  "parser_revision": "b357c44fb3b2df87fca998324b7f20899c8e6936",
   "parser_package_version": "4.16.1-zero1.1",
   "options": {
     "ocr": false,
@@ -90,7 +90,7 @@
         "parsed": true,
         "error": null
       },
-      "elapsedMs": 23,
+      "elapsedMs": 22,
       "warnings": [],
       "quality": {
         "text": {
@@ -109,7 +109,7 @@
         "parsed": true,
         "error": null
       },
-      "elapsedMs": 20,
+      "elapsedMs": 21,
       "warnings": [],
       "quality": {
         "text": {
@@ -128,7 +128,7 @@
         "parsed": true,
         "error": null
       },
-      "elapsedMs": 3,
+      "elapsedMs": 5,
       "warnings": [],
       "quality": {
         "sourceGold": "native-xlsx",
@@ -248,7 +248,7 @@
         "parsed": true,
         "error": null
       },
-      "elapsedMs": 5,
+      "elapsedMs": 6,
       "warnings": [
         "UNSUPPORTED_ELEMENT",
         "UNSUPPORTED_ELEMENT",
@@ -275,7 +275,7 @@
         "parsed": true,
         "error": null
       },
-      "elapsedMs": 34,
+      "elapsedMs": 36,
       "warnings": [],
       "quality": {
         "sourceGold": "native-xlsx",
@@ -388,7 +388,7 @@
         "parsed": true,
         "error": null
       },
-      "elapsedMs": 1,
+      "elapsedMs": 2,
       "warnings": [],
       "quality": {
         "sourceGold": "native-xlsx",
@@ -428,7 +428,7 @@
         "parsed": true,
         "error": null
       },
-      "elapsedMs": 5,
+      "elapsedMs": 4,
       "warnings": [],
       "quality": {
         "sourceGold": "native-xlsx",
@@ -551,7 +551,7 @@
         "parsed": true,
         "error": null
       },
-      "elapsedMs": 179,
+      "elapsedMs": 173,
       "warnings": [],
       "quality": {
         "pages": {
@@ -603,10 +603,8 @@
         "parsed": true,
         "error": null
       },
-      "elapsedMs": 215,
-      "warnings": [
-        "HIDDEN_TEXT_FILTERED"
-      ],
+      "elapsedMs": 204,
+      "warnings": [],
       "quality": {
         "pages": {
           "expected": 11,
@@ -618,8 +616,8 @@
           "checks": []
         },
         "tableShapes": {
-          "expected": 4,
-          "exact": 4,
+          "expected": 3,
+          "exact": 3,
           "checks": [
             {
               "page": 1,
@@ -635,13 +633,7 @@
             },
             {
               "page": 3,
-              "rows": 20,
-              "cols": 7,
-              "found": true
-            },
-            {
-              "page": 3,
-              "rows": 23,
+              "rows": 44,
               "cols": 7,
               "found": true
             }
@@ -671,7 +663,7 @@
         "parsed": true,
         "error": null
       },
-      "elapsedMs": 319,
+      "elapsedMs": 299,
       "warnings": [],
       "quality": {
         "pages": {
@@ -735,7 +727,7 @@
         "parsed": true,
         "error": null
       },
-      "elapsedMs": 2,
+      "elapsedMs": 3,
       "warnings": [],
       "quality": {
         "pages": {
@@ -786,7 +778,7 @@
         "parsed": true,
         "error": null
       },
-      "elapsedMs": 1,
+      "elapsedMs": 2,
       "warnings": [],
       "quality": {
         "pages": {
@@ -835,7 +827,7 @@
         "parsed": true,
         "error": null
       },
-      "elapsedMs": 1,
+      "elapsedMs": 2,
       "warnings": [],
       "quality": {
         "pages": {
@@ -884,7 +876,7 @@
         "parsed": true,
         "error": null
       },
-      "elapsedMs": 29,
+      "elapsedMs": 104,
       "warnings": [
         "NEEDS_OCR"
       ],
@@ -927,7 +919,7 @@
         "parsed": true,
         "error": null
       },
-      "elapsedMs": 1343,
+      "elapsedMs": 1447,
       "warnings": [
         "SKIPPED_IMAGE"
       ],
