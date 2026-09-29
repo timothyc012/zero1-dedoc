@@ -177,9 +177,9 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 
 **범위 M:** `src/pptx/parser.ts`(신규), `src/index.ts`, `tests/pptx.test.ts`(신규), `tests/pptx-surfaces.test.ts`.
 
-- [ ] `presentation.xml`과 관계 파일의 실제 슬라이드 순서를 따른다. 제목·본문·노트를 IR로 내고 slide 번호를 `pageNumber`에 남긴다.
-- [ ] 기존 JSZip/XML 도구와 리소스 제한을 재사용한다. 외부 관계 URL을 자동으로 읽지 않는다. 제목/노트/빈 슬라이드의 중복 방출을 막는다.
-- [ ] 기존 fixture 28개 텍스트 문단과 새 slide-order gold를 통과한다. 파싱 지원과 편집·양식 채우기·HWPX 생성 지원을 구분한다.
+- [x] `presentation.xml`과 관계 파일의 실제 슬라이드 순서를 따른다. 제목·본문·노트를 IR로 내고 slide 번호를 `pageNumber`에 남긴다.
+- [x] 기존 JSZip/XML 도구와 리소스 제한을 재사용한다. 외부 관계 URL을 자동으로 읽지 않는다. 제목/노트/빈 슬라이드의 중복 방출을 막는다.
+- [x] 기존 fixture와 새 slide-order/group/span smoke를 통과한다. 파싱 지원과 편집·양식 채우기·HWPX 생성 지원을 구분한다.
 
 **검증:** `node --import tsx --test tests/pptx.test.ts tests/pptx-surfaces.test.ts`, DOCX/XLSX 라우팅 회귀, CLI/MCP parse 결과. **의존성:** G0, U2.
 
