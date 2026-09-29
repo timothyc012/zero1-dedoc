@@ -193,7 +193,11 @@ export function demoteNonHeadingRoles(blocks: IRBlock[], pageHeights: Map<number
     // 글자가 둘 미만이거나, 일곱 어절 넘는 문장이면 제목이 아니다 (ODL 141 ". Uploading you … llection", "C")
     const ocrFragment = block.style?.fontName === "ocr" && (/^[.,;:…·•-]/.test(text) || text.includes("…") ||
       (text.match(/\p{L}/gu)?.length ?? 0) < 2 || text.split(/\s+/).length > 7)
-    if (ocrFragment || tocEntry || proseStyle || kicker || byline || tiny || !/\p{L}/u.test(text) && !chapterNumber || /^[a-z]/.test(text) || CAPTION.test(text) || EQUATION_NUMBER.test(block.text) || DISPLAY_MATH.test(text) ||
+    const attributedQuote = /^[“„"«]/u.test(text) && /[”"»]$/u.test(text) &&
+      next?.type === "paragraph" && next.pageNumber === block.pageNumber && /^[-–—]\s*\p{L}/u.test(next.text?.trim() ?? "") &&
+      !!next.bbox && !!block.bbox && block.bbox.y - (next.bbox.y + next.bbox.height) >= 0 &&
+      block.bbox.y - (next.bbox.y + next.bbox.height) <= Math.max(fsz, 1) * 4
+    if (ocrFragment || tocEntry || proseStyle || kicker || byline || attributedQuote || tiny || !/\p{L}/u.test(text) && !chapterNumber || /^[a-z]/.test(text) || CAPTION.test(text) || EQUATION_NUMBER.test(block.text) || DISPLAY_MATH.test(text) ||
         // 닫는 괄호가 여는 괄호보다 많으면 앞 줄에서 이어진 문장 조각이다 ("Fact-checking) and is used …") — "1)"·"가)" 앞머리 번호는 빼고 센다
         unbalancedClose(text.replace(/^\s*[\dA-Za-z가-힣ⅰ-ⅹ]{1,3}\)\s*/, "")) ||
         isRunningHead(block, page, pageHeights.get(block.pageNumber ?? 0))) {

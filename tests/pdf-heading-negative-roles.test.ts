@@ -1,6 +1,6 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { refineLeadDocumentTitleRoles } from "../src/pdf/heading-demote.js"
+import { demoteNonHeadingRoles, refineLeadDocumentTitleRoles } from "../src/pdf/heading-demote.js"
 import type { IRBlock } from "../src/types.js"
 
 const block=(type:IRBlock["type"],text:string,level:number|undefined,pageNumber:number,x:number,y:number,width:number,fontSize:number):IRBlock=>({
@@ -84,5 +84,16 @@ describe("PDF lead title roles",()=>{
     refineLeadDocumentTitleRoles(blocks,new Map([[1,824]]))
     assert.equal(blocks[0].type,"paragraph")
     assert.equal(blocks[1].level,1)
+  })
+
+  it("demotes a large pull quote followed by its attribution, preserving a quoted title",()=>{
+    const blocks=[
+      block("heading","“The Future”",1,1,70,730,250,22),
+      block("heading","“A country can choose a better future.”",1,1,100,480,380,24),
+      block("paragraph","— The speaker",undefined,1,100,445,210,10),
+    ]
+    demoteNonHeadingRoles(blocks,new Map([[1,842]]))
+    assert.equal(blocks[0].level,1)
+    assert.equal(blocks[1].type,"paragraph")
   })
 })
