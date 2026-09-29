@@ -41,7 +41,7 @@ The follow-up package was tested in a new WSL Docker image `02ontology/zero1-ded
 The current `4.16.1-zero1.1` package was rebuilt once more in local Docker
 Desktop from the same pinned tarball. Image
 `02ontology/zero1-dedoc-eval:latest-20260929` uses Node 20.20.2 and has digest
-`sha256:9f6d314199592ceb2bdfd3806b04ee7094ecb48e50dd70801f98a57c2a0cb2c8`.
+`sha256:83b9e66482e849d0062a713aba9a0fdc6e7edc374360e26b37d17cff257ba88e`.
 With `--network none` and the bounded `parse-worker` protocol:
 
 - An English text-layer fixture retained `HORIZON CLEAN AVIATION 2026`, the
