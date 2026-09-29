@@ -15,6 +15,11 @@ The same 200 PDFs were parsed before and after the German PDF changes. Both runs
 
 All **200/200 PDFs** parsed in each run. The seven per-document score fields are identical for all 200 documents; 0 improved, 0 regressed. The table metric has 42 scored documents and heading metric 107 according to the public evaluator. [Baseline evaluation JSON](data/kordoc-v4.16.1-odl200.json) · [Zero1 evaluation JSON](data/zero1-dedoc-odl200.json).
 
+The post-T1/H1 refresh is recorded in
+[zero1-odl200-refresh-2026-09-29.md](zero1-odl200-refresh-2026-09-29.md):
+200/200 still parse, table score is unchanged, and reading-order and heading
+means improve slightly against the locked result.
+
 This is evidence of **non-regression** on an English-heavy public corpus, not measured English-language improvement. Kordoc's preexisting score is already high on this corpus. The full benchmark is separate from the German failure cases and from the private Korean corpus.
 
 ## German official documents
