@@ -100,6 +100,23 @@ describe("joinSplitParts — 쪽 넘김 클립 표 조각을 열 경계 합집�
 })
 
 describe("mergeCrossPageTables — 클립 표 쪽 넘김 판정", () => {
+  it("다음 쪽 선 표 안에 새 문서 제목 행이 있으면 같은 7열이어도 잇지 않는다", () => {
+    const xs = [55, 160, 265, 370, 475, 580, 685, 785]
+    const line = (table: IRTable, page: number): IRBlock => {
+      TABLE_COLXS.set(table, xs)
+      return { type: "table", table, pageNumber: page, bbox: { page, x: 55, y: 40, width: 730, height: 730 } }
+    }
+    const prev = grid(3, 7, [[0, 0, "Steuerart"], [0, 1, "2026"], [0, 2, "2025"], [1, 0, "Lohnsteuer"], [1, 1, "21.890.941"], [2, 0, "Summe"]])
+    const curr = grid(5, 7, [
+      [0, 0, "Bundesministerium der Finanzen"], [0, 6, "9.9.2026"],
+      [1, 0, "Nachrichtliche Angaben und Bruttoberechnungen", 7], [2, 0, "Übersicht 3", 7],
+      [3, 0, "Steuerart"], [3, 1, "2026"], [4, 0, "Gemeindesteuern Stadtstaaten", 7],
+    ])
+    const blocks = [line(prev, 1), line(curr, 2)]
+    mergeCrossPageTables(blocks, PAGE_H)
+    assert.equal(blocks.length, 2)
+    assert.equal(blocks[1].table!.cells[1][0].text, "Nachrichtliche Angaben und Bruttoberechnungen")
+  })
   it("두 쪽 모두 단위 행으로 시작하면 열이 같아도 별도 표로 둔다", () => {
     const make = (name: string, page: number): IRBlock => {
       const table = grid(3, 3, [[0, 0, "(단위: ha, %)", 3], [1, 0, "지역"], [1, 1, "2025"], [1, 2, "2026"], [2, 0, name], [2, 1, "1"], [2, 2, "2"]])

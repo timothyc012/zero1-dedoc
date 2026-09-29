@@ -479,6 +479,10 @@ export function mergeCrossPageTables(blocks: IRBlock[], pageHeights?: Map<number
     // 이어짐을 가로막지 않게 (빈 조각의 뒤쪽 이음은 이미 앞선 차례에 시도했다)
     if (EMPTY_PARTS.has(curr.table)) { blocks.splice(j, 1); i++; continue }
     if (joined === null) continue
+    // A new document/overview can print its own institution/date row and a
+    // full-width title inside the ruled table. Equal column coordinates alone
+    // must not join it to the previous page's independent table.
+    if (!CLIP_TABLES.has(prev.table) && !CLIP_TABLES.has(curr.table) && startsIndependentTitledGrid(prev.table, curr.table)) continue
     if (prev.table.cols !== curr.table.cols || prev.table.renderAsTable !== curr.table.renderAsTable || EMPTY_PARTS.has(prev.table)) continue
 
     // 좌우 경계 근접 검증 (폭 대비 비율)
@@ -526,6 +530,16 @@ export function mergeCrossPageTables(blocks: IRBlock[], pageHeights?: Map<number
     const t = blocks[i].table
     if (blocks[i].type === "table" && t && EMPTY_PARTS.has(t)) blocks.splice(i, 1)
   }
+}
+
+function startsIndependentTitledGrid(prev: IRTable, curr: IRTable): boolean {
+  if (curr.cols < 3 || curr.rows < 3) return false
+  const first = curr.cells[0].filter(cell => cell.text.trim())
+  if (first.length === 0 || first.length > 2) return false
+  const title = curr.cells.slice(1, 3).flat().find(cell => cell.colSpan === curr.cols && cell.text.trim().length >= 12)?.text.trim()
+  if (!title) return false
+  const normalize = (text: string) => text.replace(/\s+/g, " ").trim()
+  return !prev.cells.slice(0, 3).flat().some(cell => cell.colSpan === prev.cols && normalize(cell.text) === normalize(title))
 }
 
 /**

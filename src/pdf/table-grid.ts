@@ -426,6 +426,43 @@ export function dropHeadBandClipGrids(clipGrids: TableGrid[], lineGrids: TableGr
     && !clipGrids.some(o => o !== c && overlaps(o.bbox, l.bbox))))
 }
 
+/**
+ * A full-width text clip can cover several rows of a finer, genuinely ruled
+ * table. Prefer the ruled grid only when its interior vertical lines actually
+ * span the clip region; a broad layout frame is not enough evidence.
+ */
+export function dropCoarseClipGrids(clipGrids: TableGrid[], lineGrids: TableGrid[], verticals: LineSegment[]): TableGrid[] {
+  if (clipGrids.length === 0 || lineGrids.length === 0 || verticals.length === 0) return clipGrids
+  const near = (a: number, b: number) => Math.abs(a - b) <= 1.5
+  const verticalCoverage = (x: number, low: number, high: number): number => {
+    const spans = verticals.filter(v => near(v.x1, x) && near(v.x2, x))
+      .map(v => [Math.max(low, Math.min(v.y1, v.y2)), Math.min(high, Math.max(v.y1, v.y2))] as const)
+      .filter(([start, end]) => end > start).sort((a, b) => a[0] - b[0])
+    let covered = 0, end = low
+    for (const [start, next] of spans) {
+      if (next <= end) continue
+      covered += next - Math.max(start, end)
+      end = next
+    }
+    return covered
+  }
+  return clipGrids.filter(c => c.clipParent || c.continues || !c.cells?.length || !lineGrids.some(l => {
+    const clipRows = c.rowYs.length - 1, clipCols = c.colXs.length - 1
+    const lineRows = l.rowYs.length - 1, lineCols = l.colXs.length - 1
+    if (l.lineNested || lineRows < Math.max(clipRows + 2, 5) || lineCols < Math.max(clipCols + 2, 3)) return false
+    if (!near(c.bbox.x1, l.bbox.x1) || !near(c.bbox.x2, l.bbox.x2)) return false
+    const low = Math.max(c.bbox.y1, l.bbox.y1), high = Math.min(c.bbox.y2, l.bbox.y2)
+    const overlap = high - low
+    if (overlap < Math.max(8, (c.bbox.y2 - c.bbox.y1) * 0.35)) return false
+    const lineHeight = l.bbox.y2 - l.bbox.y1
+    if (lineHeight < (c.bbox.y2 - c.bbox.y1) * 1.5) return false
+    const inner = l.colXs.slice(1, -1)
+    const ruled = inner.filter(x => verticalCoverage(x, low, high) >= overlap * 0.75)
+    const wholeGridRuled = inner.every(x => verticalCoverage(x, l.bbox.y1, l.bbox.y2) >= lineHeight * 0.75)
+    return ruled.length >= Math.ceil(inner.length / 2) || wholeGridRuled
+  }))
+}
+
 /** 최소 열 폭 보장 — 너무 좁은 열은 인접 열과 병합 */
 function enforceMinWidth(colXs: number[], minWidth: number): number[] {
   if (colXs.length <= 2) return colXs
