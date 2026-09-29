@@ -318,7 +318,19 @@ export function detectPageLeadHeadings(blocks: IRBlock[]): void {
   for (const page of byPage.values()) {
     // OCR 로 끼운 그림 속 글(style 없음 — mergeOcrImageRegions, 쪽 머리 로고)은 쪽 첫머리 판정에 끼지 않는다
     const content = page.filter(b => b.type !== "image" && b.type !== "separator" && !(b.type === "paragraph" && !b.style))
-    const [first, second, third] = content
+    // Official press PDFs often put a compact sender/contact table above the
+    // title. Treat that table as a running header only when the next two
+    // blocks have a clear title-to-body size relationship; otherwise ordinary
+    // table-first pages must remain untouched.
+    const headerTableLead = content[0]?.type === "table" && !!content[0].bbox &&
+      (content[1]?.type === "paragraph" || content[1]?.type === "heading") && !!content[1].style?.fontSize &&
+      content[2]?.type === "paragraph" && !!content[2].style?.fontSize &&
+      (content[1].style.fontSize / content[2].style.fontSize) >= 1.15 &&
+      (content[1].text?.trim().length ?? 0) >= 5 &&
+      (content[1].text?.trim().length ?? 0) <= 120 &&
+      content[0].bbox.height <= 220
+    const leadOffset = headerTableLead ? 1 : 0
+    const [first, second, third] = content.slice(leadOffset, leadOffset + 3)
     if (!first?.bbox || !first.text || !first.style?.fontSize || !second) continue
     const firstText = first.text.trim()
     const captionLike = /^(?:Figure|Fig\.?|Table|표|그림)\s*\d/i
@@ -338,9 +350,15 @@ export function detectPageLeadHeadings(blocks: IRBlock[]): void {
       Math.abs(first.bbox.x - second.bbox.x) <= first.style.fontSize * 2 &&
       first.bbox.y - (second.bbox.y + second.bbox.height) >= first.style.fontSize * 2 &&
       !captionLike.test(firstText) && !/^(?:doi:|https?:|www\.)/i.test(firstText)
+    const headerLeadTitle = headerTableLead && (first.type === "paragraph" || first.type === "heading") &&
+      firstText.length >= 5 && firstText.length <= 120 && second.type === "paragraph" &&
+      !!second.style?.fontSize && !!second.bbox &&
+      first.style.fontSize >= second.style.fontSize * 1.15 &&
+      first.bbox.height <= first.style.fontSize * 2.5 &&
+      first.bbox.y >= second.bbox.y + second.bbox.height
     const firstIsSection = first.type === "list" && /^\d+\.\s+[A-Z][A-Z\s]{12,}$/.test(firstText) &&
       second.type === "paragraph" && (second.text?.length ?? 0) >= 100
-    if (firstIsTitle || firstAboveProse || firstIsSection) { first.type = "heading"; first.level = 1 }
+    if (firstIsTitle || firstAboveProse || headerLeadTitle || firstIsSection) { first.type = "heading"; first.level = 1 }
 
     if (first.type !== "heading" || captionLike.test(firstText) || second.type !== "paragraph" || !second.text || !second.bbox ||
         !second.style?.fontName || !second.style.fontSize || !third?.text || !third.bbox ||

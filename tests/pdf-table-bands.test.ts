@@ -191,4 +191,15 @@ describe("document lead heading hierarchy", () => {
     assert.equal(blocks[1].type, "heading")
     assert.equal(blocks[1].level, 2)
   })
+
+  it("promotes a title below a compact official-document header table", () => {
+    const blocks: IRBlock[] = [
+      { type: "table", pageNumber: 1, bbox: { page: 1, x: 0, y: 540, width: 500, height: 160 }, table: { rows: 4, cols: 2, cells: [], hasHeader: false } },
+      { type: "paragraph", pageNumber: 1, text: "Erklärung über eine strategische Partnerschaft zwischen Deutschland und der Ukraine", bbox: { page: 1, x: 70, y: 510, width: 340, height: 31 }, style: { fontSize: 14, fontName: "title" } },
+      { type: "paragraph", pageNumber: 1, text: "2026 blicken wir zurück auf mehr als drei Jahrzehnte dynamischer Beziehungen.", bbox: { page: 1, x: 70, y: 480, width: 310, height: 11 }, style: { fontSize: 11, fontName: "body" } },
+    ]
+    detectPageLeadHeadings(blocks)
+    assert.equal(blocks[1].type, "heading")
+    assert.equal(blocks[1].level, 1)
+  })
 })
