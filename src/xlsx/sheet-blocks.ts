@@ -10,7 +10,7 @@
  * 칸 수로는 예산의 3%·29%). 예산을 넘는 시트는 뒤 행을 자르고 TRUNCATED_TABLE 경고를 낸다.
  */
 
-import type { CellContext, IRBlock, ParseWarning } from "../types.js"
+import type { CellContext, IRBlock, ParseWarning, SourceCellProvenance } from "../types.js"
 import { buildTable, MAX_ROWS, MAX_TABLE_CELLS } from "../table/builder.js"
 
 /** 병합 범위 (0부터, 양끝 포함) */
@@ -34,6 +34,7 @@ export function sheetToBlocks(
   sheetIndex: number,
   warnings: ParseWarning[],
   keepAnchoredEmptyCols?: boolean,
+  sourceCells?: Map<string, SourceCellProvenance>,
 ): IRBlock[] {
   const blocks: IRBlock[] = []
   if (sheetName) {
@@ -106,6 +107,22 @@ export function sheetToBlocks(
   }
 
   const table = buildTable(cellRows, { keepAnchoredEmptyCols, maxRows: rowCap })
+  if (sourceCells) {
+    const address = (col: number, row: number): string => {
+      let n = col + 1, letters = ""
+      while (n > 0) { n--; letters = String.fromCharCode(65 + n % 26) + letters; n = Math.floor(n / 26) }
+      return `${letters}${row + 1}`
+    }
+    for (const merge of merges) {
+      const source = sourceCells.get(`${merge.r1},${merge.c1}`)
+      if (source) source.mergeRange = `${address(merge.c1, merge.r1)}:${address(merge.c2, merge.r2)}`
+    }
+    for (let ri = 0; ri < keepRows.length; ri++) for (let ci = 0; ci < keepCols.length; ci++) {
+      const source = sourceCells.get(`${keepRows[ri]},${keepCols[ci]}`)
+      const cell = table.cells[ri]?.[ci]
+      if (source && cell) cell.sourceCell = { ...source }
+    }
+  }
   if (table.rows > 0) blocks.push({ type: "table", table, pageNumber: sheetIndex + 1 })
   return blocks
 }
