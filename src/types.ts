@@ -158,6 +158,8 @@ export interface IRCell {
   text: string
   colSpan: number
   rowSpan: number
+  /** XLS/XLSX source storage, opt-in via includeCellProvenance; Markdown still uses text. */
+  sourceCell?: SourceCellProvenance
   /**
    * 셀 내부 블록 콘텐츠 — v3.0.
    * 중첩 표·이미지 등 구조 콘텐츠(또는 왕복 채널 span 문단)가 있는 셀에만 채워지며,
@@ -169,6 +171,19 @@ export interface IRCell {
   blocks?: IRBlock[]
   /** 제목 셀 여부 (HWP5 width_ref bit2 / HWPX header 속성) — v3.0 */
   isHeader?: boolean
+}
+
+/** Source cell facts kept separately from formatted Markdown text. */
+export interface SourceCellProvenance {
+  address: string
+  storedType: "string" | "number" | "boolean" | "error" | "formula" | "blank"
+  /** Logical source value; for OOXML numbers this is the exact `<v>` token. */
+  rawValue: string | null
+  formula?: string
+  /** Stored formula result only; null means no cache was supplied. */
+  cachedValue?: string | null
+  dateFormatted?: boolean
+  mergeRange?: string
 }
 
 // ─── 메타데이터 ─────────────────────────────────────
@@ -205,6 +220,8 @@ export interface DocumentMetadata {
 
 /** 파싱 옵션 — parse() 함수에 전달 */
 export interface ParseOptions {
+  /** XLS/XLSX IR cells include source address, storage type, raw value, and formula cache state. Default false. */
+  includeCellProvenance?: boolean
   /**
    * 파싱할 페이지/섹션 범위 (1-based).
    * - 배열: [1, 2, 3]

@@ -22,10 +22,11 @@ The built `zero1-dedoc setup` command registers the local MCP bundle directly. I
 
 ## PDF quality and scope
 
-- The German BMF tax report's first page is recovered as one 47-row, 7-column table. Its `Lohnsteuer` row retains six values in the official [XLSX](https://www.bundesfinanzministerium.de/Content/DE/Standardartikel/Themen/Steuern/Steuerschaetzungen_und_Steuereinnahmen/2026-09-22-steuereinnahmen-august-2026-xlxs.xlsx?__blob=publicationFile&v=2) columns. The first three PDF pages remain separate tables.
+- The German BMF tax report passes official workbook-backed cell, header, and merge gold on all 11 pages: 3,076/3,076 displayed values in the correct table cells. Page 3 retains two separate tables. [Evaluation details](docs/benchmarks/bmf-dense-grid-recovery.md).
 - The German solvency forms retain `Formular F.701.01` through `F.705.01` in the complete 29-page document. Genuine running page numbers are still filtered.
 - DOCX inline equations retain their original position among surrounding text runs. Superscript/subscript output is available through the inherited `scriptTags` option.
 - PPTX slide order, titles, text shapes, tables, and speaker notes are parsed into the same `IRBlock[]` contract. Unsupported or malformed package parts return an explicit PPTX error.
+- XLS/XLSX callers can opt in to `parse(input, { includeCellProvenance: true })`. Each emitted table cell then carries its source address, stored type and raw value in `cell.sourceCell`; formula cache state and merge range are included when present. Markdown still uses the readable cell text. A formula with no cached result raises `PARTIAL_PARSE` rather than inventing a value. [Office cell validation](docs/benchmarks/office-cell-provenance.md).
 - Built-in OCR accepts `ocrLanguage: "korean" | "en" | "de"` and keeps each recognizer/dictionary in a separate SHA-verified cache. German/English OCR requires running `zero1-dedoc check-ocr-models --language de|en` before an offline parse.
 - The public 200-document [OpenDataLoader benchmark](https://github.com/opendataloader-project/opendataloader-bench) is the English-heavy regression gate. The latest no-OCR rerun parsed **200/200** documents with overall **0.93707**, reading order **0.93804**, table **0.93570**, and heading **0.93271**. It is a non-regression signal for the PDF changes, not a claim of universal English accuracy. See [benchmark evidence](https://github.com/timothyc012/zero1-dedoc/blob/main/docs/benchmarks/zero1-multilingual-foundation.md).
 

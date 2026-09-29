@@ -1,0 +1,211 @@
+{
+  "schema_version": "zero1-office-cell-provenance.v1",
+  "parser_revision": "995f980d113f1bdb46fdcc480a32a2809c199766",
+  "options": {
+    "ocr": false,
+    "images": false,
+    "includeCellProvenance": true
+  },
+  "documents": [
+    {
+      "id": "test.xlsx",
+      "format": "xlsx",
+      "sha256": "a867be6ece38a4224bcfe34312e5c296ed520a76a431e0454603ceb171fbd4af",
+      "sourceGold": "native-OOXML",
+      "quality": {
+        "sourceCells": 116,
+        "addressMatched": 116,
+        "typeMatched": 116,
+        "rawMatched": 116,
+        "sourceMergeRanges": 0,
+        "eligibleMergeRanges": 0,
+        "mergeRangesMatched": 0,
+        "dateFormatted": 0,
+        "displayDiffersFromRaw": 0,
+        "missingExamples": [],
+        "passed": true
+      },
+      "codeChecks": {},
+      "probes": [],
+      "warnings": [],
+      "passed": true
+    },
+    {
+      "id": "test.xls",
+      "format": "xls",
+      "sha256": "17a94b6514e8998f4dc25bc77265b6f62982c18614ba4401a87fa01f90f53f1d",
+      "sourceGold": "paired-test.xlsx",
+      "quality": {
+        "sourceCells": 116,
+        "addressMatched": 116,
+        "typeMatched": 116,
+        "rawMatched": 116,
+        "sourceMergeRanges": 0,
+        "eligibleMergeRanges": 0,
+        "mergeRangesMatched": 0,
+        "dateFormatted": 0,
+        "displayDiffersFromRaw": 0,
+        "missingExamples": [],
+        "passed": true
+      },
+      "codeChecks": {},
+      "probes": [],
+      "warnings": [],
+      "passed": true
+    },
+    {
+      "id": "xlsx_complex_layout.xlsx",
+      "format": "xlsx",
+      "sha256": "7f333462745b6aacf6862d8e02c3213cf6de1b41b33facde5674321b5f2554c1",
+      "sourceGold": "native-OOXML",
+      "quality": {
+        "sourceCells": 21,
+        "addressMatched": 21,
+        "typeMatched": 21,
+        "rawMatched": 21,
+        "sourceMergeRanges": 0,
+        "eligibleMergeRanges": 0,
+        "mergeRangesMatched": 0,
+        "dateFormatted": 0,
+        "displayDiffersFromRaw": 0,
+        "missingExamples": [],
+        "passed": true
+      },
+      "codeChecks": {},
+      "probes": [],
+      "warnings": [],
+      "passed": true
+    },
+    {
+      "id": "bmf-tax-tables.xlsx",
+      "format": "xlsx",
+      "sha256": "36dd814e82b1066493201069cee7c638f9e753e9ea77fc52fd00a8a7d7f64f80",
+      "sourceGold": "native-OOXML",
+      "quality": {
+        "sourceCells": 3512,
+        "addressMatched": 3512,
+        "typeMatched": 3512,
+        "rawMatched": 3512,
+        "sourceMergeRanges": 315,
+        "eligibleMergeRanges": 295,
+        "mergeRangesMatched": 295,
+        "dateFormatted": 0,
+        "displayDiffersFromRaw": 1899,
+        "missingExamples": [],
+        "passed": true
+      },
+      "codeChecks": {},
+      "probes": [
+        {
+          "address": "F7",
+          "sourceRaw": "21890941.295759",
+          "parserRaw": "21890941.295759",
+          "visible": "21890941.295759",
+          "rawExact": true
+        },
+        {
+          "address": "G7",
+          "sourceRaw": "20966969.309749998",
+          "parserRaw": "20966969.309749998",
+          "visible": "20966969.30975",
+          "rawExact": true
+        },
+        {
+          "address": "H7",
+          "sourceRaw": "4.4067980086150902",
+          "parserRaw": "4.4067980086150902",
+          "visible": "4.40679800861509",
+          "rawExact": true
+        },
+        {
+          "address": "I7",
+          "sourceRaw": "178401147.92717999",
+          "parserRaw": "178401147.92717999",
+          "visible": "178401147.92718",
+          "rawExact": true
+        },
+        {
+          "address": "J7",
+          "sourceRaw": "170488348.08838701",
+          "parserRaw": "170488348.08838701",
+          "visible": "170488348.088387",
+          "rawExact": true
+        },
+        {
+          "address": "K7",
+          "sourceRaw": "4.6412555036844703",
+          "parserRaw": "4.6412555036844703",
+          "visible": "4.64125550368447",
+          "rawExact": true
+        }
+      ],
+      "warnings": [],
+      "passed": true
+    },
+    {
+      "id": "financial-register-2026.xlsx",
+      "format": "xlsx",
+      "sha256": "d8a9ce6f5f68f5cad16bd5698ed1a209c767057189a3f2e28a282d8b07bd8fb3",
+      "sourceGold": "native-OOXML",
+      "quality": {
+        "sourceCells": 56,
+        "addressMatched": 56,
+        "typeMatched": 56,
+        "rawMatched": 56,
+        "sourceMergeRanges": 0,
+        "eligibleMergeRanges": 0,
+        "mergeRangesMatched": 0,
+        "dateFormatted": 0,
+        "displayDiffersFromRaw": 0,
+        "missingExamples": [],
+        "passed": true
+      },
+      "codeChecks": {},
+      "probes": [],
+      "warnings": [],
+      "passed": true
+    },
+    {
+      "id": "hgb-posting-lines.xlsx",
+      "format": "xlsx",
+      "sha256": "0f536ae50af814185a2d0c3e6746dcd5e030076255d4d4286b8bd66f77591a89",
+      "sourceGold": "native-OOXML",
+      "quality": {
+        "sourceCells": 440,
+        "addressMatched": 440,
+        "typeMatched": 440,
+        "rawMatched": 440,
+        "sourceMergeRanges": 0,
+        "eligibleMergeRanges": 0,
+        "mergeRangesMatched": 0,
+        "dateFormatted": 24,
+        "displayDiffersFromRaw": 24,
+        "missingExamples": [],
+        "passed": true
+      },
+      "codeChecks": {
+        "0420": {
+          "expected": 3,
+          "found": 3
+        },
+        "0970": {
+          "expected": 1,
+          "found": 1
+        }
+      },
+      "probes": [],
+      "warnings": [],
+      "passed": true
+    }
+  ],
+  "summary": {
+    "documents": 6,
+    "passed": true,
+    "sourceCells": 4261,
+    "addressMatched": 4261,
+    "typeMatched": 4261,
+    "rawMatched": 4261,
+    "eligibleMerges": 295,
+    "mergeMatched": 295
+  }
+}

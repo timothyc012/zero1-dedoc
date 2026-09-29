@@ -9,7 +9,7 @@ import JSZip from "jszip"
 import { DOMParser } from "@xmldom/xmldom"
 import type {
   IRBlock, IRTable, IRCell, DocumentMetadata, InternalParseResult,
-  ParseOptions, ParseWarning, ExtractedImage,
+  ParseOptions, ParseWarning, ExtractedImage, SourceCellProvenance,
 } from "../types.js"
 import { KordocError, precheckZipSize, unzipLimitBytes, stripDtd } from "../utils.js"
 import { blocksToMarkdown, MAX_COLS } from "../table/builder.js"
@@ -44,6 +44,12 @@ function parseCellRef(ref: string): { col: number; row: number } | null {
   let col = 0
   for (const ch of m[1]) col = col * 26 + (ch.charCodeAt(0) - 64)
   return { col: col - 1, row: parseInt(m[2], 10) - 1 }
+}
+
+function cellAddress(col: number, row: number): string {
+  let n = col + 1, letters = ""
+  while (n > 0) { n--; letters = String.fromCharCode(65 + n % 26) + letters; n = Math.floor(n / 26) }
+  return `${letters}${row + 1}`
 }
 
 /** "A1:C3" → { startCol, startRow, endCol, endRow } */
@@ -266,8 +272,11 @@ function parseWorksheet(
   sharedStrings: string[],
   dateXfs: Map<number, DateKind>,
   date1904: boolean,
-): { rows: Map<number, string[]>; merges: SheetMerge[]; maxCol: number } {
+  captureProvenance = false,
+): { rows: Map<number, string[]>; merges: SheetMerge[]; maxCol: number; sourceCells?: Map<string, SourceCellProvenance>; uncachedFormulas: number } {
   const rows = new Map<number, string[]>()
+  const sourceCells = captureProvenance ? new Map<string, SourceCellProvenance>() : undefined
+  let uncachedFormulas = 0
   let maxCol = -1
   let prevRow = -1 // 직전 행 번호 — r 부재 행의 순차 유도용 (ECMA-376: r은 optional)
   let doc: Document | undefined // 마지막 묶음 — sheetData 뒤(병합 목록)가 담긴 문서
@@ -296,9 +305,12 @@ function parseWorksheet(
         const vElements = getElements(cellEl, "v")
         const fElements = getElements(cellEl, "f")
         let value = ""
+        let rawStored: string | null = null
+        let dateFormatted = false
 
         if (vElements.length > 0) {
           const raw = getTextContent(vElements[0])
+          rawStored = raw || null
           if (type === "s") {
             // shared string
             const idx = parseInt(raw, 10)
@@ -314,7 +326,7 @@ function parseWorksheet(
               const kind = sAttr !== null ? dateXfs.get(parseInt(sAttr, 10)) : undefined
               if (kind) {
                 const iso = dateSerialToIso(parseFloat(raw), date1904, kind)
-                if (iso) value = iso
+                if (iso) { value = iso; dateFormatted = true }
               }
             }
           }
@@ -329,6 +341,24 @@ function parseWorksheet(
         // 수식이 있고 값이 없으면 수식 표시
         if (!value && fElements.length > 0) {
           value = `=${getTextContent(fElements[0])}`
+        }
+        if (fElements.length > 0 && rawStored === null) uncachedFormulas++
+
+        if (sourceCells) {
+          const storedType: SourceCellProvenance["storedType"] = fElements.length ? "formula"
+            : type === "s" || type === "inlineStr" || type === "str" ? "string"
+            : type === "b" ? "boolean" : type === "e" ? "error"
+            : vElements.length ? "number" : "blank"
+          const source: SourceCellProvenance = {
+            address: ref ?? cellAddress(pos.col, pos.row), storedType,
+            rawValue: storedType === "string" ? value : rawStored,
+          }
+          if (fElements.length) {
+            source.formula = getTextContent(fElements[0])
+            source.cachedValue = rawStored
+          }
+          if (dateFormatted) source.dateFormatted = true
+          sourceCells.set(`${pos.row},${pos.col}`, source)
         }
 
         // 행 확장 — 행은 희소(Map), 행 안은 그 행 끝 칸까지
@@ -360,7 +390,12 @@ function parseWorksheet(
     }
   }
 
-  return { rows, merges, maxCol }
+  if (sourceCells) for (const merge of merges) {
+    const source = sourceCells.get(`${merge.r1},${merge.c1}`)
+    if (source) source.mergeRange = `${cellAddress(merge.c1, merge.r1)}:${cellAddress(merge.c2, merge.r2)}`
+  }
+
+  return { rows, merges, maxCol, sourceCells, uncachedFormulas }
 }
 
 // ─── 메인 파서 ─────────────────────────────────────────
@@ -458,8 +493,12 @@ export async function parseXlsxDocument(
 
     try {
       const sheetXml = await sheetFile.async("text")
-      const { rows, merges, maxCol } = parseWorksheet(sheetXml, sharedStrings, dateXfs, date1904)
-      const sheetBlocks = sheetToBlocks(sheet.name, rows, maxCol, merges, i, warnings, options?.keepTrailingEmptyCols)
+      const { rows, merges, maxCol, sourceCells, uncachedFormulas } = parseWorksheet(sheetXml, sharedStrings, dateXfs, date1904, options?.includeCellProvenance)
+      if (uncachedFormulas) warnings.push({
+        page: i + 1, code: "PARTIAL_PARSE",
+        message: `시트 "${sheet.name}": 계산 결과 캐시가 없는 수식 ${uncachedFormulas}개 — 수식 텍스트만 출력함`,
+      })
+      const sheetBlocks = sheetToBlocks(sheet.name, rows, maxCol, merges, i, warnings, options?.keepTrailingEmptyCols, sourceCells)
       blocks.push(...sheetBlocks)
     } catch (err) {
       warnings.push({

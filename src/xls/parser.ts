@@ -17,6 +17,7 @@ import type {
   InternalParseResult,
   ParseOptions,
   ParseWarning,
+  SourceCellProvenance,
 } from "../types.js"
 import { KordocError } from "../utils.js"
 import { blocksToMarkdown, MAX_COLS } from "../table/builder.js"
@@ -228,8 +229,10 @@ function rawSheetToBlocks(
   sheetIndex: number,
   warnings: ParseWarning[],
   keepAnchoredEmptyCols?: boolean,
+  includeCellProvenance = false,
 ): IRBlock[] {
   const rows = new Map<number, string[]>()
+  const sourceCells = includeCellProvenance ? new Map<string, SourceCellProvenance>() : undefined
   let maxCol = -1
   for (const c of sheet.cells) {
     if (c.col >= MAX_COLS) continue
@@ -237,6 +240,11 @@ function rawSheetToBlocks(
     if (!row) rows.set(c.row, (row = []))
     while (row.length <= c.col) row.push("")
     row[c.col] = cellValueToText(c.value)
+    if (sourceCells && c.sourceCell) {
+      let n = c.col + 1, letters = ""
+      while (n > 0) { n--; letters = String.fromCharCode(65 + n % 26) + letters; n = Math.floor(n / 26) }
+      sourceCells.set(`${c.row},${c.col}`, { address: `${letters}${c.row + 1}`, ...c.sourceCell })
+    }
     if (c.col > maxCol) maxCol = c.col
   }
   const merges = sheet.merges
@@ -244,7 +252,7 @@ function rawSheetToBlocks(
     .map(m => ({ r1: m.r1, c1: m.c1, r2: m.r2, c2: Math.min(m.c2, MAX_COLS - 1) }))
   // 종전과 같이 병합 끝 열까지 표 폭에 넣는다 (셀 없는 병합 머리 행도 열이 산다)
   for (const m of merges) if (m.c2 > maxCol) maxCol = m.c2
-  return sheetToBlocks(sheetName, rows, maxCol, merges, sheetIndex, warnings, keepAnchoredEmptyCols)
+  return sheetToBlocks(sheetName, rows, maxCol, merges, sheetIndex, warnings, keepAnchoredEmptyCols, sourceCells)
 }
 
 // ─── 메인 ─────────────────────────────────────────
@@ -342,8 +350,12 @@ export async function parseXlsDocument(
     }
 
     try {
-      const { sheet } = extractSheetCells(records, bofIdx, globals.sst, convertNum)
-      const blocks = rawSheetToBlocks(meta.name, sheet, i, warnings, options?.keepTrailingEmptyCols)
+      const { sheet } = extractSheetCells(records, bofIdx, globals.sst, convertNum, options?.includeCellProvenance)
+      if (sheet.uncachedFormulas) warnings.push({
+        page: i + 1, code: "PARTIAL_PARSE",
+        message: `시트 "${meta.name}": 계산 결과 캐시가 없는 수식 ${sheet.uncachedFormulas}개 — 값을 만들지 않고 빈 칸으로 남김`,
+      })
+      const blocks = rawSheetToBlocks(meta.name, sheet, i, warnings, options?.keepTrailingEmptyCols, options?.includeCellProvenance)
       allBlocks.push(...blocks)
     } catch (e) {
       warnings.push({

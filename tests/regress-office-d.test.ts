@@ -381,9 +381,28 @@ describe("regress-D #10: 공유수식 첫 셀의 String 레코드 skip 탐색", 
       { opcode: OP_STRING, data: str },
       { opcode: OP_EOF, data: Buffer.alloc(0) },
     ])
-    const { sheet } = extractSheetCells(records, 0, [])
+    const { sheet } = extractSheetCells(records, 0, [], undefined, true)
     assert.equal(sheet.cells.length, 1)
     assert.equal(sheet.cells[0].value, "hello") // 기존엔 "" (records[i+1]만 확인)
+    assert.deepEqual(sheet.cells[0].sourceCell, { storedType: "formula", rawValue: "hello", cachedValue: "hello" })
+  })
+
+  it("Formula cache가 비면 결과를 0으로 만들지 않고 결손으로 센다", () => {
+    const formula = Buffer.alloc(20)
+    formula.writeUInt8(0x03, 6)       // special cached-result marker: empty
+    formula.writeUInt16LE(0xffff, 12)
+    const bof = Buffer.alloc(4)
+    bof.writeUInt16LE(0x0600, 0)
+    bof.writeUInt16LE(0x0010, 2)
+    const records = biffRecords([
+      { opcode: OP_BOF, data: bof },
+      { opcode: OP_FORMULA, data: formula },
+      { opcode: OP_EOF, data: Buffer.alloc(0) },
+    ])
+    const { sheet } = extractSheetCells(records, 0, [], undefined, true)
+    assert.equal(sheet.uncachedFormulas, 1)
+    assert.equal(sheet.cells[0].value, null)
+    assert.deepEqual(sheet.cells[0].sourceCell, { storedType: "formula", rawValue: null, cachedValue: null })
   })
 })
 

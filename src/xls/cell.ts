@@ -29,6 +29,7 @@ import {
   type BiffRecord,
 } from "./record.js"
 import { decodeUtf16Le } from "./encoding.js"
+import type { SourceCellProvenance } from "../types.js"
 
 export type CellValue = string | number | boolean | null
 
@@ -36,6 +37,7 @@ export interface RawCell {
   row: number
   col: number
   value: CellValue
+  sourceCell?: Omit<SourceCellProvenance, "address" | "mergeRange">
 }
 
 export interface MergeRange {
@@ -50,6 +52,8 @@ export interface RawSheet {
   bofOffset: number
   cells: RawCell[]
   merges: MergeRange[]
+  /** Formula records whose result cache is absent. */
+  uncachedFormulas?: number
 }
 
 /** BIFF8 표준 에러 코드 → 표시 문자열 */
@@ -166,9 +170,11 @@ export function extractSheetCells(
   bofIndex: number,
   sst: string[],
   convertNum?: (n: number, ixfe: number) => CellValue,
+  captureProvenance = false,
 ): { sheet: RawSheet; endIndex: number } {
   const cells: RawCell[] = []
   const merges: MergeRange[] = []
+  let uncachedFormulas = 0
   const bofOffset = records[bofIndex].offset
 
   let i = bofIndex + 1
@@ -188,7 +194,9 @@ export function extractSheetCells(
         const h = readCellHeader(rec.data)
         if (h && rec.data.length >= 14) {
           const n = rec.data.readDoubleLE(6)
-          cells.push({ row: h.row, col: h.col, value: convertNum ? convertNum(n, h.ixfe) : n })
+          const value = convertNum ? convertNum(n, h.ixfe) : n
+          cells.push({ row: h.row, col: h.col, value,
+            ...(captureProvenance ? { sourceCell: { storedType: "number", rawValue: String(n), ...(typeof value === "string" ? { dateFormatted: true } : {}) } as const } : {}) })
         }
         break
       }
@@ -196,7 +204,9 @@ export function extractSheetCells(
         const h = readCellHeader(rec.data)
         if (h && rec.data.length >= 10) {
           const n = decodeRk(rec.data.readInt32LE(6))
-          cells.push({ row: h.row, col: h.col, value: convertNum ? convertNum(n, h.ixfe) : n })
+          const value = convertNum ? convertNum(n, h.ixfe) : n
+          cells.push({ row: h.row, col: h.col, value,
+            ...(captureProvenance ? { sourceCell: { storedType: "number", rawValue: String(n), ...(typeof value === "string" ? { dateFormatted: true } : {}) } as const } : {}) })
         }
         break
       }
@@ -204,7 +214,9 @@ export function extractSheetCells(
         const m = decodeMulRk(rec.data)
         if (m) {
           for (const c of m.cells) {
-            cells.push({ row: m.row, col: c.col, value: convertNum ? convertNum(c.value, c.ixfe) : c.value })
+            const value = convertNum ? convertNum(c.value, c.ixfe) : c.value
+            cells.push({ row: m.row, col: c.col, value,
+              ...(captureProvenance ? { sourceCell: { storedType: "number", rawValue: String(c.value), ...(typeof value === "string" ? { dateFormatted: true } : {}) } as const } : {}) })
           }
         }
         break
@@ -213,14 +225,18 @@ export function extractSheetCells(
         const h = readCellHeader(rec.data)
         if (h && rec.data.length >= 10) {
           const isst = rec.data.readUInt32LE(6)
-          cells.push({ row: h.row, col: h.col, value: sst[isst] ?? "" })
+          const value = sst[isst] ?? ""
+          cells.push({ row: h.row, col: h.col, value,
+            ...(captureProvenance ? { sourceCell: { storedType: "string", rawValue: value } as const } : {}) })
         }
         break
       }
       case OP_LABEL: {
         const h = readCellHeader(rec.data)
         if (h) {
-          cells.push({ row: h.row, col: h.col, value: decodeLabelString(rec.data) })
+          const value = decodeLabelString(rec.data)
+          cells.push({ row: h.row, col: h.col, value,
+            ...(captureProvenance ? { sourceCell: { storedType: "string", rawValue: value } as const } : {}) })
         }
         break
       }
@@ -234,21 +250,27 @@ export function extractSheetCells(
             while (j < records.length && (records[j].opcode === OP_SHRFMLA || records[j].opcode === OP_ARRAY)) j++
             const next = records[j]
             if (next && next.opcode === OP_STRING) {
+              const value = decodeFormulaStringRecord(next.data)
               cells.push({
                 row: h.row,
                 col: h.col,
-                value: decodeFormulaStringRecord(next.data),
+                value,
+                ...(captureProvenance ? { sourceCell: { storedType: "formula", rawValue: value, cachedValue: value } as const } : {}),
               })
               i = j // String 레코드까지 건너뛰기
             } else {
-              cells.push({ row: h.row, col: h.col, value: "" })
+              uncachedFormulas++
+              cells.push({ row: h.row, col: h.col, value: "",
+                ...(captureProvenance ? { sourceCell: { storedType: "formula", rawValue: null, cachedValue: null } as const } : {}) })
             }
           } else {
             const v = result.value
+            if (v === null) uncachedFormulas++
             cells.push({
               row: h.row,
               col: h.col,
               value: convertNum && typeof v === "number" ? convertNum(v, h.ixfe) : v,
+              ...(captureProvenance ? { sourceCell: { storedType: "formula", rawValue: v === null ? null : String(v), cachedValue: v === null ? null : String(v) } as const } : {}),
             })
           }
         }
@@ -260,9 +282,12 @@ export function extractSheetCells(
           const v = rec.data.readUInt8(6)
           const isErr = rec.data.readUInt8(7) === 1
           if (isErr) {
-            cells.push({ row: h.row, col: h.col, value: errorCodeToText(v) })
+            const value = errorCodeToText(v)
+            cells.push({ row: h.row, col: h.col, value,
+              ...(captureProvenance ? { sourceCell: { storedType: "error", rawValue: value } as const } : {}) })
           } else {
-            cells.push({ row: h.row, col: h.col, value: v === 1 })
+            cells.push({ row: h.row, col: h.col, value: v === 1,
+              ...(captureProvenance ? { sourceCell: { storedType: "boolean", rawValue: String(v) } as const } : {}) })
           }
         }
         break
@@ -297,7 +322,7 @@ export function extractSheetCells(
   }
 
   return {
-    sheet: { bofOffset, cells, merges },
+    sheet: { bofOffset, cells, merges, uncachedFormulas },
     endIndex: i,
   }
 }

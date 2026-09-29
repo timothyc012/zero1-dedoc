@@ -33,6 +33,7 @@
     "bench:german-smoke": "node bench/zero1-german-smoke.mjs",
     "bench:ocr-multilingual": "node bench/ocr-multilingual-smoke.mjs",
     "bench:office-pdf": "node bench/office-pdf-eval.mjs",
+    "bench:office-cells": "node bench/office-cell-provenance.mjs --gate",
     "sync-meta": "node scripts/sync-meta.mjs",
     "prepublishOnly": "node scripts/sync-meta.mjs --check && node scripts/check-notices.mjs && npm run typecheck && npm run test && npm run build && node bench/gate-if-corpus.mjs"
   },
