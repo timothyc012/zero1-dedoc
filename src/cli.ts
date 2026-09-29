@@ -1,4 +1,4 @@
-/** kordoc CLI — 모두 파싱해버리겠다 (하위 명령은 cli/ 아래 명령군 모듈) */
+/** Zero1 Dedoc CLI — inherited Kordoc commands plus multilingual PDF fixes. */
 
 import { readFileSync, writeFileSync, mkdirSync, statSync } from "fs"
 import { basename, resolve } from "path"
@@ -16,8 +16,8 @@ import { registerWorkerCommands } from "./cli/commands-worker.js"
 const program = new Command()
 
 program
-  .name("kordoc")
-  .description("모두 파싱해버리겠다 — HWP, HWPX, PDF, XLSX, DOCX, 이미지(PNG/JPG/WebP) → Markdown")
+  .name("zero1-dedoc")
+  .description("Zero1 Dedoc — HWP, HWPX, multilingual PDF, XLSX, DOCX and images → Markdown")
   .version(VERSION)
   .argument("<files...>", "변환할 파일 경로 (HWP, HWPX, PDF, XLSX, DOCX, PNG/JPG/WebP — 이미지는 OCR 자동 적용)")
   .option("-o, --output <path>", "출력 파일 경로 (단일 파일 시)")

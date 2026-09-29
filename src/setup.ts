@@ -1,8 +1,8 @@
 /**
- * 대화형 설치 마법사 — kordoc MCP
+ * 대화형 설치 마법사 — Zero1 Dedoc MCP
  *
- * `npx kordoc setup` 으로 실행.
- * 선택한 AI 클라이언트 설정 파일에 kordoc-mcp 서버를 자동 등록합니다.
+ * `zero1-dedoc setup` 으로 실행.
+ * 선택한 AI 클라이언트 설정 파일에 zero1-dedoc-mcp 서버를 자동 등록합니다.
  * API 키 불필요, macOS / Linux / Windows 공용.
  */
 
@@ -80,24 +80,11 @@ async function writeJsonFile(path: string, data: Record<string, unknown>): Promi
   await writeFile(path, JSON.stringify(data, null, 2) + "\n", "utf-8")
 }
 
-/**
- * Windows 에선 npx.cmd 를 Claude Desktop 이 해석 못 해서 `cmd /c` 래핑이 필요하다.
- * `kordoc` 은 `npx kordoc mcp` 로 MCP 서버 실행, 또는 `kordoc-mcp` bin 직접 실행.
- * npx 래핑이 범용적이므로 `npx -y kordoc mcp` 로 통일.
- */
-/**
- * 폐쇄망(KORDOC_OFFLINE)에서는 `npx -y` 가 레지스트리에 접근하므로 설치된 dist 를
- * node 로 직접 실행한다. 이 파일과 형제인 mcp.js 가 곧 설치본의 MCP 엔트리.
- */
-function localMcpCommand(): { command: string; args: string[] } | null {
-  if (!isOfflineMode()) return null
-  try {
-    const mcpPath = fileURLToPath(new URL("./mcp.js", import.meta.url))
-    if (!existsSync(mcpPath)) return null
-    return { command: process.execPath, args: [mcpPath] }
-  } catch {
-    return null
-  }
+/** Register the installed MCP entry directly, including before an npm release. */
+function localMcpCommand(): { command: string; args: string[] } {
+  const mcpPath = fileURLToPath(new URL("./mcp.js", import.meta.url))
+  if (!existsSync(mcpPath)) throw new Error("Zero1 Dedoc MCP bundle missing; run npm run build before setup")
+  return { command: process.execPath, args: [mcpPath] }
 }
 
 /** 등록된 MCP 서버 프로세스에도 폐쇄망 제한을 물려준다 (설정 파일이 곧 감사 근거) */
@@ -109,22 +96,13 @@ function buildServerEnv(): Record<string, string> | undefined {
 
 function buildServerEntry(): Record<string, unknown> {
   const env = buildServerEnv()
-  const local = localMcpCommand()
-  const base = local
-    ? local
-    : platform() === "win32"
-      ? { command: "cmd", args: ["/c", "npx", "-y", "kordoc", "mcp"] }
-      : { command: "npx", args: ["-y", "kordoc", "mcp"] }
+  const base = localMcpCommand()
   return env ? { ...base, env } : base
 }
 
 function buildZedEntry(): Record<string, unknown> {
   const local = localMcpCommand()
-  const base = local
-    ? { path: local.command, args: local.args }
-    : platform() === "win32"
-      ? { path: "cmd", args: ["/c", "npx", "-y", "kordoc", "mcp"] }
-      : { path: "npx", args: ["-y", "kordoc", "mcp"] }
+  const base = { path: local.command, args: local.args }
   const env = buildServerEnv()
   return { command: env ? { ...base, env } : base }
 }
@@ -134,7 +112,7 @@ async function setupCodex(): Promise<void> {
   const entry = buildServerEntry()
   const command = entry["command"] as string
   const args = entry["args"] as string[]
-  await execFileAsync("codex", ["mcp", "add", "kordoc", "--", command, ...args])
+  await execFileAsync("codex", ["mcp", "add", "zero1-dedoc", "--", command, ...args])
 }
 
 // ─── ANSI ─────────────────────────────────────────────────────────────
@@ -202,7 +180,7 @@ async function printComplete(): Promise<void> {
   ]
   for (const line of box) { console.log(line); await sleep(40) }
   console.log()
-  console.log(`  ${c.dim}클라이언트를 재시작하면 'kordoc' MCP 서버가 활성화됩니다.${c.reset}`)
+  console.log(`  ${c.dim}클라이언트를 재시작하면 'zero1-dedoc' MCP 서버가 활성화됩니다.${c.reset}`)
   console.log(`  ${c.dim}15개 도구: parse_document / parse_metadata / parse_pages / parse_table${c.reset}`)
   console.log(`  ${c.dim}          detect_format / compare_documents / parse_form / fill_form${c.reset}`)
   console.log(`  ${c.dim}          place_seal / patch_document / extract_profile / generate_document${c.reset}`)
@@ -261,7 +239,7 @@ export async function runSetup(): Promise<void> {
         const key = client.format
         const serverEntry = key === "context_servers" ? buildZedEntry() : entry
         const servers = (config[key] ?? {}) as Record<string, unknown>
-        servers["kordoc"] = serverEntry
+        servers["zero1-dedoc"] = serverEntry
         config[key] = servers
         await writeJsonFile(client.configPath, config)
         successLine(client.name, client.configPath)
@@ -285,6 +263,6 @@ function printManualConfig(): void {
   console.log()
   console.log(`  ${c.dim}아래 JSON을 설정 파일의 mcpServers에 추가하세요:${c.reset}`)
   console.log()
-  console.log(`  ${c.cyan}"kordoc"${c.reset}: ${JSON.stringify(entry, null, 4)}`)
+  console.log(`  ${c.cyan}"zero1-dedoc"${c.reset}: ${JSON.stringify(entry, null, 4)}`)
   console.log()
 }

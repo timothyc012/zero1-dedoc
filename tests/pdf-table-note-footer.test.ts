@@ -32,6 +32,40 @@ it("드문드문 되풀이되는 절 제목(서식마다 첫 쪽)은 러닝 헤�
   const every = [1, 2, 3, 4].map(page => ({ type: "paragraph" as const, text: "행정업무운영 편람", pageNumber: page, bbox: { page, x: 60, y: 780, width: 200, height: 14 } }))
   assert.deepEqual(removeHeaderFooterBlocks(every, new Map([1, 2, 3, 4].map(p => [p, 830] as [number, number])), []), [0, 1, 2, 3])
 })
+it("서로 다른 Formular 번호는 드문드문 등장하는 양식 제목으로 남긴다", () => {
+  const pages = [2, 8, 14]
+  const blocks: IRBlock[] = pages.map((page, index) => ({
+    type: "paragraph", text: `Formular F.${701 + index}.01`, pageNumber: page,
+    bbox: { page, x: 60, y: 780, width: 220, height: 14 },
+  }))
+  const hs = new Map(pages.map(page => [page, 830] as [number, number]))
+  assert.deepEqual(removeHeaderFooterBlocks(blocks, hs, []), [])
+})
+it("연속 쪽의 양식·장 번호도 쪽번호처럼 함께 증가해도 제목으로 남긴다", () => {
+  const pages = [1, 2, 3]
+  const hs = new Map(pages.map(page => [page, 830] as [number, number]))
+  const top = (texts: string[]): IRBlock[] => pages.map((page, index) => ({
+    type: "paragraph", text: texts[index], pageNumber: page,
+    bbox: { page, x: 60, y: 780, width: 220, height: 14 },
+  }))
+  assert.deepEqual(removeHeaderFooterBlocks(top(pages.map((_, i) => `Formular F.${701 + i}.01`)), hs, []), [])
+  assert.deepEqual(removeHeaderFooterBlocks(top(pages.map(page => `Übersicht ${page}`)), hs, []), [])
+  assert.deepEqual(removeHeaderFooterBlocks(top(pages.map(page => `Chapter ${page}`)), hs, []), [])
+})
+it("물리적 쪽 번호와 일정한 차이로 증가하는 러닝 번호는 성겨도 제거한다", () => {
+  const pages = [2, 8, 14]
+  const blocks: IRBlock[] = pages.map(page => ({
+    type: "paragraph", text: `Page ${page + 100} of 200`, pageNumber: page,
+    bbox: { page, x: 60, y: 780, width: 220, height: 14 },
+  }))
+  const hs = new Map(pages.map(page => [page, 830] as [number, number]))
+  assert.deepEqual(removeHeaderFooterBlocks(blocks, hs, []), [0, 1, 2])
+  const numbered = pages.map(page => ({
+    type: "paragraph" as const, text: `${page}/200`, pageNumber: page,
+    bbox: { page, x: 60, y: 20, width: 80, height: 12 },
+  }))
+  assert.deepEqual(removeHeaderFooterBlocks(numbered, hs, []), [0, 1, 2])
+})
 it("쪽 번호가 바뀌며 되풀이되는 바닥글은 드문드문해도 러닝 푸터다", () => {
   // hwp3-sample11 "DCT Technology Inc.\t55" — 여러 쪽에선 표에 흡수돼 따로 선 등장이 드문드문하다
   const pages = [6, 20, 41, 55]

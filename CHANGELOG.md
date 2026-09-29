@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.16.1-zero1.1] - 2026-09-29 (source preview)
+
+- Forked Kordoc v4.16.1 as Zero1 Dedoc, preserving its history, license, public API, and third-party notices. Added distinct `zero1-dedoc` package, CLI, and MCP identities that can coexist with Kordoc.
+- Fixed German PDF table extraction when coarse full-width text clips competed with a complete ruled grid. The BMF tax report now preserves its first 47×7 table and the following two overviews as separate tables.
+- Fixed sparse numbered form titles being removed as repeated page headers; the five `Formular F.701.01`–`F.705.01` titles survive the full document parse.
+- Added a hash-pinned German smoke gate. The public English-heavy 200-document benchmark has identical per-document scores to the upstream base (no OCR, overall 0.93705). The private Korean corpus gate and multilingual scanned-document OCR remain unverified.
+- No npm package has been published for this preview.
+
 ## [4.16.1] - 2026-09-29
 
 서울 방침서 프리셋(`서울방침`)과 공문서 생성 재현율 벤치를 더하고, PDF 기본값 자동 OCR 이 큰 그림 속 글도 읽는다(ODL 200 기본 0.940 → 0.960). PDF 글 정답 어절 F1 0.98713 → 0.98783·한국 PDF 표 exact 96.69% → 97.42%, OCR 글자 재현율 0.990·정밀도 0.994. 개조식 장 헤더 `chapterFit`(#103).

@@ -8,7 +8,7 @@ import assert from "node:assert/strict"
 import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
 import { normalizeItems, mergeLineSimple, type PdfTextItem, type NormItem } from "../src/pdf/text-line.js"
 import { detectColumns } from "../src/pdf/columns.js"
-import { dropShadingClipGrids, dropHeadBandClipGrids } from "../src/pdf/table-grid.js"
+import { dropShadingClipGrids, dropHeadBandClipGrids, dropCoarseClipGrids } from "../src/pdf/table-grid.js"
 import type { TableGrid } from "../src/pdf/line-types.js"
 import { parsePdfDocument } from "../src/pdf/parser.js"
 import { extractLines, chainShortSegments } from "../src/pdf/line-extract.js"
@@ -358,5 +358,36 @@ describe("dropHeadBandClipGrids — 선 표 윗변의 되풀이 머리 행 클�
     assert.equal(dropHeadBandClipGrids([band, rest], [line]).length, 2)
     // 중첩표(틀 칸 안 클립)는 대상이 아니다
     assert.equal(dropHeadBandClipGrids([{ ...band, clipParent: band.bbox }], [line]).length, 1)
+  })
+})
+
+describe("dropCoarseClipGrids — 다열 선 격자와 겹친 전폭 클립 조각", () => {
+  const colXs = [55, 160, 265, 370, 475, 580, 685, 785]
+  const rowYs = Array.from({ length: 48 }, (_, i) => 512 - i * 10)
+  const line: TableGrid = {
+    rowYs, colXs, bbox: { x1: 55, y1: 42, x2: 785, y2: 512 }, vertexRadius: 1,
+  }
+  const clip = (y1: number, y2: number, cols = [55.4, 785.4]): TableGrid => ({
+    rowYs: [y2, (y1 + y2) / 2, y1], colXs: cols,
+    bbox: { x1: 55.4, y1, x2: 785.4, y2 }, vertexRadius: 1,
+    cells: [{ row: 0, col: 0, rowSpan: 1, colSpan: 1, bbox: { x1: 55.4, y1: (y1 + y2) / 2, x2: 785.4, y2 } }],
+  })
+  const ruled = colXs.slice(1, -1).map(x => ({ x1: x, x2: x, y1: 42, y2: 512, lineWidth: 1 }))
+
+  it("내부 세로 괘선이 관통하는 47×7 표는 거친 클립 조각보다 우선한다", () => {
+    const bands = [clip(300, 410), clip(100, 270), clip(475, 550, [55.4, 260, 475, 685, 785.4]), clip(42, 52)]
+    // 병합된 머리·끝 행의 내부 괘선은 끊겨도 표 전체에서 여섯 열 경계가 확인된다.
+    const bodyRules = ruled.map(v => ({ ...v, y1: 60, y2: 470 }))
+    assert.deepEqual(dropCoarseClipGrids(bands, [line], bodyRules), [])
+  })
+
+  it("중첩 클립·클립 전용 표·세로 괘선 없는 표는 유지한다", () => {
+    const band = clip(300, 410)
+    assert.deepEqual(dropCoarseClipGrids([band], [], ruled), [band])
+    assert.deepEqual(dropCoarseClipGrids([{ ...band, clipParent: band.bbox }], [line], ruled).length, 1)
+    assert.deepEqual(dropCoarseClipGrids([band], [line], []).length, 1)
+    assert.deepEqual(dropCoarseClipGrids([band], [line], ruled.map(v => ({ ...v, y2: 330 }))).length, 1)
+    assert.deepEqual(dropCoarseClipGrids([{ ...band, bbox: { ...band.bbox, x1: 110 } }], [line], ruled).length, 1)
+    assert.deepEqual(dropCoarseClipGrids([clip(42, 512)], [line], ruled).length, 1)
   })
 })

@@ -906,13 +906,13 @@ export function removeHeaderFooterBlocks(
     // (1) 텍스트 반복 패턴
     const patternCount = new Map<string, number>()
     const patternPages = new Map<string, Set<number>>()
-    const patternNumbers = new Map<string, Set<string>>()
+    const patternOccurrences = new Map<string, ZoneEntry[]>()
     for (const e of entries) {
       const norm = e.text.replace(/\d+/g, "#")
       patternCount.set(norm, (patternCount.get(norm) || 0) + 1)
-      const nums = patternNumbers.get(norm) || new Set<string>()
-      nums.add((e.text.match(/\d+/g) ?? []).join(","))
-      patternNumbers.set(norm, nums)
+      const occurrences = patternOccurrences.get(norm) || []
+      occurrences.push(e)
+      patternOccurrences.set(norm, occurrences)
       const pages = patternPages.get(norm) || new Set<number>()
       pages.add(e.page)
       patternPages.set(norm, pages)
@@ -924,10 +924,16 @@ export function removeHeaderFooterBlocks(
       // (규제영향분석서 "Ⅰ. 규제의 필요성": 156쪽 중 10쪽, 약 15쪽 간격 — 원본 서식 제목을 머리글로 지웠다)
       const pages = [...(patternPages.get(p) ?? [])]
       const span = pages.length ? Math.max(...pages) - Math.min(...pages) + 1 : 0
-      // 숫자가 등장마다 바뀌면(쪽 번호) 드문드문해도 러닝 머리·바닥글이다 — 일부 쪽에선 표에 흡수돼 따로 선 등장이 성기다(hwp3-sample11)
+      // 인쇄 쪽번호가 바뀌면 드문드문해도 러닝 머리·바닥글이다. 숫자가 달라지는
+      // 양식·장 식별자는 쪽과 공변해도 머리글이 아니다(Formular F.701.01/Übersicht 1).
       // 표 상자는 번호만 바뀌는 드문 상자가 본문이다(안건 표지 "제2차 재정운용전략협의회 | 26-2-1", 56쪽 중 4쪽) — 밀도만 본다
-      const pageNumbered = !tables && (patternNumbers.get(p)?.size ?? 0) > 1
-      if (count >= MIN_REPEAT && pages.length >= MIN_REPEAT && (pages.length >= span * 0.4 || pageNumbered)) {
+      const occurrences = patternOccurrences.get(p) ?? []
+      const varied = new Set(occurrences.map(e => e.text)).size > 1
+      const pageNumbered = !tables && hasPrintedPageCounter(occurrences, entries === bottomEntries)
+      // 본문 참조가 없는 번호 각주는 종전처럼 러닝 푸터 후보로 둔다. 아래 참조 표시 검사가 실제 각주를 보존한다.
+      const noteLike = !tables && entries === bottomEntries && occurrences.every(e => /^\d{1,3}\)\s+\S/.test(e.text))
+      const dense = pages.length >= span * 0.4
+      if (count >= MIN_REPEAT && pages.length >= MIN_REPEAT && (pageNumbered || dense && (tables || !varied || noteLike))) {
         repeatedPatterns.add(p)
       }
     }
@@ -975,4 +981,27 @@ export function removeHeaderFooterBlocks(
   }
 
   return [...removeSet].sort((a, b) => a - b)
+}
+
+/** 쪽번호 모양과 실제 PDF 쪽 번호와의 일정한 오프셋을 함께 요구한다. */
+function hasPrintedPageCounter(entries: ReadonlyArray<{ page: number; text: string }>, bottom: boolean): boolean {
+  if (entries.length < 3) return false
+  const pageShape = (text: string): boolean => {
+    const t = text.trim()
+    if (/\b[A-Z]\.\d+(?:\.\d+)*/i.test(t)) return false // F.701.01 같은 식별자
+    if (/^[-–—(]?\s*\d{1,6}\s*[-–—)]?$/.test(t)) return true
+    if (/^\d{1,6}\s*(?:[/／]|of)\s*\d{1,6}$/i.test(t)) return true
+    if (/(?:^|\s)(?:page|seite|pagina|쪽|페이지)\s*[:#-]?\s*\d+/i.test(t)) return true
+    return bottom && /\t\s*\d{1,6}$/.test(t)
+  }
+  if (!entries.every(e => pageShape(e.text))) return false
+  const numbers = entries.map(e => (e.text.match(/\d+/g) ?? []).map(Number))
+  const positions = Math.min(...numbers.map(n => n.length))
+  for (let i = 0; i < positions; i++) {
+    const values = numbers.map(n => n[i])
+    if (new Set(values).size < 2) continue
+    const offset = values[0] - entries[0].page
+    if (entries.every((e, j) => values[j] - e.page === offset)) return true
+  }
+  return false
 }
