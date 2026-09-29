@@ -1,0 +1,73 @@
+{
+  "documents": [
+    {
+      "complexity": "text_native",
+      "filename": "text-native.pdf",
+      "questions": [],
+      "toc_false_positives": [
+        "HE-FAKE-TOC-99"
+      ],
+      "topics": [
+        {
+          "action_type": "RIA",
+          "budget_eur": "12000000",
+          "date": "2026-10-01",
+          "grounded_relation": "funded_by",
+          "title": "Clean hydrogen valleys",
+          "topic_id": "HE-CL4-2026-01"
+        },
+        {
+          "action_type": "IA",
+          "budget_eur": "8500000",
+          "date": "2026-11-15",
+          "grounded_relation": "managed_by",
+          "title": "Resilient mobility data",
+          "topic_id": "HE-CL5-2026-02"
+        }
+      ]
+    },
+    {
+      "complexity": "table_heavy",
+      "filename": "table-heavy.pdf",
+      "questions": [
+        {
+          "raw_relation": "related_to",
+          "reason": "generic_fallback_relation"
+        }
+      ],
+      "toc_false_positives": [],
+      "topics": [
+        {
+          "action_type": "CSA",
+          "budget_eur": "3000000",
+          "date": "2026-09-20",
+          "grounded_relation": "coordinated_by",
+          "title": "Circular aviation materials",
+          "topic_id": "HE-EIC-2026-03"
+        }
+      ]
+    },
+    {
+      "complexity": "layout_mixed",
+      "filename": "layout-mixed.pdf",
+      "questions": [
+        {
+          "raw_relation": "associated_with",
+          "reason": "ambiguous_relation"
+        }
+      ],
+      "toc_false_positives": [],
+      "topics": [
+        {
+          "action_type": "RIA",
+          "budget_eur": "15000000",
+          "date": "2026-12-03",
+          "grounded_relation": "supported_by",
+          "title": "Hybrid electric propulsion",
+          "topic_id": "HE-CA-2026-04"
+        }
+      ]
+    }
+  ],
+  "schema_version": "horizon-pdf-quality-gold.v1"
+}

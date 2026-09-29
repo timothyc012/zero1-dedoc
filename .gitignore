@@ -39,6 +39,7 @@ output/
 bench/corpus/
 bench/out/
 bench/visual/out/
+bench/office-pdf-results.json
 
 # 생성 엔진 학습용 수집분 (파서 게이트 모수 아님)
 bench/corpus-gen/
