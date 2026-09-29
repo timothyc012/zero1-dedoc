@@ -851,7 +851,7 @@ function extractBlocksWithGrids(
     }
     const ordered: IRBlock[] = []
     for (const u of orderByPanels(units, unitBox, panels)) for (const b of u) ordered.push(b)
-    return mergeAdjacentTableBlocks(ordered)
+    return mergeSideBandTables(mergeAdjacentTableBlocks(ordered))
   }
   if (gutterX !== null && units.length > 1) {
     // 밴드 정렬 (#64): 거터를 가로지르는 유닛(전폭 표·머리글·쪽번호)을 위→아래
@@ -872,7 +872,7 @@ function extractBlocksWithGrids(
     }
     const ordered: IRBlock[] = []
     for (const u of orderByGutter(units, unitRect, gx)) for (const b of u) ordered.push(b)
-    return mergeAdjacentTableBlocks(ordered)
+    return mergeSideBandTables(mergeAdjacentTableBlocks(ordered))
   }
   // A landscape sheet can contain two independent portrait pages. In that
   // layout, a slightly higher table on the right must not precede the left
@@ -894,7 +894,10 @@ function extractBlocksWithGrids(
     if (left.length >= 2 && right.length >= 2 && left.length + right.length === units.length &&
         left.some(u => u.some(b => b.type === "table")) && right.some(u => u.some(b => b.type === "table"))) {
       const flatten = (side: IRBlock[][]) => side.sort((a, b) => unitTopY(b) - unitTopY(a)).flat()
-      return [...mergeAdjacentTableBlocks(flatten(left)), ...mergeAdjacentTableBlocks(flatten(right))]
+      return mergeSideBandTables([
+        ...mergeAdjacentTableBlocks(flatten(left)),
+        ...mergeAdjacentTableBlocks(flatten(right)),
+      ])
     }
   }
   units.sort((a, b) => unitTopY(b) - unitTopY(a)) // PDF는 y가 위가 큼 → 내림차순
@@ -932,7 +935,7 @@ function extractBlocksWithGrids(
     if (panel) ordered.push(...panelBlocks(panel, b, pageNum))
     else ordered.push(b)
   }
-  return mergeAdjacentTableBlocks(ordered)
+  return mergeSideBandTables(mergeAdjacentTableBlocks(ordered))
 }
 
 /** 사이드바 패널 글 — 순서 정렬이 패널을 한 덩이로 옮긴 뒤 서체 런으로 편다 (panelBlocks) */
