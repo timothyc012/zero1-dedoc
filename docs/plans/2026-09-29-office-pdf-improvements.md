@@ -190,13 +190,13 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 
 ### X2. PPTX 표·그룹 도형과 공개 표면 연결
 
-**상태:** 첫 구현 slice 완료 in current implementation branch. 그룹 도형을 재귀 순회하고 DrawingML `gridSpan`/`rowSpan`을 IR에 보존하며, 이미지·차트/SmartArt 같은 미지원 payload는 `UNSUPPORTED_ELEMENT` 경고로 남긴다. 좌표 변환·병합표 holdout은 후속이다.
+**상태:** 공개 PPTX 6개·12슬라이드에서 원본 텍스트 68/68의 존재와 순서, 그룹 라벨 시각 순서, 병합표 5개 격자와 span, 노트와 그림 미지원 경고를 검증했다. 그룹 안 글은 flip/rotation/scale 좌표 변환으로 정렬하며, `hMerge`/`vMerge` 이어진 칸을 중복 열로 세지 않는다. CLI/worker/MCP parse 경로와 페이지 범위·메타데이터를 시험했다. 최상위 슬라이드 도형에 좌표가 없는 경우 XML 순서를 사용하고, 차트/SmartArt·그림 OCR은 미지원 경고를 유지한다. 자세한 근거는 `docs/benchmarks/pptx-holdout-and-surfaces.md`.
 
-**범위 M:** `src/pptx/parser.ts`, `src/pptx/shapes.ts`(신규), `src/mcp/shared.ts`의 parse 전용 확장자 허용 목록, `tests/pptx.test.ts`, `tests/pptx-surfaces.test.ts`.
+**범위 M:** `src/pptx/parser.ts`, `src/mcp/shared.ts`·`tools-parse.ts`의 parse 전용 허용 목록, `tests/pptx.test.ts`, `tests/pptx-surfaces.test.ts`, 공개 PPTX holdout.
 
 - [x] 그룹 도형의 XML 읽기 순서와 병합표 `rowSpan/colSpan`을 보존한다. 좌표 변환이 필요한 시각 순서 holdout은 후속이다.
 - [x] 이미지 alt/name을 경고 payload에 남기고, 구현하지 않은 SmartArt·차트·애니메이션의 데이터는 조용히 유실시키지 않는다. 텍스트 없는 그림에서 OCR을 수행했다고 표시하지 않는다.
-- [ ] parse/worker/CLI/MCP의 PPTX 허용 범위를 일치시킨다. 기존 편집·생성·채우기 도구의 PPTX 거부 테스트는 해당 기능을 구현하기 전까지 유지한다.
+- [x] parse/worker/CLI/MCP의 PPTX 허용 범위를 일치시켰다. 기존 편집·생성·채우기 도구의 PPTX 거부 테스트는 해당 기능을 구현하기 전까지 유지한다.
 
 **검증:** 그룹·다단·표·노트·그림 holdout, protocol contract, output budget. **의존성:** X1.
 
