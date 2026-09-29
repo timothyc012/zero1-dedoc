@@ -38,7 +38,7 @@ import { dropTabLeaderDots } from "./tab-leaders.js"
 import { orderTwoUpPage } from "./two-up.js"
 import { removeSideTabs } from "./side-tabs.js"
 import { superscriptNoteMarks, inlineFootnotes, footnoteSeparators, type PageNotes } from "./footnotes.js"
-import { demoteNonHeadingRoles } from "./heading-demote.js"
+import { demoteNonHeadingRoles, refineLeadDocumentTitleRoles } from "./heading-demote.js"
 import { computeMedianFontSizeFromFreq, detectHeadings, mergeStackedHeadingLines, detectTypographyHeadings, detectDocumentStyleHeadings, detectSiblingStyleHeadings, detectRepeatedPageLabels, detectPageLeadHeadings, refineDocumentStyleHeadings, detectMarkerHeadings, detectTableCaptions, detectKoreanListBlocks, removeHeaderFooterBlocks } from "./block-detect.js"
 import { sanitizeBlockControlChars, cleanPdfText, splitSingleCellTables, joinLatinCellWraps } from "./text-clean.js"
 import { applyLinkAnnotations, mergeLinkRuns } from "./links.js"
@@ -526,6 +526,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
 
     // □/■ 마커 기반 서브헤딩 감지 (ODL 패턴)
     detectMarkerHeadings(blocks)
+    refineLeadDocumentTitleRoles(blocks, pageHeights)
     // 승격이 끝난 뒤 머리말·캡션·수식 번호 줄처럼 제목이 될 수 없는 역할을 되돌림
     demoteNonHeadingRoles(blocks, pageHeights, faceNames)
 
