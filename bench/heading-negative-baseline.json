@@ -1,0 +1,395 @@
+{
+  "schema_version": "zero1-heading-negative-result.v1",
+  "parser_revision": "644e4114ed68b4e7e3ffc22d5bd00fa00eecef28",
+  "corpus_role": "two independent public issuers plus one ODL185 author-superscript regression cross-check",
+  "documents": [
+    {
+      "id": "ecb-bundesbank-money-2026",
+      "sha256": "163bde0c71d52106500cc636bee72a733e8808d68a5b6180f8d495ed8943d8fd",
+      "pageCount": 9,
+      "headingLevels": [
+        {
+          "page": 1,
+          "level": 2,
+          "text": "26. Februar 2026"
+        },
+        {
+          "page": 1,
+          "level": 1,
+          "text": "Geldmengenentwicklung im Euroraum: Januar 2026"
+        },
+        {
+          "page": 1,
+          "level": 2,
+          "text": "Komponenten der weit gefassten Geldmenge M3"
+        },
+        {
+          "page": 3,
+          "level": 2,
+          "text": "Gegenposten der weit gefassten Geldmenge M3"
+        },
+        {
+          "page": 3,
+          "level": 2,
+          "text": "Abbildung 2"
+        },
+        {
+          "page": 4,
+          "level": 2,
+          "text": "Forderungen an Nicht-MFIs im Euroraum"
+        },
+        {
+          "page": 4,
+          "level": 2,
+          "text": "Abbildung 3"
+        },
+        {
+          "page": 5,
+          "level": 2,
+          "text": "Anhang"
+        },
+        {
+          "page": 5,
+          "level": 2,
+          "text": "Tabelle 1 bis 4"
+        },
+        {
+          "page": 5,
+          "level": 2,
+          "text": "Anmerkung:"
+        },
+        {
+          "page": 5,
+          "level": 2,
+          "text": "Daten der im Anhang aufgeführten Tabellen stellen eine Momentaufnahme zum Zeitpunkt der aktuellen Veröffentlichung dar."
+        },
+        {
+          "page": 7,
+          "level": 2,
+          "text": "GEGENPOSTEN ZU M3"
+        },
+        {
+          "page": 8,
+          "level": 2,
+          "text": "Einlagen insgesamt"
+        },
+        {
+          "page": 8,
+          "level": 2,
+          "text": "Pensionseinrichtungen"
+        },
+        {
+          "page": 8,
+          "level": 2,
+          "text": "Kapitalgesellschaften(c)"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "page_count",
+          "expected": 9,
+          "actual": 9,
+          "pass": true
+        },
+        {
+          "kind": "heading",
+          "expected": {
+            "page": 1,
+            "level": 1,
+            "text": "Geldmengenentwicklung im Euroraum: Januar 2026"
+          },
+          "pass": true
+        },
+        {
+          "kind": "heading",
+          "expected": {
+            "page": 1,
+            "level": 2,
+            "text": "Komponenten der weit gefassten Geldmenge M3"
+          },
+          "pass": true
+        },
+        {
+          "kind": "heading",
+          "expected": {
+            "page": 3,
+            "level": 2,
+            "text": "Gegenposten der weit gefassten Geldmenge M3"
+          },
+          "pass": true
+        },
+        {
+          "kind": "heading",
+          "expected": {
+            "page": 4,
+            "level": 2,
+            "text": "Forderungen an Nicht-MFIs im Euroraum"
+          },
+          "pass": true
+        },
+        {
+          "kind": "forbid_h1",
+          "text": "Pressemitteilung",
+          "pass": true,
+          "actual": null
+        },
+        {
+          "kind": "forbid_h1",
+          "text": "Europäische Zentralbank",
+          "pass": true,
+          "actual": null
+        },
+        {
+          "kind": "forbid_h1",
+          "text": "26. Februar 2026",
+          "pass": true,
+          "actual": null
+        },
+        {
+          "kind": "forbid_h1",
+          "text": "Abbildung 2",
+          "pass": true,
+          "actual": null
+        },
+        {
+          "kind": "forbid_h1",
+          "text": "Tabelle 1 bis 4",
+          "pass": true,
+          "actual": null
+        },
+        {
+          "kind": "forbid_heading",
+          "text": "Pressemitteilung / 26. Februar 2026",
+          "pass": true,
+          "actual": null
+        }
+      ],
+      "passed": true
+    },
+    {
+      "id": "destatis-bip-statement-2026",
+      "sha256": "3edb2e6b33b72d1683b5053de204ed7a46cab69112ac96eb223511a7a4880909",
+      "pageCount": 20,
+      "headingLevels": [
+        {
+          "page": 1,
+          "level": 1,
+          "text": "Bruttoinlandsprodukt 2025 für Deutschland"
+        },
+        {
+          "page": 2,
+          "level": 2,
+          "text": "Vierteljährliches Bruttoinlandsprodukt in Deutschland"
+        },
+        {
+          "page": 6,
+          "level": 2,
+          "text": "4. Die privaten Haushalte konsumierten wieder mehr als im Vorjahr – außer im Gastgewerbe."
+        },
+        {
+          "page": 7,
+          "level": 2,
+          "text": "Bruttoanlageinvestitionen in Deutschland 2025"
+        },
+        {
+          "page": 9,
+          "level": 2,
+          "text": "Exporte und Importe 2025 in Deutschland"
+        },
+        {
+          "page": 11,
+          "level": 2,
+          "text": "Finanzierungssaldo des Staates"
+        },
+        {
+          "page": 13,
+          "level": 2,
+          "text": "Erwerbstätigkeit und Arbeitsstunden in Deutschland"
+        },
+        {
+          "page": 14,
+          "level": 2,
+          "text": "Erwerbstätige ausgewählter Wirtschaftsbereiche 2025 in Deutschland"
+        },
+        {
+          "page": 16,
+          "level": 2,
+          "text": "Komponenten des Volkseinkommens in Deutschland"
+        },
+        {
+          "page": 17,
+          "level": 2,
+          "text": "10. Die Realeinkommen sind leicht gestiegen, die Sparquote ging zurück."
+        },
+        {
+          "page": 18,
+          "level": 2,
+          "text": "11. Die deutsche Wirtschaft liegt international weiter im Schlussfeld."
+        },
+        {
+          "page": 18,
+          "level": 2,
+          "text": "Bruttoinlandsprodukt im internationalen Vergleich1"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "page_count",
+          "expected": 20,
+          "actual": 20,
+          "pass": true
+        },
+        {
+          "kind": "heading",
+          "expected": {
+            "page": 1,
+            "level": 1,
+            "text": "Bruttoinlandsprodukt 2025 für Deutschland"
+          },
+          "pass": true
+        },
+        {
+          "kind": "heading",
+          "expected": {
+            "page": 6,
+            "level": 2,
+            "text": "4. Die privaten Haushalte konsumierten wieder mehr als im Vorjahr"
+          },
+          "pass": true
+        },
+        {
+          "kind": "heading",
+          "expected": {
+            "page": 17,
+            "level": 2,
+            "text": "10. Die Realeinkommen sind leicht gestiegen"
+          },
+          "pass": true
+        },
+        {
+          "kind": "heading",
+          "expected": {
+            "page": 18,
+            "level": 2,
+            "text": "11. Die deutsche Wirtschaft liegt international weiter im Schlussfeld"
+          },
+          "pass": true
+        },
+        {
+          "kind": "forbid_h1",
+          "text": "Pressekonferenz",
+          "pass": true,
+          "actual": null
+        },
+        {
+          "kind": "forbid_h1",
+          "text": "Statistisches Bundesamt",
+          "pass": true,
+          "actual": null
+        },
+        {
+          "kind": "forbid_h1",
+          "text": "Schaubild 1a",
+          "pass": true,
+          "actual": null
+        },
+        {
+          "kind": "forbid_h1",
+          "text": "Bruttoinlandsprodukt in Deutschland",
+          "pass": true,
+          "actual": null
+        },
+        {
+          "kind": "forbid_h1",
+          "text": "– Es gilt das gesprochene Wort –",
+          "pass": true,
+          "actual": null
+        },
+        {
+          "kind": "forbid_heading",
+          "text": "– Es gilt das gesprochene Wort –",
+          "pass": true,
+          "actual": null
+        },
+        {
+          "kind": "forbid_heading",
+          "text": "Schaubild 1a",
+          "pass": true,
+          "actual": null
+        }
+      ],
+      "passed": true
+    },
+    {
+      "id": "odl185-solar-author-line",
+      "sha256": "b639c25ab157f6f4ecbdb7cd31724bf4c8869f03134f5e606c49dd5fbee2bb54",
+      "pageCount": 1,
+      "headingLevels": [
+        {
+          "page": 1,
+          "level": 3,
+          "text": "SOLAR 10.7B: Scaling Large Language Models with Simple yet Effective Depth Up-Scaling"
+        },
+        {
+          "page": 1,
+          "level": 2,
+          "text": "Abstract"
+        },
+        {
+          "page": 1,
+          "level": 2,
+          "text": "1 Introduction"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "page_count",
+          "expected": 1,
+          "actual": 1,
+          "pass": true
+        },
+        {
+          "kind": "forbid_h1",
+          "text": "Dahyun Kim",
+          "pass": true,
+          "actual": null
+        },
+        {
+          "kind": "forbid_h1",
+          "text": "Upstage AI",
+          "pass": true,
+          "actual": null
+        },
+        {
+          "kind": "forbid_heading",
+          "text": "Dahyun Kim",
+          "pass": true,
+          "actual": null
+        },
+        {
+          "kind": "forbid_heading",
+          "text": "Upstage AI",
+          "pass": true,
+          "actual": null
+        },
+        {
+          "kind": "required_text",
+          "text": "Dahyun Kim<sup>∗</sup>",
+          "pass": true
+        },
+        {
+          "kind": "required_text",
+          "text": "Chanjun Park<sup>∗†</sup>",
+          "pass": true
+        }
+      ],
+      "passed": true
+    }
+  ],
+  "summary": {
+    "documents": 3,
+    "passed": 3,
+    "checks": 30,
+    "passedChecks": 30
+  }
+}
