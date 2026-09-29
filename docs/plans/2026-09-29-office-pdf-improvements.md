@@ -249,10 +249,12 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 
 ### I3. 02ontology 평가 이미지·버전 고정
 
+**상태:** lean image와 OCR-enabled image를 local Docker Desktop에서 검증 완료. WSL 주소가 현재 접근되지 않아 WSL 실행 자체는 보류한다.
+
 **별도 저장소 작업, 범위 S/M:** `deploy/zero1-dedoc/Dockerfile`(신규), 운영 가이드, 이미지 smoke script.
 
-- [ ] 검증된 commit에서 빌드한 tarball SHA/패키지 무결성과 Node 이미지 digest를 고정한다. runtime `npx`나 moving `main` 설치를 사용하지 않는다.
-- [ ] 모델 캐시·언어·model hash를 패키지 버전과 함께 기록하고, secret 없는 격리 parser 실행 경계를 재사용한다.
+- [x] 검증된 commit에서 빌드한 tarball SHA/패키지 무결성과 Node 이미지 digest를 고정한다. runtime `npx`나 moving `main` 설치를 사용하지 않는다.
+- [x] 모델 캐시·언어·model hash를 패키지 버전과 함께 기록하고, secret 없는 격리 parser 실행 경계를 재사용한다.
 - [ ] WSL Docker에서 CLI/worker smoke와 오프라인 OCR을 실행해 연결 가능한 이미지를 산출한다. 운영 서비스 교체는 해당 배포 범위에서 검토한다.
 
 **검증:** Node 20 이미지의 parser identity, SHA, NDJSON ready/response, 제한 경로·누락 모델·timeout 시나리오. **의존성:** I2.
