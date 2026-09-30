@@ -1,0 +1,99 @@
+{
+  "schema_version": "zero1-german-ocr-wsl-smoke.v1",
+  "source_sha": "988fcb4e84a04a169c04c5137f360e126eabf615",
+  "package_sha256": "737c9495b4f55108e6f9b59e9343ff349ee7560ec18ed51d19aaa8d5996bc580",
+  "node_base_index_sha256": "2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0",
+  "image_id": "sha256:00d4bdbc05185526400c7fad122f65ba57bf0d4c8040f9b20f0ac9b3485041e6",
+  "architecture": "amd64",
+  "docker_server": "29.8.1",
+  "network": "none",
+  "worker_version": "4.16.1-zero1.1",
+  "worker_protocol": 1,
+  "model_status": {
+    "de": {
+      "allReady": true,
+      "verifiedModels": 2
+    },
+    "en": {
+      "allReady": true,
+      "verifiedModels": 3
+    }
+  },
+  "documents": [
+    {
+      "file": "bmf-tax-tables.pdf",
+      "sha256": "1bbaae9366524c2830b52092b9e6a5f9b9bdb5a801402e48dd9e58d32385c4b2",
+      "passed": true,
+      "pages": 11,
+      "anchorsFound": 0,
+      "anchorsExpected": 0,
+      "warningCodes": [
+        "HIDDEN_TEXT_FILTERED"
+      ],
+      "elapsed_seconds": 1.4221100930008106
+    },
+    {
+      "file": "pension-form.pdf",
+      "sha256": "9fb138c73c0d7065203e1ed30a90d2febb3a2ab94a980cb31e679ce49f1ddda6",
+      "passed": true,
+      "pages": 29,
+      "anchorsFound": 0,
+      "anchorsExpected": 0,
+      "warningCodes": [],
+      "elapsed_seconds": 1.6411623430030886
+    },
+    {
+      "file": "de-image-only.pdf",
+      "sha256": "09a698ed15731ba0af7e2e2a74e2aea066bc2723ab0f80499506da90e4f15464",
+      "passed": true,
+      "pages": 1,
+      "anchorsFound": 2,
+      "anchorsExpected": 2,
+      "warningCodes": [
+        "OCR_APPLIED"
+      ],
+      "elapsed_seconds": 36.13289126699965
+    },
+    {
+      "file": "en-image-only.pdf",
+      "sha256": "89913a526b29f40724b14b28e45f0b06bec2fe402887e01b367f6e69b829845c",
+      "passed": true,
+      "pages": 1,
+      "anchorsFound": 1,
+      "anchorsExpected": 1,
+      "warningCodes": [
+        "OCR_LOW_CONF",
+        "OCR_APPLIED"
+      ],
+      "elapsed_seconds": 2.966770549013745
+    },
+    {
+      "file": "de_val_0.pdf",
+      "sha256": "9f5c2cd37bfd3c853792c761df6ef4e24c188129cb5007bf1e686f98a89569c2",
+      "passed": true,
+      "pages": 1,
+      "anchorsFound": 2,
+      "anchorsExpected": 2,
+      "warningCodes": [
+        "OCR_APPLIED"
+      ],
+      "elapsed_seconds": 85.49162592001085
+    },
+    {
+      "file": "de_val_1.pdf",
+      "sha256": "ad9c1e090286bcb1361d74fdaaf1d0b05730a6877bc3885a04da3e437bacf6be",
+      "passed": true,
+      "pages": 1,
+      "anchorsFound": 2,
+      "anchorsExpected": 2,
+      "warningCodes": [
+        "OCR_APPLIED"
+      ],
+      "elapsed_seconds": 56.34166986499622
+    }
+  ],
+  "summary": {
+    "documents": 6,
+    "passed": 6
+  }
+}

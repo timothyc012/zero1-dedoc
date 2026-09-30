@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Added bounded German CTC prefix decoding, adjusted oriented crop expansion, and added a CPU thread budget. Fixed-corpus CER/WER improve modestly; additional 30-form and WSL results are in `docs/benchmarks/german-ocr-efficiency.md`. Parser routing and English/Korean decoder defaults remain unchanged.
+
 - Reconnected the guarded numeric label/value side-band merge to the page-block output path. German BMF pages 6, 7, 10, and 11 now retain their reconstructed 10-column tables in the built package; the public ODL200 score is unchanged.
 - Adopted the upstream v4.16.3 image-path confinement fix with Unicode image-name support.
 - Adopted upstream script-tag support for superscript/subscript and PDF two-column author affiliations.
