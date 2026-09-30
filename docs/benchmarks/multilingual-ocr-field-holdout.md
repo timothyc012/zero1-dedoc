@@ -1,5 +1,10 @@
 # German and English scanned-field OCR holdout
 
+This is the historical PP-OCRv5 English/Latin measurement from Zero1 revision
+`b397821f48494b65ad36a204eb03f30f126536df`. The German default profile was
+subsequently improved; see the [German PDF comparison](german-pdf-ocr-comparison.md)
+for the actual PDF pipeline, current models, and fresh German form evaluation.
+
 The OCR corpus is frozen in [`bench/ocr-holdout-manifest.json`](../../bench/ocr-holdout-manifest.json). It contains **20 distinct one-page documents per language**: German [Belege (Immineal, 2026) free-sample](https://huggingface.co/datasets/laterrr/belege-de-invoices-sample) invoice images with generated field boxes, and 20 lexically preselected pages from the original [FUNSD testing split](https://github.com/crcresearch/FUNSD) with entity text boxes. Selection, image/label SHA-256 values, Belege revision, and FUNSD archive SHA-256 were fixed before the full OCR run. Belege contributes 10 scan variants, nine photos and one clean render. The English forms are noisy 100-dpi historical scans. These are different document families, so their error rates are **not** a language ranking. Original images and labels remain in ignored local `bench/corpus/`, not in Git.
 
 ## Measurement contract
@@ -24,6 +29,10 @@ The error rates are substantial. This corpus closes the **measurement and proven
 [`bench/build-ocr-pdf-smoke.py`](../../bench/build-ocr-pdf-smoke.py) deterministically wraps one pinned image from each language in an image-only PDF and a two-page PDF whose first page has native selectable text. The four output hashes are in [`bench/ocr-pdf-smoke-manifest.json`](../../bench/ocr-pdf-smoke-manifest.json). With cached models and offline mode, [`bench/ocr-pdf-smoke.mjs`](../../bench/ocr-pdf-smoke.mjs) passed **4/4**: the image page was OCRed, the mixed PDF's native first page stayed native, no `OCR_FAILED` occurred, and fixed invoice/English text anchors remained. The [PDF smoke receipt](../../bench/ocr-pdf-smoke-baseline.json) records the warnings. The same four PDF routes were subsequently verified in an offline WSL Docker amd64 candidate image, alongside BMF and pension-form PDFs (6/6); the [02ontology WSL receipt](https://github.com/timothyc012/02ontology/blob/main/docs/verification/zero1-candidate-wsl-2026-09-30.json) records source, package, image, model, and input hashes. This route smoke does not change the failed field-region OCR quality promotion decision above.
 
 ## Reproduce
+
+The commands below run this corpus with the checked-out parser. Use a separate
+checkout of the revision above to reproduce the historical table; running the
+current German PP-OCRv6 profile is a new measurement, not that baseline.
 
 ```sh
 npm ci && npm run build

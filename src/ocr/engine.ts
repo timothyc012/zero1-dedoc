@@ -1,5 +1,5 @@
 /**
- * 내장 텍스트 OCR 엔진 — PP-OCRv5 korean (det DBNet + rec SVTR/CTC) ONNX 추론.
+ * 내장 텍스트 OCR 엔진 — PP-OCRv5 Korean/English and PP-OCRv6 German ONNX 추론.
  *
  * 파이프라인: 페이지 RGBA → det(선 검출) → 박스 픽셀 분석(대비·행 밴드) → 라인 crop
  *   → rec 배치(CTC 인식) → 표기 후처리 → OcrItem[]
@@ -11,8 +11,9 @@
  *  - rec: BGR, 높이 48 고정 비율 리사이즈 + 우측 zero-pad(최소 폭 320), (x/255-0.5)/0.5,
  *         CTC 디코드 (blank=0, 1..N=사전, N+1=공백), text_score 0.5.
  *         배치(recBatch>1)는 공식처럼 폭 비율로 정렬해 묶고 배치 최대 폭까지 zero-pad — 기본은 1
- * DB 후처리의 contour+minAreaRect 는 축정렬 connected-component bbox 로 근사
- * (공문서 스캔은 수평 텍스트가 지배적).
+ * Korean/English DB boxes retain the upstream axis-aligned approximation.
+ * German uses minimum-area oriented rectangles and affine crop rectification;
+ * its detector uses PP-OCRv6 mean/std 0.5 and the embedded model alphabet.
  *
  * 공식 파이프라인 밖의 보강 (근거는 bench/ocr-accuracy.mjs 코퍼스 실측, 각 모듈 주석):
  *  - 키 큰 박스(세로로 쌓인 글자)는 행 밴드로 갈라 밴드마다 인식 (line-split.ts)
@@ -38,6 +39,8 @@ import { restoreGlyphs } from "./glyph-restore.js"
 import { isDotFragment, joinLeaderItems, restoreBulletItems, restoreSymbols } from "./postprocess.js"
 import { bandBoxes, splitBoxAtCellRules, lineCrop, type Box, REC_HEIGHT } from "./crop.js"
 import { cropRgba, mergeDetectionTiles, mergeOcrPasses, ocrTuningForImage, planDetectionTiles } from "./detection-tiles.js"
+import { readOnnxCharacterDict } from "./onnx-character-dict.js"
+import { orientedComponentBoxes } from "./oriented-box.js"
 
 /** OCR 인식 결과 한 줄 — 좌표는 입력 이미지 픽셀 (top-left origin, y down) */
 export interface OcrItem {
@@ -144,6 +147,7 @@ export class OcrEngine {
   private dict: string[]
   private ort: typeof import("onnxruntime-node")
   private sharp: SharpFactory
+  private generation?: 6
 
   private constructor(parts: {
     det: InferenceSession
@@ -151,12 +155,14 @@ export class OcrEngine {
     dict: string[]
     ort: typeof import("onnxruntime-node")
     sharp: SharpFactory
+    generation?: 6
   }) {
     this.det = parts.det
     this.rec = parts.rec
     this.dict = parts.dict
     this.ort = parts.ort
     this.sharp = parts.sharp
+    this.generation = parts.generation
   }
 
   static async create(language?: OcrLanguage): Promise<OcrEngine> {
@@ -177,16 +183,17 @@ export class OcrEngine {
       graphOptimizationLevel: "all",
       executionProviders: ["cpu"],
       logSeverityLevel: 3, // paddle2onnx 변환 잔여물 W 로그 폭주 억제
+      ...(profile.generation === 6 ? { intraOpNumThreads: 4, interOpNumThreads: 1 } : {}),
     }
-    const [det, rec, dictYml] = await Promise.all([
+    const [det, rec, dictBytes] = await Promise.all([
       ortMod.InferenceSession.create(join(dir, profile.det.filename), sessionOpts),
       ortMod.InferenceSession.create(join(dir, profile.rec.filename), sessionOpts),
-      readFile(join(dir, profile.dict.filename), "utf-8"),
+      readFile(join(dir, profile.dict?.filename ?? profile.rec.filename)),
     ])
-    const dict = parseCharacterDict(dictYml)
+    const dict = profile.dict ? parseCharacterDict(dictBytes.toString("utf-8")) : readOnnxCharacterDict(dictBytes)
     if (dict.length === 0) throw new Error("OCR 사전 파싱 실패 — 모델 캐시를 삭제 후 재다운로드하세요")
 
-    return new OcrEngine({ det, rec, dict, ort: ortMod, sharp: sharpMod })
+    return new OcrEngine({ det, rec, dict, ort: ortMod, sharp: sharpMod, generation: profile.generation })
   }
 
   /** onnxruntime-node 1.14+ InferenceSession.release() — 구버전은 무시 */
@@ -212,6 +219,14 @@ export class OcrEngine {
     tuning: Readonly<OcrTuning> = DEFAULT_OCR_TUNING,
     cellRules: Array<{ x1: number; y1: number; y2: number; thicknessPx: number }> = [],
   ): Promise<OcrItem[]> {
+    if (this.generation === 6) {
+      // A single detailed pass keeps line geometry separate. Legacy cross-scale
+      // row coalescing can combine an invoice name and address into one box.
+      const v6Tuning = { ...tuning, detLongSide: 1760, detBoxThresh: 0.5, detUnclip: 1.6,
+        trimEdges: false, postprocess: false, tightBoxes: false, splitTall: false,
+        splitLeaders: false, minInkContrast: 0 }
+      return this.recognizeSinglePass(rgba, width, height, stats, v6Tuning, cellRules, false)
+    }
     const detailTuning = ocrTuningForImage(width, height, tuning)
     if (detailTuning === tuning) {
       return this.recognizeSinglePass(rgba, width, height, stats, tuning, cellRules, true)
@@ -248,6 +263,7 @@ export class OcrEngine {
     const joins: Array<{ box: Box; parts: Array<{ x: number; text: string; dotsBefore: boolean; confidence: number }>; trailDots: boolean }> = []
     let group = 0
     for (const b of boxes) {
+      if (this.generation === 6) { jobs.push({ box: b, rot: 0, group: group++ }); continue }
       const gray = grayCrop(rgba, width, b)
       const ink = inkStats(gray)
       if (pageTuning.minInkContrast > 0 && ink.contrast < pageTuning.minInkContrast) continue
@@ -430,18 +446,31 @@ export class OcrEngine {
     // HWC RGB → CHW BGR float32 정규화
     const plane = dw * dh
     const input = new Float32Array(3 * plane)
+    const mean = this.generation === 6 ? [0.5, 0.5, 0.5] : DET_MEAN
+    const std = this.generation === 6 ? [0.5, 0.5, 0.5] : DET_STD
     for (let i = 0; i < plane; i++) {
       const r = rgb[i * 3] / 255
       const g = rgb[i * 3 + 1] / 255
       const b = rgb[i * 3 + 2] / 255
-      input[i] = (b - DET_MEAN[0]) / DET_STD[0]
-      input[plane + i] = (g - DET_MEAN[1]) / DET_STD[1]
-      input[2 * plane + i] = (r - DET_MEAN[2]) / DET_STD[2]
+      input[i] = (b - mean[0]) / std[0]
+      input[plane + i] = (g - mean[1]) / std[1]
+      input[2 * plane + i] = (r - mean[2]) / std[2]
     }
 
     const tensor = new this.ort.Tensor("float32", input, [1, 3, dh, dw])
     const out = await this.det.run({ [this.det.inputNames[0]]: tensor })
     const probMap = out[this.det.outputNames[0]].data as Float32Array
+
+    if (this.generation === 6) {
+      const raw = orientedComponentBoxes(probMap, dw, dh, tuning.detThresh, tuning.detBoxThresh, tuning.detUnclip)
+      const sx = width / dw, sy = height / dh
+      const boxes = raw.slice(0, DET_MAX_BOXES).map(box => ({
+        ...box, x: Math.floor(box.x * sx), y: Math.floor(box.y * sy),
+        w: Math.ceil(box.w * sx), h: Math.ceil(box.h * sy),
+        quad: box.quad!.map(point => ({ x: point.x * sx, y: point.y * sy })) as Box["quad"],
+      }))
+      return { boxes, truncatedBoxes: Math.max(0, raw.length - DET_MAX_BOXES) }
+    }
 
     const rawBoxes = componentBoxes(probMap, dw, dh, tuning.detThresh, tuning.detBoxThresh)
     const truncatedBoxes = Math.max(0, rawBoxes.length - DET_MAX_BOXES)
@@ -505,6 +534,7 @@ export class OcrEngine {
       const out = await this.rec.run({ [this.rec.inputNames[0]]: tensor })
       const logits = out[this.rec.outputNames[0]]
       const [, T, C] = logits.dims as number[]
+      if (this.generation === 6 && C !== this.dict.length + 2) throw new Error("OCR recognizer/alphabet class mismatch")
       const data = logits.data as Float32Array
       idx.forEach((ci, k) => {
         const r = ctcDecode(data.subarray(k * T * C, (k + 1) * T * C), T, C, this.dict)
@@ -517,7 +547,7 @@ export class OcrEngine {
         let kept = r
         const last = (crops[ci].w * T) / bw + 1
         const chars = r ? [...r.text] : []
-        if (r && job.rot === 0 && chars.length === r.steps.length && r.steps.some(t => t > last) && !r.text.includes("(cid:")) {
+        if (r && !job.box.quad && job.rot === 0 && chars.length === r.steps.length && r.steps.some(t => t > last) && !r.text.includes("(cid:")) {
           const tallCh = (c: string) => !/[\s.,:;\u00b7\u2026'"\u2018-\u201d`\-_~]/.test(c)
           const g = grayCrop(rgba, pageW, job.box)
           const inside = chars.filter((c, i) => r.steps[i] <= last && tallCh(c)).length

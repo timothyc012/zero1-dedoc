@@ -1,0 +1,148 @@
+{
+  "schema_version": "zero1-german-ocr-blind.v1",
+  "selection": "All 20 source-sample documents excluded from the prior 20-document development corpus, fixed before candidate changes. Same generator, independent instances; not a publisher-generalization test.",
+  "source_url": "https://huggingface.co/datasets/laterrr/belege-de-invoices-sample",
+  "revision": "da6044a02bd0b6c1d065b9f5615fe021272ece45",
+  "documents": [
+    {
+      "id": "beleg-000018",
+      "image_path": "images/beleg-000018.jpg",
+      "label_path": "labels/beleg-000018.json",
+      "image_sha256": "07d7de8f7f5853b2503a0c4f55f6b65eeab508407bf2e69aabd991fab6c6d531",
+      "label_sha256": "63ba6ad633c17577f27477a7840e27f18f6fe806730c9e0475ef1df6d593e55b"
+    },
+    {
+      "id": "beleg-000019",
+      "image_path": "images/beleg-000019.jpg",
+      "label_path": "labels/beleg-000019.json",
+      "image_sha256": "2106b7e36c3c8af273b783cead585998d5081b37b3377d37deae6ed16027010d",
+      "label_sha256": "116207d72bf3969cd3d7cb355388680851a42bae15a3f2c7474295fc3e99bca2"
+    },
+    {
+      "id": "beleg-000020",
+      "image_path": "images/beleg-000020.jpg",
+      "label_path": "labels/beleg-000020.json",
+      "image_sha256": "eeb907b2278f5939e8f3d532615f644beb5e4c4ce43b0568c98c401ea37a2c6f",
+      "label_sha256": "cf607670b0cd6cd573424879f9c7d73edfef28f9fee0d515c2fea72006b8eb9f"
+    },
+    {
+      "id": "beleg-000021",
+      "image_path": "images/beleg-000021.jpg",
+      "label_path": "labels/beleg-000021.json",
+      "image_sha256": "0ad4bff49d1972319aa44f6fdcdc20dd5feb7bc238636d449afd01f8a23f20c8",
+      "label_sha256": "023b292a66c1263a21b7597fdb6a06a21776189745a8b211f22d690bbe4474b1"
+    },
+    {
+      "id": "beleg-000022",
+      "image_path": "images/beleg-000022.jpg",
+      "label_path": "labels/beleg-000022.json",
+      "image_sha256": "2659cd30ff5342475590f71f3a288f442dc6e458df62b088ca475497c8d67bca",
+      "label_sha256": "96ffbfcf26b00d9612f3a93dabb3ef46d4b35dafbf7414062262dc5f0a69e1cb"
+    },
+    {
+      "id": "beleg-000023",
+      "image_path": "images/beleg-000023.jpg",
+      "label_path": "labels/beleg-000023.json",
+      "image_sha256": "6d891d3f6f08db651270b3f6fe0dce24f87303523b2f79b29244d8baf6b37fe0",
+      "label_sha256": "0e4822714d3d6a3e671752c8b41247e5d742af655f43cd9252ba08e0689254fd"
+    },
+    {
+      "id": "beleg-000025",
+      "image_path": "images/beleg-000025.jpg",
+      "label_path": "labels/beleg-000025.json",
+      "image_sha256": "167756c6e8d7582a43b47ec10cef4dccc34511912e638cb2158adb1d8811405b",
+      "label_sha256": "fab5dda1111c277d29439c48e93bbb0222b3703d6c9f3117595701cf5bd26438"
+    },
+    {
+      "id": "beleg-000026",
+      "image_path": "images/beleg-000026.jpg",
+      "label_path": "labels/beleg-000026.json",
+      "image_sha256": "0855118e6254c9bbe4968fabc3188c5fe9b197d543f8cfbed41373ff9f5c24cb",
+      "label_sha256": "87b0db9bb41a944ccbb3eb82075c24aaf7c197a502c1de9d689b4c6121042ad4"
+    },
+    {
+      "id": "beleg-000027",
+      "image_path": "images/beleg-000027.jpg",
+      "label_path": "labels/beleg-000027.json",
+      "image_sha256": "95ca8b19e496ec458f8ec60f0466939133de1c9df79963d3ae4c5b9a7b316418",
+      "label_sha256": "a48c40216b429a748c73f6d8ce5cdee9b630edf3b8010538e86bbb8e08a0415a"
+    },
+    {
+      "id": "beleg-000028",
+      "image_path": "images/beleg-000028.jpg",
+      "label_path": "labels/beleg-000028.json",
+      "image_sha256": "960b58babf0263c6d4c986a15e646c6fbd1dbf282e7d3337650baa54cdf8f6d0",
+      "label_sha256": "871f56ed2489a101347bee4f3a1023cdeb07296b2f718c71d053a67183bde640"
+    },
+    {
+      "id": "beleg-000029",
+      "image_path": "images/beleg-000029.png",
+      "label_path": "labels/beleg-000029.json",
+      "image_sha256": "273414238fbfc9fc871d4ac951c1572600de1d4e068958d9bad28b29bbb9a4e0",
+      "label_sha256": "cd24cf00c4dc6ed8c94e3ee97fbbf59f3e9294afa9b8cf2444697b6aa456ab4a"
+    },
+    {
+      "id": "beleg-000031",
+      "image_path": "images/beleg-000031.jpg",
+      "label_path": "labels/beleg-000031.json",
+      "image_sha256": "30162623404c817cc8fe53dfdd35c0ce2d85916209c9591c8ecfe5f3ed89058a",
+      "label_sha256": "ad53d0877f4cab913fef049c64b63b5c8b63c8391d08fb60a22eed17845429ff"
+    },
+    {
+      "id": "beleg-000032",
+      "image_path": "images/beleg-000032.jpg",
+      "label_path": "labels/beleg-000032.json",
+      "image_sha256": "689ce06a4396888c34f13c30e642eb1d4287f682506deb9df7168c33335b6e7c",
+      "label_sha256": "33cf678047136e8ba68e360ed53ddafce46d91cfb6fba270a7bd5939050ec398"
+    },
+    {
+      "id": "beleg-000033",
+      "image_path": "images/beleg-000033.jpg",
+      "label_path": "labels/beleg-000033.json",
+      "image_sha256": "aef74b5c21d0b357c9674aa05c6ee8f53a7f635a3fa34ae7c904beac44f06e6f",
+      "label_sha256": "9395c4ee57653060e681ac2e78c8d709a427f27c0356ed55c7a1aa7ad34e80bc"
+    },
+    {
+      "id": "beleg-000034",
+      "image_path": "images/beleg-000034.jpg",
+      "label_path": "labels/beleg-000034.json",
+      "image_sha256": "d7f49e67f47146c9670bf4b68fe68bfcd286e395b1825614e9dcfa8f15d8ee53",
+      "label_sha256": "574e34dcb2e975b5c840e2ef223167baa437c1887bd49de0335b0a7f1733283b"
+    },
+    {
+      "id": "beleg-000035",
+      "image_path": "images/beleg-000035.jpg",
+      "label_path": "labels/beleg-000035.json",
+      "image_sha256": "fa421eb5900d39619650c3836a54310c63e5919d608c162c1572380114475825",
+      "label_sha256": "3b0219d8a6376e680827aa850724e5a23664c70486b83d81b226bb107e57428c"
+    },
+    {
+      "id": "beleg-000036",
+      "image_path": "images/beleg-000036.jpg",
+      "label_path": "labels/beleg-000036.json",
+      "image_sha256": "87b84203fe05b72e07a960545769b42119e920e96078deeea8573bd602a31f7e",
+      "label_sha256": "9d76785cd6a6a0497e5f8c557340c15b6c8ac992b8be2658cc6a6257fd1576cb"
+    },
+    {
+      "id": "beleg-000037",
+      "image_path": "images/beleg-000037.jpg",
+      "label_path": "labels/beleg-000037.json",
+      "image_sha256": "1b40220db834791b2400cc78007729bea82f9bb585b6e572a24eabd99a1e67cd",
+      "label_sha256": "ef56a394a794487b54e5afd59800a073fef303929482ae692dd597cd165f936f"
+    },
+    {
+      "id": "beleg-000038",
+      "image_path": "images/beleg-000038.jpg",
+      "label_path": "labels/beleg-000038.json",
+      "image_sha256": "3fedbad12d63e215468ca50e2b690a2cb5ec28463cd865137771bc78733633d6",
+      "label_sha256": "10e148be9d9dfedb320425b89511ec2c440669eb5b07656ffa75db2afb01f590"
+    },
+    {
+      "id": "beleg-000039",
+      "image_path": "images/beleg-000039.jpg",
+      "label_path": "labels/beleg-000039.json",
+      "image_sha256": "50ca862a16b2ae153fe7a2f44155dbd6b5c4c7163fe0d13c3e3e64f72243cb29",
+      "label_sha256": "de1c0018c8a9ebb1d6157a7446c39dc008e7f33778bddf2fc824f93aaa643af6"
+    }
+  ]
+}

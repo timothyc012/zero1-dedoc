@@ -63,30 +63,26 @@ const OCR_EN_DICT: ModelSpec = {
   sizeMb: 1,
 }
 
-const OCR_LATIN_REC_MODEL: ModelSpec = {
-  name: "PP-OCRv5 Latin rec",
-  filename: "rec_latin.onnx",
-  url: "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv5/rec/latin_PP-OCRv5_rec_mobile.onnx",
-  sha256: "b20bd37c168a570f583afbc8cd7925603890efbcdc000a59e22c269d160b5f5a",
-  sizeMb: 13,
-}
-
-const OCR_LATIN_DICT: ModelSpec = {
-  name: "PP-OCRv5 Latin dict",
-  filename: "rec_latin.txt",
-  url: "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/paddle/PP-OCRv5/rec/latin_PP-OCRv5_rec_mobile/ppocrv5_latin_dict.txt",
-  sha256: "3c0a8a79b612653c25f765271714f71281e4e955962c153e272b7b8c1d2b13ff",
-  sizeMb: 1,
-}
-
 export const ALL_OCR_MODELS: ReadonlyArray<ModelSpec> = [OCR_DET_MODEL, OCR_REC_MODEL, OCR_REC_DICT]
+
+const OCR_V6_DET: ModelSpec = {
+  name: "PP-OCRv6 medium det", filename: "det_v6.onnx",
+  url: "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv6/det/PP-OCRv6_det_medium.onnx",
+  sha256: "92078b7355007ccfffcd4c8cd441a3afd4538904d06881b29a155e1e679907c2", sizeMb: 60,
+}
+const OCR_V6_REC: ModelSpec = {
+  name: "PP-OCRv6 medium rec", filename: "rec_v6.onnx",
+  url: "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv6/rec/PP-OCRv6_rec_medium.onnx",
+  sha256: "eef444829dbbe18d7fea59a3f6eb75647518d2b3a9568d27c92e42940204894b", sizeMb: 74,
+}
 
 export interface OcrModelProfile {
   language: OcrLanguage
   directory: string
   det: ModelSpec
   rec: ModelSpec
-  dict: ModelSpec
+  dict?: ModelSpec
+  generation?: 6
 }
 
 export function normalizeOcrLanguage(language?: string): OcrLanguage {
@@ -101,7 +97,11 @@ export function getOcrModelProfile(language?: string): OcrModelProfile {
   const normalized = normalizeOcrLanguage(language)
   if (normalized === "korean") return { language: normalized, directory: getModelsDir("ppocr"), det: OCR_DET_MODEL, rec: OCR_REC_MODEL, dict: OCR_REC_DICT }
   if (normalized === "en") return { language: normalized, directory: getModelsDir("ppocr/en"), det: OCR_DET_MODEL, rec: OCR_EN_REC_MODEL, dict: OCR_EN_DICT }
-  return { language: normalized, directory: getModelsDir("ppocr/de"), det: OCR_DET_MODEL, rec: OCR_LATIN_REC_MODEL, dict: OCR_LATIN_DICT }
+  return { language: normalized, directory: getModelsDir("ppocr/de-v6"), det: OCR_V6_DET, rec: OCR_V6_REC, generation: 6 }
+}
+
+export function profileSpecs(profile: OcrModelProfile): ModelSpec[] {
+  return [profile.det, profile.rec, ...(profile.dict ? [profile.dict] : [])]
 }
 
 export function getOcrModelsDir(language?: string): string {
@@ -111,19 +111,19 @@ export function getOcrModelsDir(language?: string): string {
 /** 모든 텍스트 OCR 모델 다운로드/검증 (있으면 skip) */
 export async function ensureOcrModels(onProgress?: ProgressHandler, language?: string): Promise<void> {
   const profile = getOcrModelProfile(language)
-  return ensureModelsIn(profile.directory, [profile.det, profile.rec, profile.dict], onProgress)
+  return ensureModelsIn(profile.directory, profileSpecs(profile), onProgress)
 }
 
 /** 텍스트 OCR 모델 상태 (다운로드 없이 확인만) */
 export async function getOcrModelStatus(language?: string): Promise<ModelStatus[]> {
   const profile = getOcrModelProfile(language)
-  return getModelStatusIn(profile.directory, [profile.det, profile.rec, profile.dict])
+  return getModelStatusIn(profile.directory, profileSpecs(profile))
 }
 
 /** 텍스트 OCR 모델 세 파일이 캐시에 있나 — 해시 검증 없이 존재만(파싱마다 부르는 자동 OCR 판정용, 검증은 엔진 로드가 한다) */
 export async function ocrModelsCached(language?: string): Promise<boolean> {
   const profile = getOcrModelProfile(language)
-  for (const spec of [profile.det, profile.rec, profile.dict]) {
+  for (const spec of profileSpecs(profile)) {
     const dir = profile.directory
     try { if (!(await stat(join(dir, spec.filename))).size) return false } catch { return false }
   }

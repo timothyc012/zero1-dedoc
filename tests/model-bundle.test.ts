@@ -23,7 +23,7 @@ after(() => {
 
 describe("모델 사이드로드", () => {
   it("모델군은 언어별 텍스트 OCR과 수식 OCR이고 캐시 하위 디렉토리 이름이 곧 번들 경로", () => {
-    assert.deepEqual(MODEL_GROUPS.map((g) => g.subdir), ["ppocr", "ppocr/en", "ppocr/de", "pix2text"])
+    assert.deepEqual(MODEL_GROUPS.map((g) => g.subdir), ["ppocr", "ppocr/en", "ppocr/de-v6", "pix2text"])
   })
 
   it("번들이 비어 있으면 전부 missing 으로 보고하고 실패 처리한다", async () => {
