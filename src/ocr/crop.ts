@@ -3,7 +3,8 @@
  * (engine.ts 에서 분리 — 엔진은 세션·배치·후처리 흐름만)
  */
 
-export interface Box { x: number; y: number; w: number; h: number }
+export interface Point { x: number; y: number }
+export interface Box { x: number; y: number; w: number; h: number; quad?: [Point, Point, Point, Point] }
 
 /** rec 입력 높이 (공식 RecResizeImg image_shape [3, 48, 320]) */
 export const REC_HEIGHT = 48
@@ -38,6 +39,7 @@ export function bandBoxes(b: Box, bands: Array<{ y0: number; y1: number; x0: num
  */
 /** keep: 박스 로컬 [x0, x1)×[y0, y1) 밖은 배경 휘도 bg 로 칠한다 (rot 0 만 — 박스 끝에 걸린 이웃 줄 조각·상자 테두리 지우기) */
 export function lineCrop(rgba: Uint8Array, pageW: number, box: Box, rot: 0 | 90 | 270, keep?: { x0: number; x1: number; y0: number; y1: number; bg: number }): { rgb: Uint8Array; w: number } {
+  if (box.quad && rot === 0) return quadCrop(rgba, pageW, box.quad)
   const srcW = rot === 0 ? box.w : box.h
   const srcH = rot === 0 ? box.h : box.w
   const rw = Math.min(REC_MAX_WIDTH, Math.max(16, Math.round((srcW * REC_HEIGHT) / srcH)))
@@ -80,6 +82,36 @@ export function lineCrop(rgba: Uint8Array, pageW: number, box: Box, rot: 0 | 90 
   return { rgb, w: rw }
 }
 
+/** Affine rectification of a detector's oriented rectangle, sampled at pixel
+ * centers. Outside-page padding is white; the caller retains page geometry.
+ */
+function quadCrop(rgba: Uint8Array, pageW: number, q: [Point, Point, Point, Point]): { rgb: Uint8Array; w: number } {
+  const sourceW = Math.hypot(q[1].x - q[0].x, q[1].y - q[0].y)
+  const sourceH = Math.hypot(q[3].x - q[0].x, q[3].y - q[0].y)
+  if (!Number.isFinite(sourceW) || !Number.isFinite(sourceH) || sourceW < 1 || sourceH < 1) {
+    throw new Error("Invalid OCR oriented crop dimensions")
+  }
+  const rw = Math.min(REC_MAX_WIDTH, Math.max(16, Math.round(sourceW * REC_HEIGHT / sourceH)))
+  const rgb = new Uint8Array(rw * REC_HEIGHT * 3).fill(255)
+  const pageH = rgba.length / (pageW * 4)
+  for (let y = 0; y < REC_HEIGHT; y++) for (let x = 0; x < rw; x++) {
+    const u = Math.min(sourceW - 1, Math.max(0, (x + 0.5) * sourceW / rw - 0.5)) / sourceW
+    const v = Math.min(sourceH - 1, Math.max(0, (y + 0.5) * sourceH / REC_HEIGHT - 0.5)) / sourceH
+    const px = q[0].x + u * (q[1].x - q[0].x) + v * (q[3].x - q[0].x)
+    const py = q[0].y + u * (q[1].y - q[0].y) + v * (q[3].y - q[0].y)
+    if (px < 0 || py < 0 || px > pageW - 1 || py > pageH - 1) continue
+    const x0 = Math.floor(px), y0 = Math.floor(py)
+    const x1 = Math.min(pageW - 1, x0 + 1), y1 = Math.min(pageH - 1, y0 + 1)
+    const wx = px - x0, wy = py - y0
+    for (let c = 0; c < 3; c++) {
+      const top = rgba[(y0 * pageW + x0) * 4 + c] * (1 - wx) + rgba[(y0 * pageW + x1) * 4 + c] * wx
+      const bottom = rgba[(y1 * pageW + x0) * 4 + c] * (1 - wx) + rgba[(y1 * pageW + x1) * 4 + c] * wx
+      rgb[(y * rw + x) * 3 + c] = Math.round(top * (1 - wy) + bottom * wy)
+    }
+  }
+  return { rgb, w: rw }
+}
+
 
 /** Split a detected line at ruled cell boundaries before recognizing its text. */
 export function splitBoxAtCellRules(b: Box, rules: Array<{ x1: number; y1: number; y2: number; thicknessPx: number }>): Box[] {
@@ -91,9 +123,25 @@ export function splitBoxAtCellRules(b: Box, rules: Array<{ x1: number; y1: numbe
   for (const r of cuts) {
     const edge = Math.floor(r.x1 - r.thicknessPx / 2 - 1)
     if (edge - left < b.h) continue
-    out.push({ ...b, x: left, w: edge - left })
+    out.push(sliceBox(b, left, edge))
     left = Math.ceil(r.x1 + r.thicknessPx / 2 + 1)
   }
-  if (left < b.x + b.w) out.push({ ...b, x: left, w: b.x + b.w - left })
+  if (left < b.x + b.w) out.push(sliceBox(b, left, b.x + b.w))
   return out
+}
+
+/** A clipped axis-aligned rectangle must also clip its oriented crop. Keeping
+ * the original quad would reread the whole line for every table cell.
+ */
+function sliceBox(box: Box, left: number, right: number): Box {
+  if (!box.quad) return { ...box, x: left, w: right - left }
+  const [topLeft, topRight, bottomRight, bottomLeft] = box.quad
+  const interpolate = (a: Point, b: Point, x: number): Point => {
+    const fraction = Math.max(0, Math.min(1, (x - a.x) / Math.max(1e-6, b.x - a.x)))
+    return { x: a.x + fraction * (b.x - a.x), y: a.y + fraction * (b.y - a.y) }
+  }
+  const quad: [Point, Point, Point, Point] = [interpolate(topLeft, topRight, left),
+    interpolate(topLeft, topRight, right), interpolate(bottomLeft, bottomRight, right),
+    interpolate(bottomLeft, bottomRight, left)]
+  return { ...box, x: left, w: right - left, quad }
 }

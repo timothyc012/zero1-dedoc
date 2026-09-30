@@ -48,7 +48,7 @@ import "./polyfill.js"
 import { getDocument, GlobalWorkerOptions, OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
 import { createRequire } from "node:module"
 import { dirname, join } from "node:path"
-import { ocrModelsCached } from "../ocr/models.js"
+import { getOcrModelProfile, ocrModelsCached } from "../ocr/models.js"
 import { splitContactTables } from "./contact-table.js"
 
 // 기존 공개 API 경로 유지 — 이동된 함수의 re-export
@@ -417,7 +417,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
             }
             for (const pq of pageQuality) if (ocrDone.has(pq.page)) pq.ocrApplied = true
             warnings.push({
-              message: `${ocrDone.size}개 페이지에 OCR 적용 (${mode === "builtin" ? "내장 PP-OCRv5" : "사용자 프로바이더"})`,
+              message: `${ocrDone.size}개 페이지에 OCR 적용 (${mode === "builtin" ? getOcrModelProfile(options?.ocrLanguage).rec.name : "사용자 프로바이더"})`,
               code: "OCR_APPLIED",
             })
           }

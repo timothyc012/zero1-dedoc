@@ -135,7 +135,7 @@ https://opensource.org/licenses/MIT
 
 ================================================================================
 
-PaddleOCR / PP-OCRv5 — Text Detection & Recognition Models
+PaddleOCR / PP-OCRv5 and PP-OCRv6 — Text Detection & Recognition Models
 https://github.com/PaddlePaddle/PaddleOCR
 
 Copyright PaddlePaddle Authors
@@ -146,6 +146,9 @@ not redistributed with this package):
 - PP-OCRv5_mobile_det (HuggingFace `PaddlePaddle/PP-OCRv5_mobile_det_onnx`)
 - korean_PP-OCRv5_mobile_rec + character dictionary
   (HuggingFace `PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx`)
+- English PP-OCRv5 recognizer and dictionary (RapidAI/RapidOCR v3.9.2 registry)
+- PP-OCRv6_det_medium and PP-OCRv6_rec_medium for German, with the alphabet
+  embedded in the SHA-verified recognizer (RapidAI/RapidOCR v3.9.2 registry)
 
 Used in:
 - src/ocr/engine.ts — DBNet det pre/post-processing (resize_long 960, thresh/
@@ -153,6 +156,9 @@ Used in:
   axis-aligned component boxes) + CTC greedy decoding, following the PaddleOCR
   inference operator specifications. Original TypeScript implementation.
 - src/ocr/models.ts — model specs + inference.yml character_dict parser
+- src/ocr/oriented-box.ts and crop.ts — original TypeScript minimum-area
+  rectangle and affine line rectification implementation for the German profile
+- src/ocr/onnx-character-dict.ts — original ModelProto metadata reader
 
 You may obtain a copy of the Apache License 2.0 at:
 https://www.apache.org/licenses/LICENSE-2.0

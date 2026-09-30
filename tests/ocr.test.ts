@@ -54,9 +54,11 @@ describe("OCR 언어 프로필", () => {
     const german = getOcrModelProfile("de")
     assert.equal(korean.rec.filename, "rec_korean.onnx")
     assert.equal(english.rec.filename, "rec_en.onnx")
-    assert.equal(german.rec.filename, "rec_latin.onnx")
+    assert.equal(german.rec.filename, "rec_v6.onnx")
     assert.notEqual(english.directory, german.directory)
-    assert.notEqual(english.dict.filename, german.dict.filename)
+    assert.ok(english.dict)
+    assert.equal(german.dict, undefined)
+    assert.equal(german.generation, 6)
   })
 
   it("rejects an unprofiled OCR language instead of falling back to Korean", () => {
