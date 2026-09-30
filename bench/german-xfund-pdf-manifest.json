@@ -1,0 +1,329 @@
+{
+  "schema_version": "zero1-german-xfund-pdf.v1",
+  "selection": "Lexicographically first 20 XFUND German validation documents; IDs/labels/images/PDFs fixed before any OCR on this corpus. No per-document exclusions.",
+  "source_url": "https://github.com/doc-analysis/XFUND/releases/download/v1.0/",
+  "source_label_sha256": "c51f7b1de2622ec404ac46a457bcf3dad57894df45962b3a2b23608a66c9f230",
+  "source_archive_sha256": "13dd9929bf6854a4c6a97889c277358b803609043a1e35335a8e2a1ac3f3eccc",
+  "corpus_dir": "german-pdf-xfund",
+  "documents": [
+    {
+      "id": "de_val_0",
+      "dataset": "xfund",
+      "split": "holdout",
+      "pdf": "de_val_0.pdf",
+      "pdf_sha256": "9f5c2cd37bfd3c853792c761df6ef4e24c188129cb5007bf1e686f98a89569c2",
+      "source_width": 2480,
+      "source_height": 3508,
+      "label_local": "xfund-de/labels/de_val_0.json",
+      "label_sha256": "a82ee3ad837dce58561dcdec871ff64ec946847b21c9b05a2db1f5380d2f3fb8",
+      "image_sha256": "fd1b96cd7c1e9f2af1b8022e75fc06a211742aa16ee9ec97e16665966e0db91e",
+      "critical_entity_ids": [
+        31,
+        42
+      ]
+    },
+    {
+      "id": "de_val_1",
+      "dataset": "xfund",
+      "split": "holdout",
+      "pdf": "de_val_1.pdf",
+      "pdf_sha256": "ad9c1e090286bcb1361d74fdaaf1d0b05730a6877bc3885a04da3e437bacf6be",
+      "source_width": 2480,
+      "source_height": 3508,
+      "label_local": "xfund-de/labels/de_val_1.json",
+      "label_sha256": "21ce5e20a0d7bc36594a736987b33d219793f7e25c34427383d14022b38ecab8",
+      "image_sha256": "4a2ee3606bfdf568cab1732ad7cb8a7940c207e4b00b77b927095e63e0565524",
+      "critical_entity_ids": [
+        39,
+        59
+      ]
+    },
+    {
+      "id": "de_val_10",
+      "dataset": "xfund",
+      "split": "holdout",
+      "pdf": "de_val_10.pdf",
+      "pdf_sha256": "003c1448cdd004b63a21a9d328b9fc29ab330b34728aa0f47fe9b102c6f99132",
+      "source_width": 2480,
+      "source_height": 3508,
+      "label_local": "xfund-de/labels/de_val_10.json",
+      "label_sha256": "fb0d99f00a3a89167d544f003017250e2ae8ee82bb729161d9524daf7dffeace",
+      "image_sha256": "ff8623ed9d35631be3d6b6c7d88c0f6243bacdaf3dee9274afef47fa2f894d6e",
+      "critical_entity_ids": [
+        56,
+        67
+      ]
+    },
+    {
+      "id": "de_val_11",
+      "dataset": "xfund",
+      "split": "holdout",
+      "pdf": "de_val_11.pdf",
+      "pdf_sha256": "3161868201f60c471d203ed597622dc7b2a673215a094e9bf0a5aa00e6956e72",
+      "source_width": 2480,
+      "source_height": 3508,
+      "label_local": "xfund-de/labels/de_val_11.json",
+      "label_sha256": "9e9510ca6b21c074db98c8b2ef336470469284bc54f58ac01b55fa66d36a4800",
+      "image_sha256": "26a6f813e2f89129b20147a1d27ab4b4a7a04a776a8f3cae6ce5cad60495b272",
+      "critical_entity_ids": [
+        14,
+        22
+      ]
+    },
+    {
+      "id": "de_val_12",
+      "dataset": "xfund",
+      "split": "holdout",
+      "pdf": "de_val_12.pdf",
+      "pdf_sha256": "fa61c2286c5609d42f91723cde1ccdf0f616a669f95e5b7c29988a731de668c4",
+      "source_width": 2480,
+      "source_height": 3508,
+      "label_local": "xfund-de/labels/de_val_12.json",
+      "label_sha256": "691c4b2ebf9c464188f570cc49bb01b138d3ee880b109b52e1083289724f136a",
+      "image_sha256": "8a7296aa19265c8c0a8b13823669c1ebf7c0b6944aac13f76410a4191371ee3c",
+      "critical_entity_ids": [
+        44,
+        52
+      ]
+    },
+    {
+      "id": "de_val_13",
+      "dataset": "xfund",
+      "split": "holdout",
+      "pdf": "de_val_13.pdf",
+      "pdf_sha256": "64add37d0edbebff30deda94ebc9f1f90d6bcb848d05fe97f98950dcafb130af",
+      "source_width": 2480,
+      "source_height": 3508,
+      "label_local": "xfund-de/labels/de_val_13.json",
+      "label_sha256": "12dcb3dfd021fedfbef1bbfef6c127790f171b42be306f8b2e1e55aa0ebdae84",
+      "image_sha256": "6e5abfe6ffc862d664ec27ab5b7429bc6373e5e2b6d43ce6d5e4fe55adac7c0a",
+      "critical_entity_ids": [
+        27,
+        33
+      ]
+    },
+    {
+      "id": "de_val_14",
+      "dataset": "xfund",
+      "split": "holdout",
+      "pdf": "de_val_14.pdf",
+      "pdf_sha256": "fc948a23254aa4c7cfac39ce1d170883d1a28ebf9ca2985f045c8b10ca669a1a",
+      "source_width": 2480,
+      "source_height": 3508,
+      "label_local": "xfund-de/labels/de_val_14.json",
+      "label_sha256": "e8af0b449af7141ff317e9ef2662f7ca21f4c8bade4a76c5022be060a9a0a0a9",
+      "image_sha256": "f5effaf954715274e569819982701806ad54f4e4d2f7736c926e230b18f47219",
+      "critical_entity_ids": [
+        46,
+        59
+      ]
+    },
+    {
+      "id": "de_val_15",
+      "dataset": "xfund",
+      "split": "holdout",
+      "pdf": "de_val_15.pdf",
+      "pdf_sha256": "35c1844d2e700bfac3b78c42c5ece26ce229fdd7244d03d99c0146b01fba6a5a",
+      "source_width": 2480,
+      "source_height": 3508,
+      "label_local": "xfund-de/labels/de_val_15.json",
+      "label_sha256": "d5834d822290bea19fe9e95597f5b9b05b33d6d2ade76f03fbb3b637b6c2f97c",
+      "image_sha256": "001f6039696fc0139830d1f6d867dbd8ff4aa0a38e49901a00ea98885f11abdf",
+      "critical_entity_ids": [
+        58,
+        85
+      ]
+    },
+    {
+      "id": "de_val_16",
+      "dataset": "xfund",
+      "split": "holdout",
+      "pdf": "de_val_16.pdf",
+      "pdf_sha256": "11dc5d5eec7c0f0617291e56854018f3d20ecefdf4a82979a9b8111ca2e505e2",
+      "source_width": 2480,
+      "source_height": 3508,
+      "label_local": "xfund-de/labels/de_val_16.json",
+      "label_sha256": "cd7b3b3c6b58086e93c105c1aaaebc35b7cbde022f099f706e75d0de36061956",
+      "image_sha256": "5905baf9c515ce2365ae679ad494fd95f10f2a82da2058b8db03ea23d2ff7e23",
+      "critical_entity_ids": [
+        57,
+        65
+      ]
+    },
+    {
+      "id": "de_val_17",
+      "dataset": "xfund",
+      "split": "holdout",
+      "pdf": "de_val_17.pdf",
+      "pdf_sha256": "1aff38d8365252d16cf5c26bc78c147ef265eb1811b7370adcdb381a28d7cefe",
+      "source_width": 2480,
+      "source_height": 3508,
+      "label_local": "xfund-de/labels/de_val_17.json",
+      "label_sha256": "16ed3a7236f5f699d575853a5b37a464d905f11b727b202441dccaa532e9d3a7",
+      "image_sha256": "bc16177f8ead508c32a5d15bf96ea9732aa43cfebef27be1ae5c72d2ecb64521",
+      "critical_entity_ids": [
+        26,
+        29
+      ]
+    },
+    {
+      "id": "de_val_18",
+      "dataset": "xfund",
+      "split": "holdout",
+      "pdf": "de_val_18.pdf",
+      "pdf_sha256": "b1cdfc37a5a36b69d595e1911aa5345fd80db97e8cf1cf470db1ff20138504ab",
+      "source_width": 2480,
+      "source_height": 3508,
+      "label_local": "xfund-de/labels/de_val_18.json",
+      "label_sha256": "715cae9f7d73dcda15b04c066e3a4a9e834ac3f5b0c8536bf15995ca59250441",
+      "image_sha256": "4fe7fe1a0084baddd2fc6b96132e19606b2fee3d51216d459011cc587f7155ab",
+      "critical_entity_ids": [
+        38,
+        43
+      ]
+    },
+    {
+      "id": "de_val_19",
+      "dataset": "xfund",
+      "split": "holdout",
+      "pdf": "de_val_19.pdf",
+      "pdf_sha256": "387b673a18e62933e54cf28b743eca1ce8f050a4001b4ded7927a46ea2918d1e",
+      "source_width": 2480,
+      "source_height": 3508,
+      "label_local": "xfund-de/labels/de_val_19.json",
+      "label_sha256": "c47ccf163e4ca4b369090a50d8a5aa7ee27ab69c3ca45fc91174124c69babddd",
+      "image_sha256": "3af7e1cf74d8ab0efd26920e82fa9811ab813ce994eb7bc1bc8416dabe1d8939",
+      "critical_entity_ids": [
+        76,
+        84
+      ]
+    },
+    {
+      "id": "de_val_2",
+      "dataset": "xfund",
+      "split": "holdout",
+      "pdf": "de_val_2.pdf",
+      "pdf_sha256": "541a144e613b2cc0bb6ec78d0636118d0cb5ecd9bde70cb1ccd3796260a051f2",
+      "source_width": 2480,
+      "source_height": 3508,
+      "label_local": "xfund-de/labels/de_val_2.json",
+      "label_sha256": "97bf72ea2e6fffe6f966688d754142a0f3ff827aab6caede1b112e58db10184e",
+      "image_sha256": "dd54e243b1d6f629d216531cd24613459e00c576c3c8ac1b496d453a41e3b26e",
+      "critical_entity_ids": [
+        115,
+        123
+      ]
+    },
+    {
+      "id": "de_val_20",
+      "dataset": "xfund",
+      "split": "holdout",
+      "pdf": "de_val_20.pdf",
+      "pdf_sha256": "dc9583f664d14c5c23396f3f471d90a0f0d4e129e6e2d488c7ebebbb60a94dd9",
+      "source_width": 2480,
+      "source_height": 3508,
+      "label_local": "xfund-de/labels/de_val_20.json",
+      "label_sha256": "4040bc712e1317fb6288c051eb5fcffd50750c57af821b17e02b44947fbb0955",
+      "image_sha256": "9d18605cb5dc5e5d683b28902980f3ce185180749c2d44668dfbc3bb968a2462",
+      "critical_entity_ids": [
+        40,
+        53
+      ]
+    },
+    {
+      "id": "de_val_21",
+      "dataset": "xfund",
+      "split": "holdout",
+      "pdf": "de_val_21.pdf",
+      "pdf_sha256": "b62d8734f80f40785348c00782cf54cb1c489e9e2d538a15d1226f9d17df5b21",
+      "source_width": 2480,
+      "source_height": 3508,
+      "label_local": "xfund-de/labels/de_val_21.json",
+      "label_sha256": "0f2f16d5ada355d3a7d39378e012b291c0fa6b38890732f1245d07f961700afc",
+      "image_sha256": "22bcd4f4ea3cbf07c39458ca474346156d9179109d22e562ae6d7d340812c007",
+      "critical_entity_ids": [
+        34,
+        40
+      ]
+    },
+    {
+      "id": "de_val_22",
+      "dataset": "xfund",
+      "split": "holdout",
+      "pdf": "de_val_22.pdf",
+      "pdf_sha256": "4caa478f6c2bd95c313071fa87bac05c9782d993923acd3cbd0ae0052e2614da",
+      "source_width": 2480,
+      "source_height": 3508,
+      "label_local": "xfund-de/labels/de_val_22.json",
+      "label_sha256": "b5b4bb90b7a0b81ffd727cea520ddc00ea2f5d5ec432ea8815691d39229338be",
+      "image_sha256": "e2bac3462e5118879871e162c1965093395912e37bd45f2dbf40851aec352a5e",
+      "critical_entity_ids": [
+        13,
+        21
+      ]
+    },
+    {
+      "id": "de_val_23",
+      "dataset": "xfund",
+      "split": "holdout",
+      "pdf": "de_val_23.pdf",
+      "pdf_sha256": "31a94d2337a056aa34da7628b469ff745e599537816271f8812b1dcb74f30819",
+      "source_width": 2480,
+      "source_height": 3508,
+      "label_local": "xfund-de/labels/de_val_23.json",
+      "label_sha256": "8f1fd61add98d21ba5aac93d00d7d7742894a903e101402391d0dd7e45e2f8f8",
+      "image_sha256": "2c199ab3c171ae6caadd32fe53c41c717ad255cfe454c0174084f3f0fa14293c",
+      "critical_entity_ids": [
+        9,
+        69
+      ]
+    },
+    {
+      "id": "de_val_24",
+      "dataset": "xfund",
+      "split": "holdout",
+      "pdf": "de_val_24.pdf",
+      "pdf_sha256": "1252ad84af07c3ac695a22a01ed2159fd6e0cef7b66e25e90fd0b846fc125967",
+      "source_width": 2480,
+      "source_height": 3508,
+      "label_local": "xfund-de/labels/de_val_24.json",
+      "label_sha256": "75cec7f5e010c65c80bc4c875112b5e48f5af6ee54a959e76f47d04db10a76bd",
+      "image_sha256": "09080abc76018541c7503039619e962535a95e920b009126e6433cf3e9f545ce",
+      "critical_entity_ids": [
+        60,
+        68
+      ]
+    },
+    {
+      "id": "de_val_25",
+      "dataset": "xfund",
+      "split": "holdout",
+      "pdf": "de_val_25.pdf",
+      "pdf_sha256": "f2da801f3f87f107695a5299972112982bb4246267e777c89fb917218638b8f4",
+      "source_width": 2480,
+      "source_height": 3508,
+      "label_local": "xfund-de/labels/de_val_25.json",
+      "label_sha256": "c9979333df0ae3c9189d84845fb00717e05280ea96cf17db55304962c519468d",
+      "image_sha256": "6f845c44d91538e27283f0a2d5d84a64dee67a27b252b9f7375eb694cabc275f",
+      "critical_entity_ids": [
+        54,
+        66
+      ]
+    },
+    {
+      "id": "de_val_26",
+      "dataset": "xfund",
+      "split": "holdout",
+      "pdf": "de_val_26.pdf",
+      "pdf_sha256": "186f15f8da08a45efcf6d7ddedf666d6f23c1128adebb16bb5b76cb60757c804",
+      "source_width": 2480,
+      "source_height": 3508,
+      "label_local": "xfund-de/labels/de_val_26.json",
+      "label_sha256": "70480e3efd5c9962ad07f4858d15d9f6ffca25bed0559c238ca88138c9f8e8c1",
+      "image_sha256": "8b52e10cf90f56e469d8c5d2bc7da259a7a4c2463aa483f0c0127d9c921eb9cc",
+      "critical_entity_ids": [
+        7
+      ]
+    }
+  ]
+}

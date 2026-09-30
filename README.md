@@ -30,7 +30,7 @@ The built `zero1-dedoc setup` command registers the local MCP bundle directly. I
 - Built-in OCR accepts `ocrLanguage: "korean" | "en" | "de"` and keeps each recognizer/dictionary in a separate SHA-verified cache. German/English OCR requires running `zero1-dedoc check-ocr-models --language de|en` before an offline parse.
 - The public 200-document [OpenDataLoader benchmark](https://github.com/opendataloader-project/opendataloader-bench) is the English-heavy regression gate. The latest no-OCR rerun parsed **200/200** documents with overall **0.93707**, reading order **0.93804**, table **0.93570**, and heading **0.93271**. It is a non-regression signal for the PDF changes, not a claim of universal English accuracy. See [benchmark evidence](https://github.com/timothyc012/zero1-dedoc/blob/main/docs/benchmarks/zero1-multilingual-foundation.md).
 
-These are measured cases, not a claim of universal German or English accuracy. The built-in OCR profiles now include Korean, English, and Latin/German model contracts; the de/en profiles still require their language-specific model caches and holdout accuracy evaluation before being treated as a default.
+These are measured cases, not a claim of universal German or English accuracy. German OCR now uses SHA-pinned PP-OCRv6 medium models and oriented line crops; English and Korean retain their PP-OCRv5 profiles. Prepare the new German cache with `zero1-dedoc check-ocr-models --language de` before offline parsing. See the [German PDF comparison](docs/benchmarks/german-pdf-ocr-comparison.md) for fixed inputs, competitor settings, accuracy, and limits.
 
 ## Attribution and maintenance
 
