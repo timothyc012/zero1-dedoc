@@ -1,0 +1,10 @@
+{
+  "schema_version": "zero1-ocr-pdf-smoke.v1",
+  "derivation": "bench/build-ocr-pdf-smoke.py, ReportLab invariant PDF and original hash-pinned images",
+  "documents": [
+    { "id": "de-image-only", "file": "de-image-only.pdf", "sha256": "09a698ed15731ba0af7e2e2a74e2aea066bc2723ab0f80499506da90e4f15464", "language": "de", "pages": 1, "ocr_page": 1, "anchors": ["RG2024-5726", "2.548,54"] },
+    { "id": "de-mixed", "file": "de-mixed.pdf", "sha256": "03b91743c970119f2dbed2cb10f6488acb6452939676b1982921ec653d2f4189", "language": "de", "pages": 2, "ocr_page": 2, "anchors": ["RG2024-5726", "2.548,54"] },
+    { "id": "en-image-only", "file": "en-image-only.pdf", "sha256": "89913a526b29f40724b14b28e45f0b06bec2fe402887e01b367f6e69b829845c", "language": "en", "pages": 1, "ocr_page": 1, "anchors": ["Attorney General"] },
+    { "id": "en-mixed", "file": "en-mixed.pdf", "sha256": "77e491df0bf00490bc593cfc472539e540f62eb398d50aa6888a0e332359d45a", "language": "en", "pages": 2, "ocr_page": 2, "anchors": ["Attorney General"] }
+  ]
+}
