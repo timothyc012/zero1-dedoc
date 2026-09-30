@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Added opt-in `ocrLines` for PDF parsing. Built-in OCR now returns each recognized line with text, a PDF-point box in unrotated page space (the same coordinates as PDFKit pages, including `/Rotate` pages), its angle after undoing deskew, and confidence, so a viewer can overlay a text layer on scanned pages. Only pages whose OCR text entered the result are included; default output is unchanged.
 - Added bounded German CTC prefix decoding, adjusted oriented crop expansion, and added a CPU thread budget. Fixed-corpus CER/WER improve modestly; additional 30-form and WSL results are in `docs/benchmarks/german-ocr-efficiency.md`. Parser routing and English/Korean decoder defaults remain unchanged.
 
 - Reconnected the guarded numeric label/value side-band merge to the page-block output path. German BMF pages 6, 7, 10, and 11 now retain their reconstructed 10-column tables in the built package; the public ODL200 score is unchanged.

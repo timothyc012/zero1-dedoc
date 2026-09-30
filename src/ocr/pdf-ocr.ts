@@ -12,7 +12,7 @@
  * - 페이지 단위 실패는 본문 오염 대신 warnings(OCR_FAILED) 로 기록하고 계속.
  */
 
-import type { IRBlock, OcrProvider, ParseWarning } from "../types.js"
+import type { IRBlock, OcrLine, OcrProvider, ParseWarning } from "../types.js"
 import type { NormItem } from "../pdf/text-line.js"
 import type { LineSegment } from "../pdf/line-types.js"
 import { extractPageBlocksWithLines } from "../pdf/page-blocks.js"
@@ -23,6 +23,9 @@ import { deskewPage } from "./deskew.js"
 import { ensureOcrModels } from "./models.js"
 import { OPTIONAL_DEP_INSTALL_HINT } from "../utils.js"
 import { mergeOcrPasses } from "./detection-tiles.js"
+
+/** OcrLine 좌표 자릿수 — 소수 둘째 자리 (0.01pt) */
+const round2 = (v: number) => Math.round(v * 100) / 100
 
 /** OCR 렌더 스케일 (72dpi × 3 = 216dpi) — 10pt 본문이 rec 입력 높이(48px)에 근접 */
 const OCR_RENDER_SCALE = 3
@@ -66,6 +69,8 @@ export async function runPdfOcr(
   vectorOps?: Map<number, PageOps>,
   imageRegions?: Map<number, Array<{ x1: number; y1: number; x2: number; y2: number }>>,
   ocrLanguage?: string,
+  /** 넘기면 내장 엔진이 읽은 줄을 여기에 모은다 (ParseOptions.ocrLines) — 끝까지 성공한 쪽만 */
+  lines?: OcrLine[],
 ): Promise<Map<number, IRBlock[]>> {
   const result = new Map<number, IRBlock[]>()
   if (targets.size === 0) return result
@@ -96,12 +101,13 @@ export async function runPdfOcr(
       const page = doc.getPage(pageNo - 1)
       onProgress?.(++done, targets.size)
       try {
-        const blocks = await withTimeout(
+        const read = await withTimeout(
           ocrOnePage(page, pageNo, mode, engine, warnings, detectTables, vectorOps?.get(pageNo), imageRegions?.get(pageNo)),
           PAGE_TIMEOUT_MS,
           `OCR 페이지 ${pageNo} 타임아웃 (${PAGE_TIMEOUT_MS / 1000}초)`,
         )
-        result.set(pageNo, blocks)
+        result.set(pageNo, read.blocks)
+        lines?.push(...read.lines)
       } catch (e) {
         warnings.push({
           page: pageNo,
@@ -126,7 +132,7 @@ async function ocrOnePage(
   detectTables: boolean,
   vectorOps?: PageOps,
   regions?: Array<{ x1: number; y1: number; x2: number; y2: number }>,
-): Promise<IRBlock[]> {
+): Promise<{ blocks: IRBlock[]; lines: OcrLine[] }> {
   const { originalWidth: pdfW, originalHeight: pdfH } = page.getOriginalSize()
   const renderScale = Math.min(OCR_RENDER_SCALE, Math.sqrt(MAX_OCR_PIXELS / Math.max(1, pdfW * pdfH)))
   if (renderScale < OCR_RENDER_SCALE) {
@@ -148,7 +154,7 @@ async function ocrOnePage(
   if (mode === "builtin") {
     // 스캔 기울기 보정 — 인식과 괘선 감지가 같은(바로 선) 래스터를 본다. 클린 렌더는 무보정.
     // 벡터 글자 쪽은 보정하지 않는다 — 글자 좌표가 돌면 그 쪽 벡터 괘선과 어긋난다
-    const upright = vectorOps ? rgba : deskewPage(rgba, rw, rh).rgba
+    const { rgba: upright, angle: deskewAngle } = vectorOps ? { rgba, angle: 0 } : deskewPage(rgba, rw, rh)
     const stats: OcrPageStats = { droppedLowConf: 0 }
     const ruling = vectorOps ? undefined : detectRulingLines(upright, rw, rh, rh / pdfH)
     const items = await engine!.recognizePage(upright, rw, rh, stats, regions ? REGION_TUNING : undefined, ruling?.cellDividers)
@@ -171,21 +177,25 @@ async function ocrOnePage(
         return cx >= r.x1 && cx <= r.x2 && cy >= r.y1 && cy <= r.y2
       }
       const reads = hiRgba ? await closerReads(hiRgba, rw * 2, rh * 2, pdfW, pdfH, scale * 2, regions, engine!) : []
-      return regions.flatMap((r, k) => {
+      const lines: OcrLine[] = []
+      const blocks = regions.flatMap((r, k) => {
         let own = items.filter(it => inside(it, r))
         // 그림 속 글은 작다(차트 눈금·범례 6~8pt) — 영역만 두 배로 다시 읽고
         // 겹치는 줄마다 더 많은 글자를 보존한 후보를 합친다. 페이지 전체 평균 신뢰도는
         // 큰 표제 몇 줄이 점수를 끌어올려 작은 가격·각주를 통째로 버릴 수 있다.
         const near = reads[k]
         if (near?.length) own = mergeOcrPasses(own, near)
+        lines.push(...ocrItemsToLines(own, pageNo, pdfH, scale, deskewAngle, rw, rh))
         return own.length ? ocrItemsToBlocks(own, pageNo, pdfW, pdfH, scale, ruling && rulingToPdfLines(ruling, scale, pdfH), detectTables) : []
       })
+      return { blocks, lines }
     }
+    const lines = ocrItemsToLines(items, pageNo, pdfH, scale, deskewAngle, rw, rh)
     // 벡터 글자 쪽: 표 구조는 그 쪽의 실제 괘선으로 (rhwp cairo 13쌍 46표 exact: 래스터 괘선 14 → 실제 괘선 20)
-    if (vectorOps) return ocrItemsToBlocks(items, pageNo, pdfW, pdfH, scale, undefined, detectTables, vectorOps)
+    if (vectorOps) return { blocks: ocrItemsToBlocks(items, pageNo, pdfW, pdfH, scale, undefined, detectTables, vectorOps), lines }
     // 래스터에서 표 괘선 감지 — 스캔본 병합셀 서식도 선 기반 표 파이프라인을 탄다
     const extraLines = rulingToPdfLines(ruling!, scale, pdfH)
-    return ocrItemsToBlocks(items, pageNo, pdfW, pdfH, scale, extraLines, detectTables)
+    return { blocks: ocrItemsToBlocks(items, pageNo, pdfW, pdfH, scale, extraLines, detectTables), lines }
   }
 
   // 사용자 프로바이더 — PNG 인코딩 후 호출, 페이지당 paragraph (종전 계약)
@@ -207,9 +217,50 @@ async function ocrOnePage(
   const text = await mode(new Uint8Array(png), pageNo, "image/png")
   if (!text.trim()) {
     warnings.push({ page: pageNo, message: `페이지 ${pageNo} OCR 결과 없음`, code: "OCR_FAILED" })
-    return []
+    return { blocks: [], lines: [] }
   }
-  return [{ type: "paragraph", text: text.trim(), pageNumber: pageNo }]
+  // 사용자 프로바이더는 줄 좌표를 주지 않는다 — ocrLines 없음
+  return { blocks: [{ type: "paragraph", text: text.trim(), pageNumber: pageNo }], lines: [] }
+}
+
+/**
+ * OcrItem(바로 세운 래스터 px, 왼쪽 위 원점) → OcrLine(pdfium 이 그린 방향의 쪽 PDF pt, 왼쪽 아래 원점) — ParseOptions.ocrLines.
+ * 회전 전 사용자 좌표로는 파서가 ocrLineToUserSpace 로 옮긴다.
+ * deskewAngle 은 deskewPage 가 쪽을 돌린 각(도, 화면상 반시계)이다. 줄 중심을 rotateRgba 와 같은 역변환으로 원래 래스터
+ * 자리에 되돌리고, 폭·높이는 바로 선 줄 그대로 둔다 — 원래 스캔의 줄은 그 상자를 중심 기준 −deskewAngle 만큼 돌린 것
+ * (텍스트층 쪽의 그림 영역은 보통 클린 렌더라 보정이 걸리지 않는다. 걸리면 두 배로 다시 읽은 줄(closerReads — 보정 전 래스터)의
+ * 자리는 조금 어긋날 수 있다)
+ */
+export function ocrItemsToLines(
+  items: OcrItem[], page: number, pdfH: number, scale: number, deskewAngle: number, rasterW: number, rasterH: number,
+): OcrLine[] {
+  const t = (deskewAngle * Math.PI) / 180, c = Math.cos(t), s = Math.sin(t)
+  const cx = (rasterW - 1) / 2, cy = (rasterH - 1) / 2
+  return items.filter(it => it.text.trim()).map(it => {
+    const dx = it.x + it.w / 2 - cx, dy = it.y + it.h / 2 - cy
+    const ox = c * dx - s * dy + cx, oy = s * dx + c * dy + cy
+    const width = it.w / scale, height = it.h / scale
+    return {
+      text: it.text,
+      bbox: { page, x: round2(ox / scale - width / 2), y: round2(pdfH - oy / scale - height / 2), width: round2(width), height: round2(height) },
+      angle: deskewAngle ? -deskewAngle : 0,
+      confidence: it.confidence,
+    }
+  })
+}
+
+/**
+ * OcrLine 을 pdfium 이 그린 방향(/Rotate 적용)에서 회전 전 사용자 좌표로 — PDFKit 쪽 좌표·본문 글 bbox 와 같은 기준.
+ * view 는 pdfjs page.view(CropBox [x1, y1, x2, y2]), rotate 는 /Rotate(시계 방향 0·90·180·270). 상자는 중심만 옮기고 폭·높이는 줄 기준
+ * 그대로 둔다. 쪽을 시계로 돌려 보여 주는 만큼 회전 전 쪽의 글은 반시계로 누워 있으므로 angle 에 회전을 더한다
+ */
+export function ocrLineToUserSpace(line: OcrLine, view: number[], rotate: number): OcrLine {
+  const [x1, y1, x2, y2] = view, W = x2 - x1, H = y2 - y1
+  const r = ((rotate % 360) + 360) % 360
+  const { bbox } = line, xd = bbox.x + bbox.width / 2, yd = bbox.y + bbox.height / 2
+  const [u, v] = r === 90 ? [W - yd, xd] : r === 180 ? [W - xd, H - yd] : r === 270 ? [yd, H - xd] : [xd, yd]
+  const angle = line.angle + r > 180 ? line.angle + r - 360 : line.angle + r
+  return { ...line, bbox: { ...bbox, x: round2(x1 + u - bbox.width / 2), y: round2(y1 + v - bbox.height / 2) }, angle }
 }
 
 /** 2×2 평균 축소 (RGBA) */
