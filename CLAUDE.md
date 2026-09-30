@@ -205,7 +205,7 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/form/filler-hwpx.ts` | HWPX XML 직접 조작으로 양식 채우기 (원본 서식 100% 보존) |
 | `src/ocr/engine.ts` | 내장 텍스트 OCR 엔진 — PP-OCRv5 korean det(DBNet)+rec(CTC) ONNX 추론, 세션 싱글턴 |
 | `src/ocr/models.ts` | OCR 모델 스펙(HF 공식 변환본, SHA 핀) + inference.yml 사전 파서 |
-| `src/ocr/pdf-ocr.ts` | PDF OCR 브릿지 — pdfium 래스터 → 내장 엔진/사용자 프로바이더 → 블록 파이프라인 (좌표는 PDF pt 환산, **pdfium page.number 는 0-based — +1 환산 필수**). 벡터 글자 쪽(`vector_text`)은 기울기 보정 없이 그 쪽 실제 벡터 괘선으로 표 복원 |
+| `src/ocr/pdf-ocr.ts` | PDF OCR 브릿지 — pdfium 래스터 → 내장 엔진/사용자 프로바이더 → 블록 파이프라인 (좌표는 PDF pt 환산, **pdfium page.number 는 0-based — +1 환산 필수**). 벡터 글자 쪽(`vector_text`)은 기울기 보정 없이 그 쪽 실제 벡터 괘선으로 표 복원. `ocrLines` 옵션이면 줄마다 글·상자·기울기·신뢰도(`OcrLine`, `ocrItemsToLines`) — 상자는 PDF pt 회전 전 사용자 좌표(PDFKit 쪽 좌표와 같음), 기울기 보정한 쪽은 줄 중심을 원래 자리로 되돌리고 `angle` 로 기울기를 알린다. **pdfium 은 /Rotate 를 적용해 그린다** — 파서가 pdfjs `page.view`·`page.rotate` 로 `ocrLineToUserSpace` 변환 |
 | `src/ocr/ruling-lines.ts` | 래스터 괘선 감지 — 페이지 픽셀 이진화+런렝스로 표 수평/수직 선 추출 → 선 기반 표 파이프라인 공급 (오탐 방어 3겹: 최소길이 20pt·두께 상한 2.5pt·양측 잉크 포위 제외). 점선 괘선·채움 사각형 변(표 괘선에 맞물린 것만)·흐린 선(잉크 상한 205) |
 | `src/ocr/image-ocr.ts` | 이미지(PNG/JPG/WebP) 직접 입력 OCR: sharp 디코딩 → 기울기 보정 → 내장 엔진 상시 적용 + 괘선 감지 (해상도는 메타데이터·쪽 비율로 추정, 없으면 216dpi) |
 | `src/ocr/line-split.ts` | 검출 박스 픽셀 분석: 세로로 이어 붙은 키 큰 박스(세로쓰기 머리·균등배분 목차)를 행 밴드로 갈라 따로 인식, 잉크 경계(`inkBounds`)로 박스 좌표 조임. 목차 리더 점 무리(`leaderRuns`)·숫자 앞 △▲ 판정. 글리프 모양 판정(괄호 「」【】·따옴표 머리·원문자 고리·로마 숫자 세로 획·줄 머리 글머리 ◎●▪□)과 한 줄 박스에 걸린 이웃 줄 끝자락·상자 테두리(`edgeTrim` — 엔진이 그 부분을 배경으로 지운 crop 도 인식해 신뢰도 0.06 넘게 높을 때만 씀, 그림 영역 OCR 에선 끔) |

@@ -242,6 +242,9 @@ export interface ParseOptions {
   ocr?: boolean | "force" | OcrProvider
   /** 내장 OCR 인식 언어: korean(기본), en, de. 모델은 사전 설치돼 있어야 한다. */
   ocrLanguage?: "korean" | "en" | "de"
+  /** 내장 OCR 로 읽은 줄마다 글·상자·기울기·신뢰도를 `ParseSuccess.ocrLines` 로 싣는다 (PDF 전용, 기본 false).
+   *  스캔 쪽에 보이지 않는 텍스트층을 깔아 선택·검색·형광펜을 붙이는 소비자용. 사용자 OcrProvider 는 줄 좌표가 없어 싣지 않는다 */
+  ocrLines?: boolean
   /** 진행률 콜백 — current: 현재 페이지/섹션, total: 전체 수 */
   onProgress?: (current: number, total: number) => void
   /** PDF 머리글/바닥글 자동 제거 */
@@ -442,6 +445,25 @@ export interface ParseSuccess extends ParseResultBase {
   pageQuality?: PageQuality[]
   /** 문서 단위 품질 요약 — PDF에서만 제공 */
   qualitySummary?: DocumentQualitySummary
+  /** 내장 OCR 이 읽은 줄 — `ocrLines: true` 이고 OCR 이 돈 쪽이 있을 때만 (PDF 전용) */
+  ocrLines?: OcrLine[]
+}
+
+/**
+ * 내장 OCR 이 읽은 줄 한 개 (PDF 전용, `ParseOptions.ocrLines`).
+ *
+ * 좌표 계약 — PDFKit 쪽 좌표·`IRBlock.bbox` 와 같은 기준:
+ * - `bbox` 는 PDF pt, **회전 전 사용자 좌표(왼쪽 아래 원점, y 위로, CropBox 원점 포함)**. `bbox.page` 는 1-based.
+ * - `bbox` 중심이 원래 쪽의 줄 자리이고, 폭·높이는 줄을 바로 세운(글 방향) 크기다. 중심 기준으로 `angle` 만큼 돌리면 원래 줄에 겹친다.
+ * - 스캔 기울기 보정을 한 쪽은 그 기울기가, `/Rotate` 쪽은 그 회전(예: 90 → 글이 반시계로 누움)이 `angle` 에 들어 있다.
+ */
+export interface OcrLine {
+  text: string
+  bbox: BoundingBox
+  /** 줄 방향 (도, 반시계 양수, −180 초과 180 이하). 회전·기울기 없는 쪽은 0 */
+  angle: number
+  /** 인식 신뢰도 0~1 (CTC 평균) */
+  confidence: number
 }
 
 /** 페이지 한 장의 마크다운 (#68). ParseSuccess.pages 항목. */
@@ -644,4 +666,6 @@ export interface InternalParseResult {
   qualitySummary?: DocumentQualitySummary
   /** PDF 전용: 페이지별 마크다운 — 문서 마크다운과 같은 PDF 마무리(1×1 표 펴기·cleanPdfText)를 쪽마다 적용한 것 */
   pages?: PageMarkdown[]
+  /** PDF 전용: 내장 OCR 이 읽은 줄 (`ocrLines: true`) */
+  ocrLines?: OcrLine[]
 }

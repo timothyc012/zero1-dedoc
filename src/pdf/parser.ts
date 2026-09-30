@@ -11,7 +11,7 @@
  */
 
 import { stripScriptTags } from "../script-tags.js"
-import type { InternalParseResult, IRBlock, DocumentMetadata, ExtractedImage, ParseOptions, ParseWarning, OutlineItem } from "../types.js"
+import type { InternalParseResult, IRBlock, DocumentMetadata, ExtractedImage, ParseOptions, ParseWarning, OutlineItem, OcrLine } from "../types.js"
 import { KordocError } from "../utils.js"
 import { parsePageRange, hasRequestedPagesAfter } from "../page-range.js"
 import { blocksToPages } from "../page-markdown.js"
@@ -154,6 +154,8 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     // 전체 문서의 폰트 크기 빈도 수집 (헤딩 감지용) — 빈도 Map으로 메모리 절약
     const fontSizeFreq = new Map<number, number>()
     const pageHeights = new Map<number, number>()
+    // ocrLines 를 회전 전 사용자 좌표로 옮길 쪽 영역·회전 (pdfium 은 /Rotate 를 적용해 그린다)
+    const pageFrames = new Map<number, { view: number[]; rotate: number }>()
     const pageWidths = new Map<number, number>()
     // 글꼴 id → 실제 서체 이름(서브셋 접두 뗌) — 제목 강등의 기울임·굵기 증거
     const faceNames = new Map<string, string>()
@@ -192,6 +194,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
         const pageW = viewX2 - viewX1, pageH = viewY2 - viewY1
         pageHeights.set(i, pageH)
         pageWidths.set(i, pageW)
+        pageFrames.set(i, { view: page.view, rotate: page.rotate })
         const rawItems = tc.items as PdfTextItem[]
         // 선 기반 테이블 감지를 위한 operatorList — 글리프 이름 복원(restoreNamedGlyphs)이 공백 정리 전에 써서 먼저 받는다
         const rawOps = await page.getOperatorList()
@@ -364,6 +367,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     //       그 외=품질 신호가 OCR 을 권하는 페이지만 (깨진 텍스트층 포함 — F1,
     //       혼합 문서의 스캔 페이지 포함 — F2). 정상 페이지 파싱 결과는 유지 (F3).
     const ocrDone = new Set<number>()
+    const ocrLines: OcrLine[] | undefined = options?.ocrLines ? [] : undefined
     // 그림 영역 OCR — ocr: true 는 후보 전부, 자동 OCR(기본값)은 큰 그림만
     const ocrRegions = options?.ocr === true || autoOcr ? ocrImageRegions(uncoveredImageRegions, largeImageRegions, options?.ocr === true) : new Map<number, ImageRegion[]>()
     if (ocrBuffer) {
@@ -384,12 +388,16 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
       }
       if (targets.size > 0) {
         try {
-          const { runPdfOcr } = await import("../ocr/pdf-ocr.js")
+          const { runPdfOcr, ocrLineToUserSpace } = await import("../ocr/pdf-ocr.js")
           const mode = typeof options?.ocr === "function" ? options.ocr : ("builtin" as const)
           // 텍스트층이 멀쩡한 쪽은 그림 영역만 읽는다 (쪽 전체를 갈아 끼우는 쪽 — 스캔·깨진 텍스트층 — 은 쪽 전체)
           const regionPages = new Map([...ocrRegions].filter(([p]) =>
             options?.ocr !== "force" && !isImageBased && !pageQuality.find(q => q.page === p)?.needsOcr))
-          const ocrPageBlocks = await runPdfOcr(ocrBuffer, targets, mode, warnings, options?.onProgress, options?.tables !== false, vectorPageOps, regionPages, options?.ocrLanguage)
+          const ocrPageBlocks = await runPdfOcr(ocrBuffer, targets, mode, warnings, options?.onProgress, options?.tables !== false, vectorPageOps, regionPages, options?.ocrLanguage, ocrLines)
+          ocrLines?.forEach((l, k) => {
+            const f = pageFrames.get(l.bbox.page)
+            if (f) ocrLines[k] = ocrLineToUserSpace(l, f.view, f.rotate)
+          })
           // OCR 글은 첨자를 가르지 않는다 — 검출 박스 높이·위치로는 기준선을 믿을 수 없다(scriptTags 를 켜도)
           for (const obs of ocrPageBlocks.values()) stripScriptTags({ blocks: obs })
           if (ocrPageBlocks.size > 0) {
@@ -574,6 +582,8 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
       pageQuality,
       qualitySummary: summarizeDocumentQuality(pageQuality),
       images: extractedImages.length > 0 ? extractedImages : undefined,
+      // 본문에 들어간 쪽의 줄만 — 그림 영역 글이 텍스트층과 겹쳐 합치지 않은 쪽은 텍스트층을 두 번 깔게 된다
+      ocrLines: ocrLines?.filter(l => ocrDone.has(l.bbox.page)),
     }
   } finally {
     await doc.destroy().catch(() => {})

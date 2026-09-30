@@ -243,9 +243,9 @@ export async function parsePdf(buffer: ArrayBuffer, options?: ParseOptions): Pro
     }
   }
   try {
-    const { markdown, blocks, metadata, outline, warnings, isImageBased, pageQuality, qualitySummary, images, pages } = await parsePdfDocument(buffer, options)
+    const { markdown, blocks, metadata, outline, warnings, isImageBased, pageQuality, qualitySummary, images, pages, ocrLines } = await parsePdfDocument(buffer, options)
     // 첨자 표기 — PDF 는 기하 추정이라 기본 끔(scriptTags: true 로 켠다)
-    return scriptsOff({ success: true, fileType: "pdf", markdown, blocks, metadata, outline, warnings, isImageBased, pageQuality, qualitySummary, images, pages, pageCount: metadata?.pageCount }, options?.scriptTags !== true)
+    return scriptsOff({ success: true, fileType: "pdf", markdown, blocks, metadata, outline, warnings, isImageBased, pageQuality, qualitySummary, images, pages, pageCount: metadata?.pageCount, ...(ocrLines?.length ? { ocrLines } : {}) }, options?.scriptTags !== true)
   } catch (err) {
     const isImageBased = err instanceof Error && "isImageBased" in err ? true : undefined
     return { success: false, fileType: "pdf", error: sanitizeError(err), code: classifyError(err), isImageBased }
@@ -478,7 +478,7 @@ export type {
 export { detectFormat, detectOle2Format, detectZipFormat, isHwpxFile, isOldHwpFile, isPdfFile, isZipFile } from "./detect.js"
 export type {
   ParseResult, ParseSuccess, ParseFailure, FileType,
-  PageMarkdown, PageQuality, DocumentQualitySummary,
+  PageMarkdown, PageQuality, DocumentQualitySummary, OcrLine,
   IRBlock, IRBlockType, IRTable, IRCell, CellContext,
   BoundingBox, InlineStyle, ImageData, ExtractedImage,
   DocumentMetadata, ParseOptions, ErrorCode,
