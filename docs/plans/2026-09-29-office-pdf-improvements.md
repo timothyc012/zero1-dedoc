@@ -202,7 +202,7 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 
 ### O1. de/en OCR 모델 프로필과 사전 준비
 
-**상태:** 첫 구현 slice 완료 in current implementation branch. PP-OCRv5 English와 Latin/German recognizer·사전의 URL/SHA를 고정하고 `ocrLanguage=korean|en|de`, 언어별 캐시, 명시적인 미지원 언어 오류를 연결했다. 준비 명령은 `check-ocr-models --language <lang>`으로 선택한다. 실제 de/en 이미지 인식 정확도와 모델 다운로드는 O2 검증에서 완료한다.
+**상태:** 구현·모델 SHA 검증 완료. PP-OCRv5 English와 Latin/German recognizer·사전의 URL/SHA를 고정하고 `ocrLanguage=korean|en|de`, 언어별 캐시, 명시적인 미지원 언어 오류를 연결했다. 준비 명령은 `check-ocr-models --language <lang>`으로 선택한다. 실제 de/en 이미지 인식 정확도는 O2에서 별도로 측정했다.
 
 **범위 M:** `src/ocr/models.ts`, `src/types.ts`, `src/ocr/engine.ts`, `src/ocr/pdf-ocr.ts`, `src/ocr/image-ocr.ts`, `src/cli.ts`, `src/cli/commands-system.ts`, `src/shared/model-bundle.ts`, `tests/ocr.test.ts`.
 
@@ -228,7 +228,7 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 
 ### O3. OCR 언어·품질 옵션을 CLI/MCP/worker에 연결
 
-**상태:** 구현 완료 in current implementation branch. CLI `--ocr-language`, MCP `ocr_language`, worker `ocrLanguage`이 같은 ParseOptions 프로필을 선택한다. `bench:ocr-multilingual` smoke가 준비된 en/de 캐시와 고정 anchor를 검증한다.
+**상태:** 구현·병합 완료. CLI `--ocr-language`, MCP `ocr_language`, worker `ocrLanguage`이 같은 ParseOptions 프로필을 선택한다. `bench:ocr-multilingual` smoke가 준비된 en/de 캐시와 고정 anchor를 검증한다.
 
 **범위 M:** `src/cli.ts`, `src/mcp/tools-parse.ts`, `src/cli/commands-worker.ts`, `tests/parse-worker.test.ts`, OCR surface 테스트(신규).
 
@@ -281,7 +281,7 @@ PPTX, German/English PDF, full BMF page-one cell, and scan OCR evidence. The
 clean German and English scan gates pass. The Lidl image-only PDF visual check
 is 30/30; the old 10-page CER/WER reference is superseded because its hidden
 text layer disagrees with the rendered page. The saved WSL SSH IP is stale;
-the candidate image still needs a recorded WSL-specific smoke.
+at that checkpoint, the candidate image still needed a recorded WSL-specific smoke.
 
 ### 2026-09-30 implementation closeout and promotion decision
 
