@@ -1,0 +1,552 @@
+{
+  "schema_version": "zero1-ocr-holdout.v1",
+  "selection": "DE: Belege sample IDs 000000-000017 plus first clean 000024 and first reverse-charge 000030; EN: lexically first 20 FUNSD testing images. Preselected before corpus OCR run.",
+  "languages": {
+    "de": {
+      "source": "Belege (Immineal, 2026) free 40-document sample",
+      "source_url": "https://huggingface.co/datasets/laterrr/belege-de-invoices-sample",
+      "revision": "da6044a02bd0b6c1d065b9f5615fe021272ece45",
+      "license_url": "https://huggingface.co/datasets/laterrr/belege-de-invoices-sample/blob/main/LICENCE.txt",
+      "kind": "synthetic German invoice scans/photos/clean images with generated field-box labels",
+      "documents": [
+        {
+          "id": "beleg-000000",
+          "variant": "scan",
+          "layout": "window",
+          "vat_scheme": "regelbesteuert",
+          "image_path": "images/beleg-000000.jpg",
+          "label_path": "labels/beleg-000000.json",
+          "image_sha256": "00b9a649a2048fbc9879621d304b974fd92ea7990ed32f68c66894fb12d55149",
+          "label_sha256": "de984a601c84f0f7b39f186d31796960c608005e610af22d2633f713468fd7d3"
+        },
+        {
+          "id": "beleg-000001",
+          "variant": "photo",
+          "layout": "landscape",
+          "vat_scheme": "regelbesteuert",
+          "image_path": "images/beleg-000001.jpg",
+          "label_path": "labels/beleg-000001.json",
+          "image_sha256": "8e9249405875a83fd078c3b0bd7a1fa3b7d82e5ff6e75835af326d2d48dfe753",
+          "label_sha256": "c38f823fc87f8430216ebc933c0c21bb082f02b48eee37a40182eddb4071e9fd"
+        },
+        {
+          "id": "beleg-000002",
+          "variant": "scan",
+          "layout": "list",
+          "vat_scheme": "regelbesteuert",
+          "image_path": "images/beleg-000002.jpg",
+          "label_path": "labels/beleg-000002.json",
+          "image_sha256": "329a23df7068c34dd9e7bc62e36363d7ef4e6469521055f2205b4619caf6f271",
+          "label_sha256": "fe20b79542f2c26a2c3b8fcdfbc9d23c4afd2c6717bab70f8c653f4089888788"
+        },
+        {
+          "id": "beleg-000003",
+          "variant": "scan",
+          "layout": "list",
+          "vat_scheme": "regelbesteuert",
+          "image_path": "images/beleg-000003.jpg",
+          "label_path": "labels/beleg-000003.json",
+          "image_sha256": "ca978fb0530dcf29cace2e60544619cc338be9b590a46da1fda1c5d1d6b877c8",
+          "label_sha256": "37da922d8498a3ffa0df262502428006e2757205e33a9da5bb61c2faf1f48da6"
+        },
+        {
+          "id": "beleg-000004",
+          "variant": "photo",
+          "layout": "landscape",
+          "vat_scheme": "kleinunternehmer",
+          "image_path": "images/beleg-000004.jpg",
+          "label_path": "labels/beleg-000004.json",
+          "image_sha256": "74ac5455d2f21681fa3427d745a4e260e31cc323f9f4fad9942e67f75aeb6a64",
+          "label_sha256": "b50be4f6f7a3103b1343afc6c27e63fe3afddad9861d6c87316c65c59ef60fa9"
+        },
+        {
+          "id": "beleg-000005",
+          "variant": "photo",
+          "layout": "window",
+          "vat_scheme": "gutschrift",
+          "image_path": "images/beleg-000005.jpg",
+          "label_path": "labels/beleg-000005.json",
+          "image_sha256": "a87e15d7044673a0aea2d9b91f2007696790c25be4f0075ac3ffc8f12695f5b1",
+          "label_sha256": "382a413f0c68d947818fd0e7b0480854fbf87214539b9bb0ae1ebcc36a731e53"
+        },
+        {
+          "id": "beleg-000006",
+          "variant": "photo",
+          "layout": "window",
+          "vat_scheme": "regelbesteuert",
+          "image_path": "images/beleg-000006.jpg",
+          "label_path": "labels/beleg-000006.json",
+          "image_sha256": "ef095e9219a047ace9ecc7a029fdf2a9f5cf3672a66d508c58d8733f60bd0c74",
+          "label_sha256": "45cdda6060f21b50068481fbb9e5b424fb7489a7b87ae8b54133d66b5dbaa25a"
+        },
+        {
+          "id": "beleg-000007",
+          "variant": "photo",
+          "layout": "list",
+          "vat_scheme": "regelbesteuert",
+          "image_path": "images/beleg-000007.jpg",
+          "label_path": "labels/beleg-000007.json",
+          "image_sha256": "52c456f8e3bd3789d8fbce2b7840f7afa69c22fb9602576a48ef089b3d08f824",
+          "label_sha256": "99e221d3f105b14d824f2765dcc46cd917ea4b7dcb8a7f8d6cadc5d1d8a1629c"
+        },
+        {
+          "id": "beleg-000008",
+          "variant": "scan",
+          "layout": "window",
+          "vat_scheme": "regelbesteuert",
+          "image_path": "images/beleg-000008.jpg",
+          "label_path": "labels/beleg-000008.json",
+          "image_sha256": "c1e0355377e5a2cb2af900901640684b401515612c1e1535d0c708fbbc15e1d7",
+          "label_sha256": "9f53b3f93336e9a1946decae379c1986e82e9d2077f9567357b903b5cfdaad79"
+        },
+        {
+          "id": "beleg-000009",
+          "variant": "scan",
+          "layout": "landscape",
+          "vat_scheme": "kleinunternehmer",
+          "image_path": "images/beleg-000009.jpg",
+          "label_path": "labels/beleg-000009.json",
+          "image_sha256": "141752ed8ec0e48b2be044f3d75986bf7b272d00ea8d6675283b3341773b82a3",
+          "label_sha256": "ce59d8dc5db3b2ba3549190f5d815918562da4fb41ccb7aca679914a637610a1"
+        },
+        {
+          "id": "beleg-000010",
+          "variant": "scan",
+          "layout": "landscape",
+          "vat_scheme": "kleinunternehmer",
+          "image_path": "images/beleg-000010.jpg",
+          "label_path": "labels/beleg-000010.json",
+          "image_sha256": "7b42807390027e18524c62e94642298db67977815cf2d4f0b756bad17680d153",
+          "label_sha256": "7cf3052f36764ae237f4876e95730465686fe250be58946373bfed1039ea866d"
+        },
+        {
+          "id": "beleg-000011",
+          "variant": "scan",
+          "layout": "window",
+          "vat_scheme": "regelbesteuert",
+          "image_path": "images/beleg-000011.jpg",
+          "label_path": "labels/beleg-000011.json",
+          "image_sha256": "258a755aca7f73537fce4745d4a38fcd00b2bfe7c4166ba69c24205e4944293d",
+          "label_sha256": "08f06bfaaf539c2c982e21d7f9f2d0b53a7657bc72a85fbe8e3ab65c389305c4"
+        },
+        {
+          "id": "beleg-000012",
+          "variant": "photo",
+          "layout": "landscape",
+          "vat_scheme": "kleinunternehmer",
+          "image_path": "images/beleg-000012.jpg",
+          "label_path": "labels/beleg-000012.json",
+          "image_sha256": "0a5a48ff3f6a452788a392c03b5a8f02ee2c0d597c266b4382cf24378275a940",
+          "label_sha256": "a95e86be23b9fe8b145136847e4f6a5e4fa872c96bcc04b1c76388796132f5d4"
+        },
+        {
+          "id": "beleg-000013",
+          "variant": "scan",
+          "layout": "list",
+          "vat_scheme": "regelbesteuert",
+          "image_path": "images/beleg-000013.jpg",
+          "label_path": "labels/beleg-000013.json",
+          "image_sha256": "698aac66ecb6e41d9a5f32d965a38c4b5ac7e585ccabddfd2aac6d682eec4727",
+          "label_sha256": "f79e9d29b2bbb383ce607f0c8bd048b04e418c50e4471b12cfb2ec9427405a87"
+        },
+        {
+          "id": "beleg-000014",
+          "variant": "scan",
+          "layout": "list",
+          "vat_scheme": "regelbesteuert",
+          "image_path": "images/beleg-000014.jpg",
+          "label_path": "labels/beleg-000014.json",
+          "image_sha256": "5053b804cd93d464af402ef72e371547fb1ca5a50acb228307524aeb6549c5a1",
+          "label_sha256": "7f05acd16c62aca54d45f8a150519604dc457847d037e21d7ff2e38f40e26f1d"
+        },
+        {
+          "id": "beleg-000015",
+          "variant": "scan",
+          "layout": "list",
+          "vat_scheme": "regelbesteuert",
+          "image_path": "images/beleg-000015.jpg",
+          "label_path": "labels/beleg-000015.json",
+          "image_sha256": "5fc537354ca0e3340304525ea8bf466011207e014bfd839b318506c2084ecd9c",
+          "label_sha256": "3dc24c93f44dba9ed2061c8613c1bbce53d74b7b5a8d3b5b949e068892049866"
+        },
+        {
+          "id": "beleg-000016",
+          "variant": "photo",
+          "layout": "window",
+          "vat_scheme": "regelbesteuert",
+          "image_path": "images/beleg-000016.jpg",
+          "label_path": "labels/beleg-000016.json",
+          "image_sha256": "cad82b738aa77e0bb44b906a4bc5e792d3bc813b44394d0ee02647457a534a70",
+          "label_sha256": "d9399adf295c99ffc27711831973d071839e0200f1aa561c16c30b31ae1620fb"
+        },
+        {
+          "id": "beleg-000017",
+          "variant": "photo",
+          "layout": "window",
+          "vat_scheme": "gutschrift",
+          "image_path": "images/beleg-000017.jpg",
+          "label_path": "labels/beleg-000017.json",
+          "image_sha256": "c8aa932257ef962305c87996bfa31abc06458dfd647c90ecdb82c6681211569f",
+          "label_sha256": "f1c27b72bee0a9be289f48ccf75d7d5e06ac9a2cfce033ddb01b4f749edf64fb"
+        },
+        {
+          "id": "beleg-000024",
+          "variant": "clean",
+          "layout": "window",
+          "vat_scheme": "regelbesteuert",
+          "image_path": "images/beleg-000024.png",
+          "label_path": "labels/beleg-000024.json",
+          "image_sha256": "9369284e2dcfa9fa5876c50704c65c09919cfff412d96583d9051e7707d4a369",
+          "label_sha256": "553de0bfa29447e67bd00322592831e6d0a9129db1e0c82cc3d10561657cc7af"
+        },
+        {
+          "id": "beleg-000030",
+          "variant": "photo",
+          "layout": "list",
+          "vat_scheme": "reverse_charge",
+          "image_path": "images/beleg-000030.jpg",
+          "label_path": "labels/beleg-000030.json",
+          "image_sha256": "a70ef63e7aee3c5186185d30c918e366cf0ea3f9acfdbf597ed1d75d196b1f33",
+          "label_sha256": "cec037c432742bde2ac76830d6d4800fadedd83e89cbc92b9047eb6e87a8b158"
+        }
+      ]
+    },
+    "en": {
+      "source": "FUNSD original testing split",
+      "source_url": "https://guillaumejaume.github.io/FUNSD/dataset.zip",
+      "archive_sha256": "c31735649e4f441bcbb4fd0f379574f7520b42286e80b01d80b445649d54761f",
+      "license_note": "research/education/non-commercial original terms; inputs remain uncommitted",
+      "kind": "real noisy scanned English forms with entity-box text annotations",
+      "documents": [
+        {
+          "id": "82092117",
+          "image_path": "dataset/testing_data/images/82092117.png",
+          "label_path": "dataset/testing_data/annotations/82092117.json",
+          "image_sha256": "279654591d7de3745e5efaf39d3be413baab267be7170082d1922690566c5ad1",
+          "label_sha256": "4a492dc09486d4aec7c8ed6cfa780e7779f16572db0845f4d2f6c52057d236a8",
+          "image_size": [
+            754,
+            1000
+          ],
+          "annotated_regions": 27,
+          "critical_entity_ids": [
+            3,
+            7,
+            12
+          ]
+        },
+        {
+          "id": "82200067_0069",
+          "image_path": "dataset/testing_data/images/82200067_0069.png",
+          "label_path": "dataset/testing_data/annotations/82200067_0069.json",
+          "image_sha256": "c48d22b3c6692f8b1c08398d66fc9a3f9cc8b5bf0ff6641336228ae3cd117e23",
+          "label_sha256": "a6a40b60914548b3df12d27f1a27dd2e356f4131924500f0284f038e0d3d9677",
+          "image_size": [
+            754,
+            1000
+          ],
+          "annotated_regions": 59,
+          "critical_entity_ids": [
+            15,
+            16,
+            17
+          ]
+        },
+        {
+          "id": "82250337_0338",
+          "image_path": "dataset/testing_data/images/82250337_0338.png",
+          "label_path": "dataset/testing_data/annotations/82250337_0338.json",
+          "image_sha256": "5b5083f4127a00a212fcc5c1cbb580e9d1851180f4fbb888ca7c5911baa6da4f",
+          "label_sha256": "25daa180c7bf67db2b9493bd350c0ecce9811f372e66ff7acef5ab285d264838",
+          "image_size": [
+            754,
+            1000
+          ],
+          "annotated_regions": 36,
+          "critical_entity_ids": [
+            18
+          ]
+        },
+        {
+          "id": "82251504",
+          "image_path": "dataset/testing_data/images/82251504.png",
+          "label_path": "dataset/testing_data/annotations/82251504.json",
+          "image_sha256": "8fd472ccbdbd5349d8fbc6adf52311d69d47651a289b482b9850db20e9c43354",
+          "label_sha256": "e89724ad3b5fc8acbf5b06208c49310dc1eea89c36c42d70e5894de9dee74df1",
+          "image_size": [
+            754,
+            1000
+          ],
+          "annotated_regions": 41,
+          "critical_entity_ids": [
+            0,
+            6
+          ]
+        },
+        {
+          "id": "82252956_2958",
+          "image_path": "dataset/testing_data/images/82252956_2958.png",
+          "label_path": "dataset/testing_data/annotations/82252956_2958.json",
+          "image_sha256": "ec6f99f85a76659911e73871ca158240d6ac083088b5b88b337609c649e08772",
+          "label_sha256": "b9857bc49a8640e0686e71b0d80b00619c06b454c3651829f0a50b1c8583e75e",
+          "image_size": [
+            754,
+            1000
+          ],
+          "annotated_regions": 42,
+          "critical_entity_ids": [
+            6,
+            7,
+            15
+          ]
+        },
+        {
+          "id": "82253058_3059",
+          "image_path": "dataset/testing_data/images/82253058_3059.png",
+          "label_path": "dataset/testing_data/annotations/82253058_3059.json",
+          "image_sha256": "4f017fd7a8dc63125cd4e7faafc3c97b8dc7cbef3a265e17878808dee489dda4",
+          "label_sha256": "f9cae322c40e1dba31959020ce56b0ddec6c0f0f7de0b1bb91e52eedb96bf4ec",
+          "image_size": [
+            754,
+            1000
+          ],
+          "annotated_regions": 43,
+          "critical_entity_ids": [
+            23,
+            27
+          ]
+        },
+        {
+          "id": "82253245_3247",
+          "image_path": "dataset/testing_data/images/82253245_3247.png",
+          "label_path": "dataset/testing_data/annotations/82253245_3247.json",
+          "image_sha256": "1023df93d5a35aba85c3ad232a4dbb9f6d8609068f5ec09f1c59a7e5738318d0",
+          "label_sha256": "537d44c3ccc8a27102dc195155569561d4abbfadaf1a4226d69a8e291e61df4b",
+          "image_size": [
+            754,
+            1000
+          ],
+          "annotated_regions": 70,
+          "critical_entity_ids": [
+            8,
+            9,
+            10
+          ]
+        },
+        {
+          "id": "82253362_3364",
+          "image_path": "dataset/testing_data/images/82253362_3364.png",
+          "label_path": "dataset/testing_data/annotations/82253362_3364.json",
+          "image_sha256": "5348da0a6c2ba1a2703257ba6d70fccf55d9b36cebedd30a0b16cb5d92f10bb3",
+          "label_sha256": "9e8f27ecb37aebcf6cd50b13cb661922c32ae598f66fed1a4cbe0a0af58ba5b7",
+          "image_size": [
+            754,
+            1000
+          ],
+          "annotated_regions": 105,
+          "critical_entity_ids": [
+            13,
+            14,
+            15
+          ]
+        },
+        {
+          "id": "82254765",
+          "image_path": "dataset/testing_data/images/82254765.png",
+          "label_path": "dataset/testing_data/annotations/82254765.json",
+          "image_sha256": "a1c4c8af7510ee0e6c9683e8f404ad67d23ee6db01168d226c1b63a940a7551b",
+          "label_sha256": "bc7f455c112693fd2a5e8502239024a44895232f8e7f561b7a095386ed604811",
+          "image_size": [
+            754,
+            1000
+          ],
+          "annotated_regions": 47,
+          "critical_entity_ids": [
+            2,
+            3,
+            4
+          ]
+        },
+        {
+          "id": "82491256",
+          "image_path": "dataset/testing_data/images/82491256.png",
+          "label_path": "dataset/testing_data/annotations/82491256.json",
+          "image_sha256": "502fd8142fba98fd13137e083a301e0a867329b79dd2591fc2c8044e0d8f1af7",
+          "label_sha256": "03e9917e5f8481d0d37c181b81506905620168a1f3f1703311ad8f5dd26ce292",
+          "image_size": [
+            754,
+            1000
+          ],
+          "annotated_regions": 19,
+          "critical_entity_ids": [
+            13,
+            14
+          ]
+        },
+        {
+          "id": "82504862",
+          "image_path": "dataset/testing_data/images/82504862.png",
+          "label_path": "dataset/testing_data/annotations/82504862.json",
+          "image_sha256": "9a66fa4013bf93b9ba4e959feef7d6b2e278b714ca9d3d347b35aeb305b92626",
+          "label_sha256": "5b4d09512f19528bff137a9b84bb6a874a7ab515b2d175201fbd9537b520db9f",
+          "image_size": [
+            754,
+            1000
+          ],
+          "annotated_regions": 18,
+          "critical_entity_ids": [
+            14
+          ]
+        },
+        {
+          "id": "82562350",
+          "image_path": "dataset/testing_data/images/82562350.png",
+          "label_path": "dataset/testing_data/annotations/82562350.json",
+          "image_sha256": "38330e56545f7ef03ccf67b22330388e21444b4935e058d447f42cf329f50bdb",
+          "label_sha256": "b4d8e8d5d8c1e744c7f08f6aeb412935a27cfa3b683e939f44f5eddb278934e5",
+          "image_size": [
+            754,
+            1000
+          ],
+          "annotated_regions": 35,
+          "critical_entity_ids": [
+            13,
+            24,
+            25
+          ]
+        },
+        {
+          "id": "82573104",
+          "image_path": "dataset/testing_data/images/82573104.png",
+          "label_path": "dataset/testing_data/annotations/82573104.json",
+          "image_sha256": "b0e9f8efecc27dd6445f849aace051078ecbb300b8c6440731d080c39697f18f",
+          "label_sha256": "66f29a1e65f7a82b6b746b84c2945b9618a3fb9e0a77d6efb23c47e8f657bcb8",
+          "image_size": [
+            754,
+            1000
+          ],
+          "annotated_regions": 14,
+          "critical_entity_ids": [
+            11
+          ]
+        },
+        {
+          "id": "82837252",
+          "image_path": "dataset/testing_data/images/82837252.png",
+          "label_path": "dataset/testing_data/annotations/82837252.json",
+          "image_sha256": "8c7f9d964d5f71a8cc22d378292581f6e2437bbf818e6ddae7e44599ed4cf03d",
+          "label_sha256": "20b426a8a903a514240c1e3d9ba7d249c246dd2c6df4bb16a9a6f97d9eb08336",
+          "image_size": [
+            754,
+            1000
+          ],
+          "annotated_regions": 24,
+          "critical_entity_ids": [
+            9
+          ]
+        },
+        {
+          "id": "83443897",
+          "image_path": "dataset/testing_data/images/83443897.png",
+          "label_path": "dataset/testing_data/annotations/83443897.json",
+          "image_sha256": "31c917bac04ed2a16c754ac75ef80ed923908c9837108d189c2c9b48e3aa6309",
+          "label_sha256": "c7cd360aefed85d2d7de07f8e43806c5d27270789bcef81c0af91c9e70849af5",
+          "image_size": [
+            754,
+            1000
+          ],
+          "annotated_regions": 33,
+          "critical_entity_ids": [
+            8,
+            15,
+            16
+          ]
+        },
+        {
+          "id": "83553333_3334",
+          "image_path": "dataset/testing_data/images/83553333_3334.png",
+          "label_path": "dataset/testing_data/annotations/83553333_3334.json",
+          "image_sha256": "5811f1bc34e499edd7d6cf9fc7e1473b4bdb71005ec35ff5f6ba25ba1a6326c7",
+          "label_sha256": "485795a9ff9d2e16f5c71a5e4dade312f69341f365ffb89a68eeb618826c9f53",
+          "image_size": [
+            754,
+            1000
+          ],
+          "annotated_regions": 51,
+          "critical_entity_ids": [
+            6,
+            7,
+            20
+          ]
+        },
+        {
+          "id": "83573282",
+          "image_path": "dataset/testing_data/images/83573282.png",
+          "label_path": "dataset/testing_data/annotations/83573282.json",
+          "image_sha256": "fd29914a80290994db59fc3b2c2b601905d871902bc4a38ab56423180a973d33",
+          "label_sha256": "fb01147dfcf25286b067f2ec6760a19eaa415bee17fef2bc0772ca16279fcace",
+          "image_size": [
+            754,
+            1000
+          ],
+          "annotated_regions": 55,
+          "critical_entity_ids": [
+            16,
+            18,
+            19
+          ]
+        },
+        {
+          "id": "83594639",
+          "image_path": "dataset/testing_data/images/83594639.png",
+          "label_path": "dataset/testing_data/annotations/83594639.json",
+          "image_sha256": "8e3c3a88b882d5b833779ede94e569243ec5ecbcf978da83c39222e58ef44264",
+          "label_sha256": "f6dad07c95d032acda14ebab951f1bebe89f66e3a413092c45821e8c3a51c98e",
+          "image_size": [
+            754,
+            1000
+          ],
+          "annotated_regions": 21,
+          "critical_entity_ids": [
+            4,
+            14,
+            20
+          ]
+        },
+        {
+          "id": "83624198",
+          "image_path": "dataset/testing_data/images/83624198.png",
+          "label_path": "dataset/testing_data/annotations/83624198.json",
+          "image_sha256": "136a8c44dda39b96f80787cdba19c267088e8292c9c27cef24abe70f50de4e5a",
+          "label_sha256": "7d4e1f8c6e6d176edb3cbe5785a05702b9125f25ccc6061a6b721e24a6831b6b",
+          "image_size": [
+            754,
+            1000
+          ],
+          "annotated_regions": 35,
+          "critical_entity_ids": [
+            10,
+            17,
+            18
+          ]
+        },
+        {
+          "id": "83635935",
+          "image_path": "dataset/testing_data/images/83635935.png",
+          "label_path": "dataset/testing_data/annotations/83635935.json",
+          "image_sha256": "d6af7d1fd24ea1ef69f8ba6cfd1d8265f874333bda44ea1ecd5bd00bbd12b882",
+          "label_sha256": "0d67db62cb4e3c1b0dd26cd9bb70b1045728bfa85006691db8650488cdd0fb20",
+          "image_size": [
+            754,
+            1000
+          ],
+          "annotated_regions": 17,
+          "critical_entity_ids": [
+            10,
+            15
+          ]
+        }
+      ]
+    }
+  }
+}

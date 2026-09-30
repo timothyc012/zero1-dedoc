@@ -36,6 +36,9 @@
     "bench:office-cells": "node bench/office-cell-provenance.mjs --gate",
     "bench:heading-holdout": "node bench/heading-negative-holdout.mjs --gate",
     "bench:pptx-holdout": "node bench/pptx-holdout.mjs --gate",
+    "bench:ocr-fetch": "node bench/fetch-ocr-holdout.mjs",
+    "bench:ocr-field-holdout": "node --import tsx bench/ocr-field-holdout.mjs",
+    "bench:ocr-pdf-smoke": "node --import tsx bench/ocr-pdf-smoke.mjs --gate",
     "sync-meta": "node scripts/sync-meta.mjs",
     "prepublishOnly": "node scripts/sync-meta.mjs --check && node scripts/check-notices.mjs && npm run typecheck && npm run test && npm run build && node bench/gate-if-corpus.mjs"
   },

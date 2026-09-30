@@ -1,0 +1,72 @@
+{
+  "schema_version": "zero1-ocr-pdf-smoke-result.v1",
+  "parser_revision": "85ae351548d3d6b94d9fe7868907b0dc2c177a07",
+  "documents": [
+    {
+      "id": "de-image-only",
+      "sha256": "09a698ed15731ba0af7e2e2a74e2aea066bc2723ab0f80499506da90e4f15464",
+      "warnings": [
+        "OCR_APPLIED"
+      ],
+      "checks": {
+        "pages": true,
+        "ocrApplied": true,
+        "noOcrFailure": true,
+        "nativeTextPreserved": true,
+        "anchors": true
+      },
+      "passed": true
+    },
+    {
+      "id": "de-mixed",
+      "sha256": "03b91743c970119f2dbed2cb10f6488acb6452939676b1982921ec653d2f4189",
+      "warnings": [
+        "OCR_APPLIED"
+      ],
+      "checks": {
+        "pages": true,
+        "ocrApplied": true,
+        "noOcrFailure": true,
+        "nativeTextPreserved": true,
+        "anchors": true
+      },
+      "passed": true
+    },
+    {
+      "id": "en-image-only",
+      "sha256": "89913a526b29f40724b14b28e45f0b06bec2fe402887e01b367f6e69b829845c",
+      "warnings": [
+        "OCR_LOW_CONF",
+        "OCR_APPLIED"
+      ],
+      "checks": {
+        "pages": true,
+        "ocrApplied": true,
+        "noOcrFailure": true,
+        "nativeTextPreserved": true,
+        "anchors": true
+      },
+      "passed": true
+    },
+    {
+      "id": "en-mixed",
+      "sha256": "77e491df0bf00490bc593cfc472539e540f62eb398d50aa6888a0e332359d45a",
+      "warnings": [
+        "OCR_LOW_CONF",
+        "OCR_APPLIED"
+      ],
+      "checks": {
+        "pages": true,
+        "ocrApplied": true,
+        "noOcrFailure": true,
+        "nativeTextPreserved": true,
+        "anchors": true
+      },
+      "passed": true
+    }
+  ],
+  "summary": {
+    "documents": 4,
+    "passed": 4
+  }
+}
