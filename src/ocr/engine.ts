@@ -27,6 +27,9 @@
 
 import type { InferenceSession } from "onnxruntime-node"
 import { readFile } from "fs/promises"
+import { availableParallelism } from "node:os"
+import { ocrCpuThreads } from "./cpu-threads.js"
+import { ctcPrefixBeamDecode } from "./prefix-beam.js"
 import { join } from "path"
 import { OPTIONAL_DEP_INSTALL_HINT } from "../utils.js"
 import {
@@ -179,11 +182,12 @@ export class OcrEngine {
 
     const profile = getOcrModelProfile(language)
     const dir = profile.directory
+    const threads = ocrCpuThreads(profile.generation, availableParallelism(), process.env.ZERO1_OCR_THREADS)
     const sessionOpts: import("onnxruntime-node").InferenceSession.SessionOptions = {
       graphOptimizationLevel: "all",
       executionProviders: ["cpu"],
       logSeverityLevel: 3, // paddle2onnx 변환 잔여물 W 로그 폭주 억제
-      ...(profile.generation === 6 ? { intraOpNumThreads: 4, interOpNumThreads: 1 } : {}),
+      ...(threads !== undefined ? { intraOpNumThreads: threads, interOpNumThreads: 1 } : {}),
     }
     const [det, rec, dictBytes] = await Promise.all([
       ortMod.InferenceSession.create(join(dir, profile.det.filename), sessionOpts),
@@ -222,7 +226,7 @@ export class OcrEngine {
     if (this.generation === 6) {
       // A single detailed pass keeps line geometry separate. Legacy cross-scale
       // row coalescing can combine an invoice name and address into one box.
-      const v6Tuning = { ...tuning, detLongSide: 1760, detBoxThresh: 0.5, detUnclip: 1.6,
+      const v6Tuning = { ...tuning, detLongSide: 1760, detBoxThresh: 0.5, detUnclip: 1.4,
         trimEdges: false, postprocess: false, tightBoxes: false, splitTall: false,
         splitLeaders: false, minInkContrast: 0 }
       return this.recognizeSinglePass(rgba, width, height, stats, v6Tuning, cellRules, false)
@@ -537,7 +541,9 @@ export class OcrEngine {
       if (this.generation === 6 && C !== this.dict.length + 2) throw new Error("OCR recognizer/alphabet class mismatch")
       const data = logits.data as Float32Array
       idx.forEach((ci, k) => {
-        const r = ctcDecode(data.subarray(k * T * C, (k + 1) * T * C), T, C, this.dict)
+        const values = data.subarray(k * T * C, (k + 1) * T * C)
+        const greedy = ctcDecode(values, T, C, this.dict)
+        const r = this.generation === 6 ? ctcPrefixBeamDecode(values, T, C, this.dict, greedy) : greedy
         // CTC 시점 하나가 덮는 원본 픽셀 폭 — crop 은 높이 48 로 줄인 뒤 bw 까지 오른쪽을 채웠다 (회전 crop 은 세로 축)
         const job = jobs[ci], src = job.rot === 0 ? job.box.w : job.box.h
         // 채운 자리(crop 폭 밖)에 찍힌 글자 — CTC 는 짧은 박스의 진짜 끝 글자도 마지막 시점에 찍어("54" → 시점 36·39) 자리만으로는 못 가른다.
