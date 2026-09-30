@@ -32,6 +32,14 @@ The built `zero1-dedoc setup` command registers the local MCP bundle directly. I
 
 These are measured cases, not a claim of universal German or English accuracy. German OCR now uses SHA-pinned PP-OCRv6 medium models and oriented line crops; English and Korean retain their PP-OCRv5 profiles. Prepare the new German cache with `zero1-dedoc check-ocr-models --language de` before offline parsing. See the [German PDF comparison](docs/benchmarks/german-pdf-ocr-comparison.md) for fixed inputs, competitor settings, accuracy, and limits.
 
+### German OCR CPU budget
+
+On CPU hosts, set `ZERO1_OCR_THREADS` before starting the process to choose 1–64 native threads (capped by available CPUs). The German default remains four. Eight threads reduced three German WSL worker test PDFs by 20–31%; the dense form still took about 85 seconds. Measure your host before changing its budget. [Further accuracy and performance evidence](docs/benchmarks/german-ocr-efficiency.md).
+
+```sh
+ZERO1_OCR_THREADS=8 node dist/cli.js german-scan.pdf --ocr --ocr-language de -o scan.md
+```
+
 ## Attribution and maintenance
 
 Kordoc's original author is [chrisryugj](https://github.com/chrisryugj). The original detailed manuals remain in [README-UPSTREAM.md](https://github.com/timothyc012/zero1-dedoc/blob/main/README-UPSTREAM.md) and [README-EN.md](https://github.com/timothyc012/zero1-dedoc/blob/main/README-EN.md). Git remote `upstream` points to the original project. Zero1 Dedoc's changes are described in [docs/UPSTREAM.md](https://github.com/timothyc012/zero1-dedoc/blob/main/docs/UPSTREAM.md) and [CHANGELOG.md](https://github.com/timothyc012/zero1-dedoc/blob/main/CHANGELOG.md). The inherited plugin and public Kordoc documentation may show legacy package names; use the commands in this README for Zero1 Dedoc.

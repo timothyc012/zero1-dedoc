@@ -1,4 +1,5 @@
 """Reproduce only the frozen XFUND German evaluation PDFs; never rewrite gold."""
+import argparse
 import hashlib
 import io
 import json
@@ -11,7 +12,8 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
 root = Path(__file__).resolve().parent.parent
-manifest = json.loads((root / 'bench/german-xfund-pdf-manifest.json').read_text())
+ap=argparse.ArgumentParser();ap.add_argument('--manifest',default='bench/german-xfund-pdf-manifest.json');args=ap.parse_args()
+manifest = json.loads((root / args.manifest).read_text())
 corpus = root / 'bench/corpus/xfund-de'
 corpus.mkdir(parents=True, exist_ok=True)
 
