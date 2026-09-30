@@ -1,0 +1,2008 @@
+{
+  "schema_version": "zero1-ocr-field-holdout-result.v1",
+  "manifest_sha256": "087a50a7adc2320c333da01aa0a12ddad3ae52426271421a9f4af8e9d8dc477e",
+  "parser_revision": "85ae351548d3d6b94d9fe7868907b0dc2c177a07",
+  "metric": "direct OCR detector/recognizer field-region CER/WER; full parser critical-anchor coverage separately",
+  "matching": "each recognized line assigned by overlap/OCR-line area >= 0.1, with small field-coverage tie break; label text is not read for matching",
+  "languages": {
+    "de": {
+      "source": "Belege (Immineal, 2026) free 40-document sample",
+      "kind": "synthetic German invoice scans/photos/clean images with generated field-box labels",
+      "model_sha256": [
+        {
+          "filename": "det.onnx",
+          "sha256": "a431985659dc921974177a95adcfbb90fd9e51989a5e04d70d0b75f597b6e61d"
+        },
+        {
+          "filename": "rec_latin.onnx",
+          "sha256": "b20bd37c168a570f583afbc8cd7925603890efbcdc000a59e22c269d160b5f5a"
+        },
+        {
+          "filename": "rec_latin.txt",
+          "sha256": "3c0a8a79b612653c25f765271714f71281e4e955962c153e272b7b8c1d2b13ff"
+        }
+      ],
+      "documents": [
+        {
+          "id": "beleg-000000",
+          "image_sha256": "00b9a649a2048fbc9879621d304b974fd92ea7990ed32f68c66894fb12d55149",
+          "label_sha256": "de984a601c84f0f7b39f186d31796960c608005e610af22d2633f713468fd7d3",
+          "variant": "scan",
+          "layout": "window",
+          "vatScheme": "regelbesteuert",
+          "regions": 28,
+          "ocr": {
+            "regions": 28,
+            "matchedRegions": 28,
+            "ocrItems": 55,
+            "unassignedItems": 25,
+            "referenceChars": 353,
+            "characterErrors": 60,
+            "cer": 0.16997167138810199,
+            "referenceWords": 41,
+            "wordErrors": 11,
+            "wer": 0.2682926829268293
+          },
+          "parser": {
+            "success": true,
+            "warnings": [],
+            "textChars": 1570
+          },
+          "critical": {
+            "expected": 3,
+            "found": 3,
+            "checks": [
+              {
+                "id": "invoice_number",
+                "found": true
+              },
+              {
+                "id": "gross_total",
+                "found": true
+              },
+              {
+                "id": "vat_id",
+                "found": true
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 1,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 2104
+        },
+        {
+          "id": "beleg-000001",
+          "image_sha256": "8e9249405875a83fd078c3b0bd7a1fa3b7d82e5ff6e75835af326d2d48dfe753",
+          "label_sha256": "c38f823fc87f8430216ebc933c0c21bb082f02b48eee37a40182eddb4071e9fd",
+          "variant": "photo",
+          "layout": "landscape",
+          "vatScheme": "regelbesteuert",
+          "regions": 25,
+          "ocr": {
+            "regions": 25,
+            "matchedRegions": 22,
+            "ocrItems": 42,
+            "unassignedItems": 17,
+            "referenceChars": 326,
+            "characterErrors": 167,
+            "cer": 0.5122699386503068,
+            "referenceWords": 44,
+            "wordErrors": 33,
+            "wer": 0.75
+          },
+          "parser": {
+            "success": true,
+            "warnings": [
+              "OCR_LOW_CONF"
+            ],
+            "textChars": 636
+          },
+          "critical": {
+            "expected": 3,
+            "found": 2,
+            "checks": [
+              {
+                "id": "invoice_number",
+                "found": true
+              },
+              {
+                "id": "gross_total",
+                "found": true
+              },
+              {
+                "id": "vat_id",
+                "found": false
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 2,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 1790
+        },
+        {
+          "id": "beleg-000002",
+          "image_sha256": "329a23df7068c34dd9e7bc62e36363d7ef4e6469521055f2205b4619caf6f271",
+          "label_sha256": "fe20b79542f2c26a2c3b8fcdfbc9d23c4afd2c6717bab70f8c653f4089888788",
+          "variant": "scan",
+          "layout": "list",
+          "vatScheme": "regelbesteuert",
+          "regions": 19,
+          "ocr": {
+            "regions": 19,
+            "matchedRegions": 17,
+            "ocrItems": 29,
+            "unassignedItems": 10,
+            "referenceChars": 285,
+            "characterErrors": 57,
+            "cer": 0.2,
+            "referenceWords": 39,
+            "wordErrors": 14,
+            "wer": 0.358974358974359
+          },
+          "parser": {
+            "success": true,
+            "warnings": [],
+            "textChars": 723
+          },
+          "critical": {
+            "expected": 3,
+            "found": 3,
+            "checks": [
+              {
+                "id": "invoice_number",
+                "found": true
+              },
+              {
+                "id": "gross_total",
+                "found": true
+              },
+              {
+                "id": "vat_id",
+                "found": true
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 0,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 1409
+        },
+        {
+          "id": "beleg-000003",
+          "image_sha256": "ca978fb0530dcf29cace2e60544619cc338be9b590a46da1fda1c5d1d6b877c8",
+          "label_sha256": "37da922d8498a3ffa0df262502428006e2757205e33a9da5bb61c2faf1f48da6",
+          "variant": "scan",
+          "layout": "list",
+          "vatScheme": "regelbesteuert",
+          "regions": 24,
+          "ocr": {
+            "regions": 24,
+            "matchedRegions": 21,
+            "ocrItems": 35,
+            "unassignedItems": 11,
+            "referenceChars": 363,
+            "characterErrors": 91,
+            "cer": 0.25068870523415976,
+            "referenceWords": 46,
+            "wordErrors": 26,
+            "wer": 0.5652173913043478
+          },
+          "parser": {
+            "success": true,
+            "warnings": [],
+            "textChars": 1042
+          },
+          "critical": {
+            "expected": 3,
+            "found": 2,
+            "checks": [
+              {
+                "id": "invoice_number",
+                "found": true
+              },
+              {
+                "id": "gross_total",
+                "found": true
+              },
+              {
+                "id": "vat_id",
+                "found": false
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 1,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 1583
+        },
+        {
+          "id": "beleg-000004",
+          "image_sha256": "74ac5455d2f21681fa3427d745a4e260e31cc323f9f4fad9942e67f75aeb6a64",
+          "label_sha256": "b50be4f6f7a3103b1343afc6c27e63fe3afddad9861d6c87316c65c59ef60fa9",
+          "variant": "photo",
+          "layout": "landscape",
+          "vatScheme": "kleinunternehmer",
+          "regions": 28,
+          "ocr": {
+            "regions": 28,
+            "matchedRegions": 26,
+            "ocrItems": 50,
+            "unassignedItems": 20,
+            "referenceChars": 404,
+            "characterErrors": 97,
+            "cer": 0.2400990099009901,
+            "referenceWords": 56,
+            "wordErrors": 23,
+            "wer": 0.4107142857142857
+          },
+          "parser": {
+            "success": true,
+            "warnings": [],
+            "textChars": 774
+          },
+          "critical": {
+            "expected": 3,
+            "found": 2,
+            "checks": [
+              {
+                "id": "invoice_number",
+                "found": true
+              },
+              {
+                "id": "gross_total",
+                "found": true
+              },
+              {
+                "id": "tax_note",
+                "found": false
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 0,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 1807
+        },
+        {
+          "id": "beleg-000005",
+          "image_sha256": "a87e15d7044673a0aea2d9b91f2007696790c25be4f0075ac3ffc8f12695f5b1",
+          "label_sha256": "382a413f0c68d947818fd0e7b0480854fbf87214539b9bb0ae1ebcc36a731e53",
+          "variant": "photo",
+          "layout": "window",
+          "vatScheme": "gutschrift",
+          "regions": 31,
+          "ocr": {
+            "regions": 31,
+            "matchedRegions": 30,
+            "ocrItems": 53,
+            "unassignedItems": 22,
+            "referenceChars": 394,
+            "characterErrors": 54,
+            "cer": 0.13705583756345177,
+            "referenceWords": 47,
+            "wordErrors": 11,
+            "wer": 0.23404255319148937
+          },
+          "parser": {
+            "success": true,
+            "warnings": [
+              "OCR_LOW_CONF"
+            ],
+            "textChars": 829
+          },
+          "critical": {
+            "expected": 3,
+            "found": 2,
+            "checks": [
+              {
+                "id": "invoice_number",
+                "found": true
+              },
+              {
+                "id": "gross_total",
+                "found": true
+              },
+              {
+                "id": "vat_id",
+                "found": false
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 1,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 1988
+        },
+        {
+          "id": "beleg-000006",
+          "image_sha256": "ef095e9219a047ace9ecc7a029fdf2a9f5cf3672a66d508c58d8733f60bd0c74",
+          "label_sha256": "45cdda6060f21b50068481fbb9e5b424fb7489a7b87ae8b54133d66b5dbaa25a",
+          "variant": "photo",
+          "layout": "window",
+          "vatScheme": "regelbesteuert",
+          "regions": 32,
+          "ocr": {
+            "regions": 32,
+            "matchedRegions": 32,
+            "ocrItems": 61,
+            "unassignedItems": 28,
+            "referenceChars": 384,
+            "characterErrors": 74,
+            "cer": 0.19270833333333334,
+            "referenceWords": 51,
+            "wordErrors": 25,
+            "wer": 0.49019607843137253
+          },
+          "parser": {
+            "success": true,
+            "warnings": [
+              "OCR_LOW_CONF"
+            ],
+            "textChars": 856
+          },
+          "critical": {
+            "expected": 3,
+            "found": 2,
+            "checks": [
+              {
+                "id": "invoice_number",
+                "found": true
+              },
+              {
+                "id": "gross_total",
+                "found": true
+              },
+              {
+                "id": "vat_id",
+                "found": false
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 1,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 2061
+        },
+        {
+          "id": "beleg-000007",
+          "image_sha256": "52c456f8e3bd3789d8fbce2b7840f7afa69c22fb9602576a48ef089b3d08f824",
+          "label_sha256": "99e221d3f105b14d824f2765dcc46cd917ea4b7dcb8a7f8d6cadc5d1d8a1629c",
+          "variant": "photo",
+          "layout": "list",
+          "vatScheme": "regelbesteuert",
+          "regions": 36,
+          "ocr": {
+            "regions": 36,
+            "matchedRegions": 31,
+            "ocrItems": 42,
+            "unassignedItems": 10,
+            "referenceChars": 421,
+            "characterErrors": 119,
+            "cer": 0.2826603325415677,
+            "referenceWords": 56,
+            "wordErrors": 31,
+            "wer": 0.5535714285714286
+          },
+          "parser": {
+            "success": true,
+            "warnings": [],
+            "textChars": 1079
+          },
+          "critical": {
+            "expected": 3,
+            "found": 3,
+            "checks": [
+              {
+                "id": "invoice_number",
+                "found": true
+              },
+              {
+                "id": "gross_total",
+                "found": true
+              },
+              {
+                "id": "vat_id",
+                "found": true
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 0,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 1545
+        },
+        {
+          "id": "beleg-000008",
+          "image_sha256": "c1e0355377e5a2cb2af900901640684b401515612c1e1535d0c708fbbc15e1d7",
+          "label_sha256": "9f53b3f93336e9a1946decae379c1986e82e9d2077f9567357b903b5cfdaad79",
+          "variant": "scan",
+          "layout": "window",
+          "vatScheme": "regelbesteuert",
+          "regions": 31,
+          "ocr": {
+            "regions": 31,
+            "matchedRegions": 30,
+            "ocrItems": 53,
+            "unassignedItems": 22,
+            "referenceChars": 401,
+            "characterErrors": 127,
+            "cer": 0.3167082294264339,
+            "referenceWords": 47,
+            "wordErrors": 17,
+            "wer": 0.3617021276595745
+          },
+          "parser": {
+            "success": true,
+            "warnings": [],
+            "textChars": 1592
+          },
+          "critical": {
+            "expected": 3,
+            "found": 3,
+            "checks": [
+              {
+                "id": "invoice_number",
+                "found": true
+              },
+              {
+                "id": "gross_total",
+                "found": true
+              },
+              {
+                "id": "vat_id",
+                "found": true
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 1,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 2092
+        },
+        {
+          "id": "beleg-000009",
+          "image_sha256": "141752ed8ec0e48b2be044f3d75986bf7b272d00ea8d6675283b3341773b82a3",
+          "label_sha256": "ce59d8dc5db3b2ba3549190f5d815918562da4fb41ccb7aca679914a637610a1",
+          "variant": "scan",
+          "layout": "landscape",
+          "vatScheme": "kleinunternehmer",
+          "regions": 28,
+          "ocr": {
+            "regions": 28,
+            "matchedRegions": 26,
+            "ocrItems": 48,
+            "unassignedItems": 20,
+            "referenceChars": 445,
+            "characterErrors": 63,
+            "cer": 0.14157303370786517,
+            "referenceWords": 56,
+            "wordErrors": 12,
+            "wer": 0.21428571428571427
+          },
+          "parser": {
+            "success": true,
+            "warnings": [],
+            "textChars": 894
+          },
+          "critical": {
+            "expected": 3,
+            "found": 3,
+            "checks": [
+              {
+                "id": "invoice_number",
+                "found": true
+              },
+              {
+                "id": "gross_total",
+                "found": true
+              },
+              {
+                "id": "tax_note",
+                "found": true
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 0,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 2079
+        },
+        {
+          "id": "beleg-000010",
+          "image_sha256": "7b42807390027e18524c62e94642298db67977815cf2d4f0b756bad17680d153",
+          "label_sha256": "7cf3052f36764ae237f4876e95730465686fe250be58946373bfed1039ea866d",
+          "variant": "scan",
+          "layout": "landscape",
+          "vatScheme": "kleinunternehmer",
+          "regions": 31,
+          "ocr": {
+            "regions": 31,
+            "matchedRegions": 28,
+            "ocrItems": 51,
+            "unassignedItems": 20,
+            "referenceChars": 459,
+            "characterErrors": 213,
+            "cer": 0.46405228758169936,
+            "referenceWords": 58,
+            "wordErrors": 38,
+            "wer": 0.6551724137931034
+          },
+          "parser": {
+            "success": true,
+            "warnings": [],
+            "textChars": 1424
+          },
+          "critical": {
+            "expected": 3,
+            "found": 3,
+            "checks": [
+              {
+                "id": "invoice_number",
+                "found": true
+              },
+              {
+                "id": "gross_total",
+                "found": true
+              },
+              {
+                "id": "tax_note",
+                "found": true
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 0,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 1993
+        },
+        {
+          "id": "beleg-000011",
+          "image_sha256": "258a755aca7f73537fce4745d4a38fcd00b2bfe7c4166ba69c24205e4944293d",
+          "label_sha256": "08f06bfaaf539c2c982e21d7f9f2d0b53a7657bc72a85fbe8e3ab65c389305c4",
+          "variant": "scan",
+          "layout": "window",
+          "vatScheme": "regelbesteuert",
+          "regions": 27,
+          "ocr": {
+            "regions": 27,
+            "matchedRegions": 27,
+            "ocrItems": 49,
+            "unassignedItems": 21,
+            "referenceChars": 349,
+            "characterErrors": 56,
+            "cer": 0.16045845272206305,
+            "referenceWords": 46,
+            "wordErrors": 10,
+            "wer": 0.21739130434782608
+          },
+          "parser": {
+            "success": true,
+            "warnings": [],
+            "textChars": 1486
+          },
+          "critical": {
+            "expected": 3,
+            "found": 3,
+            "checks": [
+              {
+                "id": "invoice_number",
+                "found": true
+              },
+              {
+                "id": "gross_total",
+                "found": true
+              },
+              {
+                "id": "vat_id",
+                "found": true
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 1,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 1727
+        },
+        {
+          "id": "beleg-000012",
+          "image_sha256": "0a5a48ff3f6a452788a392c03b5a8f02ee2c0d597c266b4382cf24378275a940",
+          "label_sha256": "a95e86be23b9fe8b145136847e4f6a5e4fa872c96bcc04b1c76388796132f5d4",
+          "variant": "photo",
+          "layout": "landscape",
+          "vatScheme": "kleinunternehmer",
+          "regions": 48,
+          "ocr": {
+            "regions": 48,
+            "matchedRegions": 45,
+            "ocrItems": 79,
+            "unassignedItems": 31,
+            "referenceChars": 648,
+            "characterErrors": 332,
+            "cer": 0.5123456790123457,
+            "referenceWords": 81,
+            "wordErrors": 52,
+            "wer": 0.6419753086419753
+          },
+          "parser": {
+            "success": true,
+            "warnings": [
+              "OCR_LOW_CONF"
+            ],
+            "textChars": 1238
+          },
+          "critical": {
+            "expected": 3,
+            "found": 2,
+            "checks": [
+              {
+                "id": "invoice_number",
+                "found": true
+              },
+              {
+                "id": "gross_total",
+                "found": true
+              },
+              {
+                "id": "tax_note",
+                "found": false
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 4,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 2683
+        },
+        {
+          "id": "beleg-000013",
+          "image_sha256": "698aac66ecb6e41d9a5f32d965a38c4b5ac7e585ccabddfd2aac6d682eec4727",
+          "label_sha256": "f79e9d29b2bbb383ce607f0c8bd048b04e418c50e4471b12cfb2ec9427405a87",
+          "variant": "scan",
+          "layout": "list",
+          "vatScheme": "regelbesteuert",
+          "regions": 20,
+          "ocr": {
+            "regions": 20,
+            "matchedRegions": 19,
+            "ocrItems": 32,
+            "unassignedItems": 11,
+            "referenceChars": 331,
+            "characterErrors": 46,
+            "cer": 0.13897280966767372,
+            "referenceWords": 41,
+            "wordErrors": 12,
+            "wer": 0.2926829268292683
+          },
+          "parser": {
+            "success": true,
+            "warnings": [],
+            "textChars": 821
+          },
+          "critical": {
+            "expected": 3,
+            "found": 3,
+            "checks": [
+              {
+                "id": "invoice_number",
+                "found": true
+              },
+              {
+                "id": "gross_total",
+                "found": true
+              },
+              {
+                "id": "vat_id",
+                "found": true
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 0,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 1332
+        },
+        {
+          "id": "beleg-000014",
+          "image_sha256": "5053b804cd93d464af402ef72e371547fb1ca5a50acb228307524aeb6549c5a1",
+          "label_sha256": "7f05acd16c62aca54d45f8a150519604dc457847d037e21d7ff2e38f40e26f1d",
+          "variant": "scan",
+          "layout": "list",
+          "vatScheme": "regelbesteuert",
+          "regions": 32,
+          "ocr": {
+            "regions": 32,
+            "matchedRegions": 28,
+            "ocrItems": 40,
+            "unassignedItems": 11,
+            "referenceChars": 424,
+            "characterErrors": 86,
+            "cer": 0.2028301886792453,
+            "referenceWords": 52,
+            "wordErrors": 24,
+            "wer": 0.46153846153846156
+          },
+          "parser": {
+            "success": true,
+            "warnings": [],
+            "textChars": 1235
+          },
+          "critical": {
+            "expected": 3,
+            "found": 3,
+            "checks": [
+              {
+                "id": "invoice_number",
+                "found": true
+              },
+              {
+                "id": "gross_total",
+                "found": true
+              },
+              {
+                "id": "vat_id",
+                "found": true
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 0,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 1759
+        },
+        {
+          "id": "beleg-000015",
+          "image_sha256": "5fc537354ca0e3340304525ea8bf466011207e014bfd839b318506c2084ecd9c",
+          "label_sha256": "3dc24c93f44dba9ed2061c8613c1bbce53d74b7b5a8d3b5b949e068892049866",
+          "variant": "scan",
+          "layout": "list",
+          "vatScheme": "regelbesteuert",
+          "regions": 28,
+          "ocr": {
+            "regions": 28,
+            "matchedRegions": 25,
+            "ocrItems": 37,
+            "unassignedItems": 11,
+            "referenceChars": 405,
+            "characterErrors": 71,
+            "cer": 0.17530864197530865,
+            "referenceWords": 51,
+            "wordErrors": 23,
+            "wer": 0.45098039215686275
+          },
+          "parser": {
+            "success": true,
+            "warnings": [],
+            "textChars": 1139
+          },
+          "critical": {
+            "expected": 3,
+            "found": 3,
+            "checks": [
+              {
+                "id": "invoice_number",
+                "found": true
+              },
+              {
+                "id": "gross_total",
+                "found": true
+              },
+              {
+                "id": "vat_id",
+                "found": true
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 0,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 1616
+        },
+        {
+          "id": "beleg-000016",
+          "image_sha256": "cad82b738aa77e0bb44b906a4bc5e792d3bc813b44394d0ee02647457a534a70",
+          "label_sha256": "d9399adf295c99ffc27711831973d071839e0200f1aa561c16c30b31ae1620fb",
+          "variant": "photo",
+          "layout": "window",
+          "vatScheme": "regelbesteuert",
+          "regions": 28,
+          "ocr": {
+            "regions": 28,
+            "matchedRegions": 28,
+            "ocrItems": 52,
+            "unassignedItems": 22,
+            "referenceChars": 354,
+            "characterErrors": 76,
+            "cer": 0.21468926553672316,
+            "referenceWords": 43,
+            "wordErrors": 11,
+            "wer": 0.2558139534883721
+          },
+          "parser": {
+            "success": true,
+            "warnings": [],
+            "textChars": 1207
+          },
+          "critical": {
+            "expected": 3,
+            "found": 2,
+            "checks": [
+              {
+                "id": "invoice_number",
+                "found": true
+              },
+              {
+                "id": "gross_total",
+                "found": true
+              },
+              {
+                "id": "vat_id",
+                "found": false
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 0,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 2037
+        },
+        {
+          "id": "beleg-000017",
+          "image_sha256": "c8aa932257ef962305c87996bfa31abc06458dfd647c90ecdb82c6681211569f",
+          "label_sha256": "f1c27b72bee0a9be289f48ccf75d7d5e06ac9a2cfce033ddb01b4f749edf64fb",
+          "variant": "photo",
+          "layout": "window",
+          "vatScheme": "gutschrift",
+          "regions": 36,
+          "ocr": {
+            "regions": 36,
+            "matchedRegions": 36,
+            "ocrItems": 61,
+            "unassignedItems": 24,
+            "referenceChars": 483,
+            "characterErrors": 158,
+            "cer": 0.32712215320910976,
+            "referenceWords": 55,
+            "wordErrors": 41,
+            "wer": 0.7454545454545455
+          },
+          "parser": {
+            "success": true,
+            "warnings": [
+              "OCR_LOW_CONF"
+            ],
+            "textChars": 1404
+          },
+          "critical": {
+            "expected": 3,
+            "found": 2,
+            "checks": [
+              {
+                "id": "invoice_number",
+                "found": true
+              },
+              {
+                "id": "gross_total",
+                "found": true
+              },
+              {
+                "id": "vat_id",
+                "found": false
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 5,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 1973
+        },
+        {
+          "id": "beleg-000024",
+          "image_sha256": "9369284e2dcfa9fa5876c50704c65c09919cfff412d96583d9051e7707d4a369",
+          "label_sha256": "553de0bfa29447e67bd00322592831e6d0a9129db1e0c82cc3d10561657cc7af",
+          "variant": "clean",
+          "layout": "window",
+          "vatScheme": "regelbesteuert",
+          "regions": 25,
+          "ocr": {
+            "regions": 25,
+            "matchedRegions": 25,
+            "ocrItems": 51,
+            "unassignedItems": 24,
+            "referenceChars": 307,
+            "characterErrors": 74,
+            "cer": 0.24104234527687296,
+            "referenceWords": 41,
+            "wordErrors": 10,
+            "wer": 0.24390243902439024
+          },
+          "parser": {
+            "success": true,
+            "warnings": [],
+            "textChars": 1256
+          },
+          "critical": {
+            "expected": 3,
+            "found": 3,
+            "checks": [
+              {
+                "id": "invoice_number",
+                "found": true
+              },
+              {
+                "id": "gross_total",
+                "found": true
+              },
+              {
+                "id": "vat_id",
+                "found": true
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 0,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 1750
+        },
+        {
+          "id": "beleg-000030",
+          "image_sha256": "a70ef63e7aee3c5186185d30c918e366cf0ea3f9acfdbf597ed1d75d196b1f33",
+          "label_sha256": "cec037c432742bde2ac76830d6d4800fadedd83e89cbc92b9047eb6e87a8b158",
+          "variant": "photo",
+          "layout": "list",
+          "vatScheme": "reverse_charge",
+          "regions": 40,
+          "ocr": {
+            "regions": 40,
+            "matchedRegions": 25,
+            "ocrItems": 40,
+            "unassignedItems": 6,
+            "referenceChars": 607,
+            "characterErrors": 447,
+            "cer": 0.7364085667215815,
+            "referenceWords": 75,
+            "wordErrors": 84,
+            "wer": 1.12
+          },
+          "parser": {
+            "success": true,
+            "warnings": [
+              "OCR_LOW_CONF"
+            ],
+            "textChars": 1502
+          },
+          "critical": {
+            "expected": 4,
+            "found": 3,
+            "checks": [
+              {
+                "id": "invoice_number",
+                "found": true
+              },
+              {
+                "id": "gross_total",
+                "found": true
+              },
+              {
+                "id": "vat_id",
+                "found": true
+              },
+              {
+                "id": "tax_note",
+                "found": false
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 7,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 2054
+        }
+      ],
+      "summary": {
+        "documents": 20,
+        "pages": 20,
+        "regions": 597,
+        "matchedRegions": 549,
+        "referenceChars": 8143,
+        "characterErrors": 2468,
+        "cer": 0.3030824020631217,
+        "referenceWords": 1026,
+        "wordErrors": 508,
+        "wer": 0.4951267056530214,
+        "parserSuccess": 20,
+        "criticalExpected": 61,
+        "criticalFound": 52,
+        "byVariant": {
+          "scan": {
+            "documents": 10,
+            "cer": 0.22804718217562253,
+            "wer": 0.3920335429769392,
+            "criticalFound": 29,
+            "criticalExpected": 30
+          },
+          "photo": {
+            "documents": 9,
+            "cer": 0.3790101964685402,
+            "wer": 0.6122047244094488,
+            "criticalFound": 20,
+            "criticalExpected": 28
+          },
+          "clean": {
+            "documents": 1,
+            "cer": 0.24104234527687296,
+            "wer": 0.24390243902439024,
+            "criticalFound": 3,
+            "criticalExpected": 3
+          }
+        }
+      }
+    },
+    "en": {
+      "source": "FUNSD original testing split",
+      "kind": "real noisy scanned English forms with entity-box text annotations",
+      "model_sha256": [
+        {
+          "filename": "det.onnx",
+          "sha256": "a431985659dc921974177a95adcfbb90fd9e51989a5e04d70d0b75f597b6e61d"
+        },
+        {
+          "filename": "rec_en.onnx",
+          "sha256": "c3461add59bb4323ecba96a492ab75e06dda42467c9e3d0c18db5d1d21924be8"
+        },
+        {
+          "filename": "rec_en.txt",
+          "sha256": "e025a66d31f327ba0c232e03f407ae8d105e1e709e7ccb3f408aa778c24e70d6"
+        }
+      ],
+      "documents": [
+        {
+          "id": "82092117",
+          "image_sha256": "279654591d7de3745e5efaf39d3be413baab267be7170082d1922690566c5ad1",
+          "label_sha256": "4a492dc09486d4aec7c8ed6cfa780e7779f16572db0845f4d2f6c52057d236a8",
+          "regions": 27,
+          "ocr": {
+            "regions": 27,
+            "matchedRegions": 20,
+            "ocrItems": 37,
+            "unassignedItems": 0,
+            "referenceChars": 1319,
+            "characterErrors": 274,
+            "cer": 0.20773313115996966,
+            "referenceWords": 223,
+            "wordErrors": 83,
+            "wer": 0.3721973094170404
+          },
+          "parser": {
+            "success": true,
+            "warnings": [
+              "OCR_LOW_CONF"
+            ],
+            "textChars": 1368
+          },
+          "critical": {
+            "expected": 3,
+            "found": 1,
+            "checks": [
+              {
+                "id": "entity:3",
+                "found": true
+              },
+              {
+                "id": "entity:7",
+                "found": false
+              },
+              {
+                "id": "entity:12",
+                "found": false
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 3,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 989
+        },
+        {
+          "id": "82200067_0069",
+          "image_sha256": "c48d22b3c6692f8b1c08398d66fc9a3f9cc8b5bf0ff6641336228ae3cd117e23",
+          "label_sha256": "a6a40b60914548b3df12d27f1a27dd2e356f4131924500f0284f038e0d3d9677",
+          "regions": 59,
+          "ocr": {
+            "regions": 59,
+            "matchedRegions": 55,
+            "ocrItems": 71,
+            "unassignedItems": 1,
+            "referenceChars": 777,
+            "characterErrors": 194,
+            "cer": 0.24967824967824967,
+            "referenceWords": 167,
+            "wordErrors": 76,
+            "wer": 0.4550898203592814
+          },
+          "parser": {
+            "success": true,
+            "warnings": [
+              "OCR_LOW_CONF"
+            ],
+            "textChars": 1542
+          },
+          "critical": {
+            "expected": 3,
+            "found": 3,
+            "checks": [
+              {
+                "id": "entity:15",
+                "found": true
+              },
+              {
+                "id": "entity:16",
+                "found": true
+              },
+              {
+                "id": "entity:17",
+                "found": true
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 6,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 1161
+        },
+        {
+          "id": "82250337_0338",
+          "image_sha256": "5b5083f4127a00a212fcc5c1cbb580e9d1851180f4fbb888ca7c5911baa6da4f",
+          "label_sha256": "25daa180c7bf67db2b9493bd350c0ecce9811f372e66ff7acef5ab285d264838",
+          "regions": 36,
+          "ocr": {
+            "regions": 36,
+            "matchedRegions": 33,
+            "ocrItems": 40,
+            "unassignedItems": 0,
+            "referenceChars": 1297,
+            "characterErrors": 732,
+            "cer": 0.5643793369313801,
+            "referenceWords": 214,
+            "wordErrors": 160,
+            "wer": 0.7476635514018691
+          },
+          "parser": {
+            "success": true,
+            "warnings": [
+              "OCR_LOW_CONF"
+            ],
+            "textChars": 1258
+          },
+          "critical": {
+            "expected": 1,
+            "found": 0,
+            "checks": [
+              {
+                "id": "entity:18",
+                "found": false
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 3,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 914
+        },
+        {
+          "id": "82251504",
+          "image_sha256": "8fd472ccbdbd5349d8fbc6adf52311d69d47651a289b482b9850db20e9c43354",
+          "label_sha256": "e89724ad3b5fc8acbf5b06208c49310dc1eea89c36c42d70e5894de9dee74df1",
+          "regions": 41,
+          "ocr": {
+            "regions": 41,
+            "matchedRegions": 33,
+            "ocrItems": 43,
+            "unassignedItems": 3,
+            "referenceChars": 1289,
+            "characterErrors": 871,
+            "cer": 0.6757176105508146,
+            "referenceWords": 222,
+            "wordErrors": 178,
+            "wer": 0.8018018018018018
+          },
+          "parser": {
+            "success": true,
+            "warnings": [
+              "OCR_LOW_CONF"
+            ],
+            "textChars": 1781
+          },
+          "critical": {
+            "expected": 2,
+            "found": 2,
+            "checks": [
+              {
+                "id": "entity:0",
+                "found": true
+              },
+              {
+                "id": "entity:6",
+                "found": true
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 4,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 968
+        },
+        {
+          "id": "82252956_2958",
+          "image_sha256": "ec6f99f85a76659911e73871ca158240d6ac083088b5b88b337609c649e08772",
+          "label_sha256": "b9857bc49a8640e0686e71b0d80b00619c06b454c3651829f0a50b1c8583e75e",
+          "regions": 42,
+          "ocr": {
+            "regions": 42,
+            "matchedRegions": 40,
+            "ocrItems": 52,
+            "unassignedItems": 1,
+            "referenceChars": 626,
+            "characterErrors": 87,
+            "cer": 0.1389776357827476,
+            "referenceWords": 113,
+            "wordErrors": 26,
+            "wer": 0.23008849557522124
+          },
+          "parser": {
+            "success": true,
+            "warnings": [
+              "OCR_LOW_CONF"
+            ],
+            "textChars": 1330
+          },
+          "critical": {
+            "expected": 3,
+            "found": 3,
+            "checks": [
+              {
+                "id": "entity:6",
+                "found": true
+              },
+              {
+                "id": "entity:7",
+                "found": true
+              },
+              {
+                "id": "entity:15",
+                "found": true
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 3,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 895
+        },
+        {
+          "id": "82253058_3059",
+          "image_sha256": "4f017fd7a8dc63125cd4e7faafc3c97b8dc7cbef3a265e17878808dee489dda4",
+          "label_sha256": "f9cae322c40e1dba31959020ce56b0ddec6c0f0f7de0b1bb91e52eedb96bf4ec",
+          "regions": 43,
+          "ocr": {
+            "regions": 43,
+            "matchedRegions": 37,
+            "ocrItems": 41,
+            "unassignedItems": 0,
+            "referenceChars": 1155,
+            "characterErrors": 299,
+            "cer": 0.25887445887445887,
+            "referenceWords": 187,
+            "wordErrors": 82,
+            "wer": 0.4385026737967914
+          },
+          "parser": {
+            "success": true,
+            "warnings": [
+              "OCR_LOW_CONF"
+            ],
+            "textChars": 1035
+          },
+          "critical": {
+            "expected": 2,
+            "found": 1,
+            "checks": [
+              {
+                "id": "entity:23",
+                "found": false
+              },
+              {
+                "id": "entity:27",
+                "found": true
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 3,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 858
+        },
+        {
+          "id": "82253245_3247",
+          "image_sha256": "1023df93d5a35aba85c3ad232a4dbb9f6d8609068f5ec09f1c59a7e5738318d0",
+          "label_sha256": "537d44c3ccc8a27102dc195155569561d4abbfadaf1a4226d69a8e291e61df4b",
+          "regions": 70,
+          "ocr": {
+            "regions": 70,
+            "matchedRegions": 68,
+            "ocrItems": 82,
+            "unassignedItems": 2,
+            "referenceChars": 1238,
+            "characterErrors": 142,
+            "cer": 0.1147011308562197,
+            "referenceWords": 234,
+            "wordErrors": 74,
+            "wer": 0.3162393162393162
+          },
+          "parser": {
+            "success": true,
+            "warnings": [
+              "OCR_LOW_CONF"
+            ],
+            "textChars": 1723
+          },
+          "critical": {
+            "expected": 3,
+            "found": 3,
+            "checks": [
+              {
+                "id": "entity:8",
+                "found": true
+              },
+              {
+                "id": "entity:9",
+                "found": true
+              },
+              {
+                "id": "entity:10",
+                "found": true
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 7,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 1349
+        },
+        {
+          "id": "82253362_3364",
+          "image_sha256": "5348da0a6c2ba1a2703257ba6d70fccf55d9b36cebedd30a0b16cb5d92f10bb3",
+          "label_sha256": "9e8f27ecb37aebcf6cd50b13cb661922c32ae598f66fed1a4cbe0a0af58ba5b7",
+          "regions": 105,
+          "ocr": {
+            "regions": 105,
+            "matchedRegions": 103,
+            "ocrItems": 120,
+            "unassignedItems": 1,
+            "referenceChars": 1112,
+            "characterErrors": 89,
+            "cer": 0.08003597122302158,
+            "referenceWords": 228,
+            "wordErrors": 79,
+            "wer": 0.34649122807017546
+          },
+          "parser": {
+            "success": true,
+            "warnings": [
+              "OCR_LOW_CONF"
+            ],
+            "textChars": 2146
+          },
+          "critical": {
+            "expected": 3,
+            "found": 3,
+            "checks": [
+              {
+                "id": "entity:13",
+                "found": true
+              },
+              {
+                "id": "entity:14",
+                "found": true
+              },
+              {
+                "id": "entity:15",
+                "found": true
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 11,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 1761
+        },
+        {
+          "id": "82254765",
+          "image_sha256": "a1c4c8af7510ee0e6c9683e8f404ad67d23ee6db01168d226c1b63a940a7551b",
+          "label_sha256": "bc7f455c112693fd2a5e8502239024a44895232f8e7f561b7a095386ed604811",
+          "regions": 47,
+          "ocr": {
+            "regions": 47,
+            "matchedRegions": 42,
+            "ocrItems": 44,
+            "unassignedItems": 0,
+            "referenceChars": 590,
+            "characterErrors": 117,
+            "cer": 0.19830508474576272,
+            "referenceWords": 116,
+            "wordErrors": 54,
+            "wer": 0.46551724137931033
+          },
+          "parser": {
+            "success": true,
+            "warnings": [
+              "OCR_LOW_CONF"
+            ],
+            "textChars": 1100
+          },
+          "critical": {
+            "expected": 3,
+            "found": 3,
+            "checks": [
+              {
+                "id": "entity:2",
+                "found": true
+              },
+              {
+                "id": "entity:3",
+                "found": true
+              },
+              {
+                "id": "entity:4",
+                "found": true
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 2,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 726
+        },
+        {
+          "id": "82491256",
+          "image_sha256": "502fd8142fba98fd13137e083a301e0a867329b79dd2591fc2c8044e0d8f1af7",
+          "label_sha256": "03e9917e5f8481d0d37c181b81506905620168a1f3f1703311ad8f5dd26ce292",
+          "regions": 19,
+          "ocr": {
+            "regions": 19,
+            "matchedRegions": 19,
+            "ocrItems": 34,
+            "unassignedItems": 0,
+            "referenceChars": 459,
+            "characterErrors": 21,
+            "cer": 0.0457516339869281,
+            "referenceWords": 71,
+            "wordErrors": 18,
+            "wer": 0.2535211267605634
+          },
+          "parser": {
+            "success": true,
+            "warnings": [
+              "OCR_LOW_CONF"
+            ],
+            "textChars": 508
+          },
+          "critical": {
+            "expected": 2,
+            "found": 2,
+            "checks": [
+              {
+                "id": "entity:13",
+                "found": true
+              },
+              {
+                "id": "entity:14",
+                "found": true
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 4,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 635
+        },
+        {
+          "id": "82504862",
+          "image_sha256": "9a66fa4013bf93b9ba4e959feef7d6b2e278b714ca9d3d347b35aeb305b92626",
+          "label_sha256": "5b4d09512f19528bff137a9b84bb6a874a7ab515b2d175201fbd9537b520db9f",
+          "regions": 18,
+          "ocr": {
+            "regions": 18,
+            "matchedRegions": 18,
+            "ocrItems": 32,
+            "unassignedItems": 0,
+            "referenceChars": 427,
+            "characterErrors": 46,
+            "cer": 0.10772833723653395,
+            "referenceWords": 63,
+            "wordErrors": 27,
+            "wer": 0.42857142857142855
+          },
+          "parser": {
+            "success": true,
+            "warnings": [
+              "OCR_LOW_CONF"
+            ],
+            "textChars": 501
+          },
+          "critical": {
+            "expected": 1,
+            "found": 1,
+            "checks": [
+              {
+                "id": "entity:14",
+                "found": true
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 4,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 574
+        },
+        {
+          "id": "82562350",
+          "image_sha256": "38330e56545f7ef03ccf67b22330388e21444b4935e058d447f42cf329f50bdb",
+          "label_sha256": "b4d8e8d5d8c1e744c7f08f6aeb412935a27cfa3b683e939f44f5eddb278934e5",
+          "regions": 35,
+          "ocr": {
+            "regions": 35,
+            "matchedRegions": 27,
+            "ocrItems": 40,
+            "unassignedItems": 0,
+            "referenceChars": 1130,
+            "characterErrors": 689,
+            "cer": 0.6097345132743363,
+            "referenceWords": 192,
+            "wordErrors": 131,
+            "wer": 0.6822916666666666
+          },
+          "parser": {
+            "success": true,
+            "warnings": [
+              "OCR_LOW_CONF"
+            ],
+            "textChars": 738
+          },
+          "critical": {
+            "expected": 3,
+            "found": 2,
+            "checks": [
+              {
+                "id": "entity:13",
+                "found": true
+              },
+              {
+                "id": "entity:24",
+                "found": true
+              },
+              {
+                "id": "entity:25",
+                "found": false
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 3,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 806
+        },
+        {
+          "id": "82573104",
+          "image_sha256": "b0e9f8efecc27dd6445f849aace051078ecbb300b8c6440731d080c39697f18f",
+          "label_sha256": "66f29a1e65f7a82b6b746b84c2945b9618a3fb9e0a77d6efb23c47e8f657bcb8",
+          "regions": 14,
+          "ocr": {
+            "regions": 14,
+            "matchedRegions": 14,
+            "ocrItems": 37,
+            "unassignedItems": 2,
+            "referenceChars": 790,
+            "characterErrors": 53,
+            "cer": 0.0670886075949367,
+            "referenceWords": 135,
+            "wordErrors": 48,
+            "wer": 0.35555555555555557
+          },
+          "parser": {
+            "success": true,
+            "warnings": [
+              "OCR_LOW_CONF"
+            ],
+            "textChars": 1183
+          },
+          "critical": {
+            "expected": 1,
+            "found": 1,
+            "checks": [
+              {
+                "id": "entity:11",
+                "found": true
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 4,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 746
+        },
+        {
+          "id": "82837252",
+          "image_sha256": "8c7f9d964d5f71a8cc22d378292581f6e2437bbf818e6ddae7e44599ed4cf03d",
+          "label_sha256": "20b426a8a903a514240c1e3d9ba7d249c246dd2c6df4bb16a9a6f97d9eb08336",
+          "regions": 24,
+          "ocr": {
+            "regions": 24,
+            "matchedRegions": 23,
+            "ocrItems": 60,
+            "unassignedItems": 11,
+            "referenceChars": 598,
+            "characterErrors": 34,
+            "cer": 0.056856187290969896,
+            "referenceWords": 112,
+            "wordErrors": 21,
+            "wer": 0.1875
+          },
+          "parser": {
+            "success": true,
+            "warnings": [
+              "OCR_LOW_CONF"
+            ],
+            "textChars": 1210
+          },
+          "critical": {
+            "expected": 1,
+            "found": 0,
+            "checks": [
+              {
+                "id": "entity:9",
+                "found": false
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 9,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 935
+        },
+        {
+          "id": "83443897",
+          "image_sha256": "31c917bac04ed2a16c754ac75ef80ed923908c9837108d189c2c9b48e3aa6309",
+          "label_sha256": "c7cd360aefed85d2d7de07f8e43806c5d27270789bcef81c0af91c9e70849af5",
+          "regions": 33,
+          "ocr": {
+            "regions": 33,
+            "matchedRegions": 26,
+            "ocrItems": 40,
+            "unassignedItems": 0,
+            "referenceChars": 1131,
+            "characterErrors": 414,
+            "cer": 0.3660477453580902,
+            "referenceWords": 195,
+            "wordErrors": 112,
+            "wer": 0.5743589743589743
+          },
+          "parser": {
+            "success": true,
+            "warnings": [
+              "OCR_LOW_CONF"
+            ],
+            "textChars": 938
+          },
+          "critical": {
+            "expected": 3,
+            "found": 2,
+            "checks": [
+              {
+                "id": "entity:8",
+                "found": true
+              },
+              {
+                "id": "entity:15",
+                "found": true
+              },
+              {
+                "id": "entity:16",
+                "found": false
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 1,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 838
+        },
+        {
+          "id": "83553333_3334",
+          "image_sha256": "5811f1bc34e499edd7d6cf9fc7e1473b4bdb71005ec35ff5f6ba25ba1a6326c7",
+          "label_sha256": "485795a9ff9d2e16f5c71a5e4dade312f69341f365ffb89a68eeb618826c9f53",
+          "regions": 51,
+          "ocr": {
+            "regions": 51,
+            "matchedRegions": 45,
+            "ocrItems": 57,
+            "unassignedItems": 0,
+            "referenceChars": 1181,
+            "characterErrors": 481,
+            "cer": 0.4072819644369179,
+            "referenceWords": 204,
+            "wordErrors": 124,
+            "wer": 0.6078431372549019
+          },
+          "parser": {
+            "success": true,
+            "warnings": [
+              "OCR_LOW_CONF"
+            ],
+            "textChars": 1705
+          },
+          "critical": {
+            "expected": 3,
+            "found": 2,
+            "checks": [
+              {
+                "id": "entity:6",
+                "found": true
+              },
+              {
+                "id": "entity:7",
+                "found": true
+              },
+              {
+                "id": "entity:20",
+                "found": false
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 5,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 1021
+        },
+        {
+          "id": "83573282",
+          "image_sha256": "fd29914a80290994db59fc3b2c2b601905d871902bc4a38ab56423180a973d33",
+          "label_sha256": "fb01147dfcf25286b067f2ec6760a19eaa415bee17fef2bc0772ca16279fcace",
+          "regions": 55,
+          "ocr": {
+            "regions": 55,
+            "matchedRegions": 49,
+            "ocrItems": 61,
+            "unassignedItems": 1,
+            "referenceChars": 1691,
+            "characterErrors": 822,
+            "cer": 0.4861028976936724,
+            "referenceWords": 299,
+            "wordErrors": 184,
+            "wer": 0.6153846153846154
+          },
+          "parser": {
+            "success": true,
+            "warnings": [
+              "OCR_LOW_CONF"
+            ],
+            "textChars": 1627
+          },
+          "critical": {
+            "expected": 3,
+            "found": 1,
+            "checks": [
+              {
+                "id": "entity:16",
+                "found": true
+              },
+              {
+                "id": "entity:18",
+                "found": false
+              },
+              {
+                "id": "entity:19",
+                "found": false
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 2,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 1100
+        },
+        {
+          "id": "83594639",
+          "image_sha256": "8e3c3a88b882d5b833779ede94e569243ec5ecbcf978da83c39222e58ef44264",
+          "label_sha256": "f6dad07c95d032acda14ebab951f1bebe89f66e3a413092c45821e8c3a51c98e",
+          "regions": 21,
+          "ocr": {
+            "regions": 21,
+            "matchedRegions": 20,
+            "ocrItems": 36,
+            "unassignedItems": 0,
+            "referenceChars": 508,
+            "characterErrors": 98,
+            "cer": 0.19291338582677164,
+            "referenceWords": 87,
+            "wordErrors": 44,
+            "wer": 0.5057471264367817
+          },
+          "parser": {
+            "success": true,
+            "warnings": [],
+            "textChars": 885
+          },
+          "critical": {
+            "expected": 3,
+            "found": 2,
+            "checks": [
+              {
+                "id": "entity:4",
+                "found": true
+              },
+              {
+                "id": "entity:14",
+                "found": false
+              },
+              {
+                "id": "entity:20",
+                "found": true
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 0,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 596
+        },
+        {
+          "id": "83624198",
+          "image_sha256": "136a8c44dda39b96f80787cdba19c267088e8292c9c27cef24abe70f50de4e5a",
+          "label_sha256": "7d4e1f8c6e6d176edb3cbe5785a05702b9125f25ccc6061a6b721e24a6831b6b",
+          "regions": 35,
+          "ocr": {
+            "regions": 35,
+            "matchedRegions": 27,
+            "ocrItems": 46,
+            "unassignedItems": 7,
+            "referenceChars": 1106,
+            "characterErrors": 322,
+            "cer": 0.2911392405063291,
+            "referenceWords": 190,
+            "wordErrors": 88,
+            "wer": 0.4631578947368421
+          },
+          "parser": {
+            "success": true,
+            "warnings": [
+              "OCR_LOW_CONF"
+            ],
+            "textChars": 1107
+          },
+          "critical": {
+            "expected": 3,
+            "found": 2,
+            "checks": [
+              {
+                "id": "entity:10",
+                "found": true
+              },
+              {
+                "id": "entity:17",
+                "found": true
+              },
+              {
+                "id": "entity:18",
+                "found": false
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 1,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 915
+        },
+        {
+          "id": "83635935",
+          "image_sha256": "d6af7d1fd24ea1ef69f8ba6cfd1d8265f874333bda44ea1ecd5bd00bbd12b882",
+          "label_sha256": "0d67db62cb4e3c1b0dd26cd9bb70b1045728bfa85006691db8650488cdd0fb20",
+          "regions": 17,
+          "ocr": {
+            "regions": 17,
+            "matchedRegions": 16,
+            "ocrItems": 30,
+            "unassignedItems": 0,
+            "referenceChars": 816,
+            "characterErrors": 342,
+            "cer": 0.41911764705882354,
+            "referenceWords": 141,
+            "wordErrors": 106,
+            "wer": 0.75177304964539
+          },
+          "parser": {
+            "success": true,
+            "warnings": [
+              "OCR_LOW_CONF"
+            ],
+            "textChars": 1040
+          },
+          "critical": {
+            "expected": 2,
+            "found": 0,
+            "checks": [
+              {
+                "id": "entity:10",
+                "found": false
+              },
+              {
+                "id": "entity:15",
+                "found": false
+              }
+            ]
+          },
+          "engine": {
+            "droppedLowConf": 3,
+            "truncatedBoxes": 0
+          },
+          "elapsedMs": 809
+        }
+      ],
+      "summary": {
+        "documents": 20,
+        "pages": 20,
+        "regions": 792,
+        "matchedRegions": 715,
+        "referenceChars": 19240,
+        "characterErrors": 6127,
+        "cer": 0.31845114345114345,
+        "referenceWords": 3393,
+        "wordErrors": 1715,
+        "wer": 0.5054524020041261,
+        "parserSuccess": 20,
+        "criticalExpected": 48,
+        "criticalFound": 34
+      }
+    }
+  }
+}
