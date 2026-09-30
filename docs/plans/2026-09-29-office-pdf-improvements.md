@@ -244,7 +244,7 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 
 - [x] `zero1_dedoc`을 정식 선택지로 추가하고 기존 bounded NDJSON worker 경계·경로 제한·timeout을 재사용한다. 공통 worker 코드를 복제하지 않는다.
 - [x] `kordoc` 이름은 호환 별칭으로 제공하되 결과 provenance에는 **실제 Zero1 버전과 SHA**를 기록한다. 옛 Kordoc 4.16.1 실행으로 오해시키지 않는다.
-- [ ] PDF/Office `auto` 변경은 별도 승격 PR로 남긴다. 의미 있는 텍스트 없는 OCR 필요 출력, 잘림 경고, 미지원 형식이 downstream에서 정상 내용으로 승격되지 않도록 기존 review 경로에 전달한다.
+- [x] PDF/Office `auto` 변경은 평가 승인 전 보류하고 별도 승격 PR로 남긴다. [02ontology PR #98](https://github.com/timothyc012/02ontology/pull/98)에서 의미 있는 텍스트 없는 OCR 필요 출력, 잘림 경고, 미지원 형식을 review 경로에 전달하고 근거 생성을 차단했다.
 
 **검증:** adapter/selection contract tests와 기존 이름 호환성. **의존성:** 도입할 각 트랙의 게이트 통과와 검증된 fork commit 확정.
 
@@ -260,13 +260,13 @@ upstream changelog의 ODL 수치 약 0.960과 우리 고정 실행의 0.937을 �
 
 ### I3. 02ontology 평가 이미지·버전 고정
 
-**상태:** lean image와 OCR-enabled image를 local Docker Desktop에서 검증 완료. 저장된 WSL SSH IP가 오래되어 Mac에서 접속이 시간 초과됐다. Windows 호스트의 `wsl.exe` Docker는 사용자 세션에서 동작했으며, Zero1 후보 이미지의 WSL 전용 smoke 기록은 아직 없다.
+**상태:** lean/OCR 이미지를 local Docker Desktop에서, 최신 OCR 후보를 Windows 호스트의 WSL Docker amd64에서 검증했다. [02ontology PR #99](https://github.com/timothyc012/02ontology/pull/99)에 소스·패키지·Node base·이미지 digest와 6/6 오프라인 worker 결과를 기록했다. 이는 후보 평가 이미지이며 운영 기본 이미지/파서 변경은 아니다.
 
 **별도 저장소 작업, 범위 S/M:** `deploy/zero1-dedoc/Dockerfile`(신규), 운영 가이드, 이미지 smoke script.
 
 - [x] 검증된 commit에서 빌드한 tarball SHA/패키지 무결성과 Node 이미지 digest를 고정한다. runtime `npx`나 moving `main` 설치를 사용하지 않는다.
 - [x] 모델 캐시·언어·model hash를 패키지 버전과 함께 기록하고, secret 없는 격리 parser 실행 경계를 재사용한다.
-- [ ] WSL Docker에서 CLI/worker smoke와 오프라인 OCR을 실행해 연결 가능한 이미지를 산출한다. 운영 서비스 교체는 해당 배포 범위에서 검토한다.
+- [x] WSL Docker에서 CLI 모델 상태(영어·독일어 각각 3/3 준비)와 NDJSON worker smoke·오프라인 OCR을 실행해 amd64 후보 이미지를 산출했다. 운영 서비스 교체는 별도 배포 범위에서 검토한다.
 
 **검증:** Node 20 이미지의 parser identity, SHA, NDJSON ready/response, 제한 경로·누락 모델·timeout 시나리오. **의존성:** I2.
 
@@ -282,6 +282,28 @@ clean German and English scan gates pass. The Lidl image-only PDF visual check
 is 30/30; the old 10-page CER/WER reference is superseded because its hidden
 text layer disagrees with the rendered page. The saved WSL SSH IP is stale;
 the candidate image still needs a recorded WSL-specific smoke.
+
+### 2026-09-30 implementation closeout and promotion decision
+
+[02ontology PR #98](https://github.com/timothyc012/02ontology/pull/98) merged
+review routing for Zero1 OCR/partial-output warnings. Preview marks these
+results `review_required`; staging holds them as `ambiguous` without evidence
+spans. [02ontology PR #99](https://github.com/timothyc012/02ontology/pull/99)
+recorded a WSL Docker 29.8.1 amd64 candidate image from Zero1 main
+`b397821f48494b65ad36a204eb03f30f126536df`. With `--network none`, the
+worker passed six hash-pinned public PDFs: 11 BMF table-shape pages, five form
+identifiers, and four German/English image-only or mixed OCR routes. English
+OCR still emitted `OCR_LOW_CONF`, as the review gate expects. The
+[WSL receipt](https://github.com/timothyc012/02ontology/blob/main/docs/verification/zero1-candidate-wsl-2026-09-30.json)
+records image and input hashes.
+
+All implementation checkboxes above have evidence. The 40-page bilingual
+field-region OCR holdout remains below scan-promotion quality (German
+CER/WER 30.31%/49.51%, English 31.85%/50.55%); it measures field detection
+and segmentation as well as recognition. Therefore OCR quality approval and
+default scan/PDF backend promotion are **not** granted by this closeout.
+02ontology still sends `ocr="off"` for Zero1 and keeps its existing scan route,
+operating package SHA, and PDF `auto` selection.
 
 권장 순서: **G0 → U1/U2 → P1 → E1/D1/H1 → T1 → X1/X2 → O1/O2/O3 → I1/I2/I3**. P1 진단에서 발견된 근거가 T1 설계를 결정한다. Excel 보존 테스트는 후속 포맷 변경 전에 확정한다.
 
