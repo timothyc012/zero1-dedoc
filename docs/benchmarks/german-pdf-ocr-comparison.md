@@ -137,6 +137,30 @@ non-Latin decorative glyph. A one-page probe does not establish broad German
 advertising quality. Neither this change nor the invoice corpus grants scan
 `auto` promotion in 02ontology.
 
+## WSL Docker runtime verification
+
+The [WSL receipt](data/german-ocr-wsl-receipt.json) records an amd64 image built
+from the reviewed package at source
+`dd3403ec3f382e331e03f3a3c8f4e4b3f659a125`, package SHA-256
+`52b8a4417522891067598785feca1b48a95a1ed824493cb16ba5c99afa92edad`,
+and the fixed Node 20 base index. The image ID is
+`sha256:e44f0a9e86b25186abbbfee133879919bdb4425f8397ac4f44034a64076171ff`.
+English models were 3/3 ready and German PP-OCRv6 models were 2/2 ready with
+SHA verification. With `--network none`, six PDFs passed one serialized worker
+request at a time: the complete BMF table-shape gate, five form identifiers,
+German/English image-only OCR anchors, and the four preselected date strings
+from the first two XFUND forms.
+
+On this WSL host, native BMF/form parsing took about 1.5/1.9 seconds. German
+single-page OCR took 52.4, 112.5, and 70.5 seconds, while the English scan took
+2.5 seconds. The initial six-request runner reached its 240-second aggregate
+deadline; the final serialized timings sum to about 241 seconds. The final
+receipt uses a 120-second response limit for each request, matching the
+adapter's one-request-at-a-time pattern. This **accuracy improvement has a CPU
+latency cost**. Callers using a 60-second deadline may time out on these German
+pages. This image is an evaluation runtime; 02ontology's operating parser pins,
+its current `ocr="off"` request, and `auto` routing were not changed.
+
 ## Reproduce
 
 ```sh
