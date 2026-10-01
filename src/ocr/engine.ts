@@ -26,7 +26,7 @@
  */
 
 import type { InferenceSession } from "onnxruntime-node"
-import { createOcrSessions, ocrDevice, ocrGpuDeviceId, type OcrSession } from "./execution.js"
+import { createOcrSessions, ocrDevice, ocrGpuDeviceId, ocrSameWidthRecBatch, type OcrSession } from "./execution.js"
 import { readFile } from "fs/promises"
 import { availableParallelism } from "node:os"
 import { ocrCpuThreads } from "./cpu-threads.js"
@@ -152,6 +152,7 @@ export class OcrEngine {
   private ort: typeof import("onnxruntime-node")
   private sharp: SharpFactory
   private generation?: 6
+  private sameWidthRecBatch: number
 
   private constructor(parts: {
     det: OcrSession
@@ -160,6 +161,7 @@ export class OcrEngine {
     ort: typeof import("onnxruntime-node")
     sharp: SharpFactory
     generation?: 6
+    sameWidthRecBatch: number
   }) {
     this.det = parts.det
     this.rec = parts.rec
@@ -167,6 +169,7 @@ export class OcrEngine {
     this.ort = parts.ort
     this.sharp = parts.sharp
     this.generation = parts.generation
+    this.sameWidthRecBatch = parts.sameWidthRecBatch
   }
 
   static async create(language?: OcrLanguage): Promise<OcrEngine> {
@@ -184,6 +187,7 @@ export class OcrEngine {
       typeof sharpAny === "function" ? sharpAny : (sharpAny.default ?? (sharpAny as unknown as SharpFactory))
 
     const profile = getOcrModelProfile(language)
+    const sameWidthRecBatch = ocrSameWidthRecBatch(profile.generation, process.env.ZERO1_OCR_REC_BATCH)
     const dir = profile.directory
     const threads = ocrCpuThreads(profile.generation, availableParallelism(), process.env.ZERO1_OCR_THREADS)
     const sessionOpts: import("onnxruntime-node").InferenceSession.SessionOptions = {
@@ -198,7 +202,7 @@ export class OcrEngine {
     const [det, rec] = await createOcrSessions(ortMod,
       [join(dir, profile.det.filename), join(dir, profile.rec.filename)], sessionOpts, device, deviceId)
 
-    return new OcrEngine({ det, rec, dict, ort: ortMod, sharp: sharpMod, generation: profile.generation })
+    return new OcrEngine({ det, rec, dict, ort: ortMod, sharp: sharpMod, generation: profile.generation, sameWidthRecBatch })
   }
 
   /** Selected backends, including any per-model CPU fallback. */
@@ -514,9 +518,14 @@ export class OcrEngine {
     const results: Array<{ text: string; confidence: number; steps: number[]; stepPx: number } | null> = new Array(jobs.length).fill(null)
     const plane = REC_HEIGHT
     for (let s = 0; s < order.length;) {
+      // A CPU fallback can change the provider during the preceding run.
+      // Keep each GPU sample's single-line padding, and stop batching on CPU.
+      const sameWidthBatch = this.generation === 6 && this.rec.provider === "dml" && batchSize === 1 && this.sameWidthRecBatch > 1
+      const maxBatchSize = sameWidthBatch ? this.sameWidthRecBatch : Math.max(1, batchSize)
       // 폭 오름차순이라 배치 마지막 원소가 최대 폭
       let e = s + 1
-      while (e < order.length && e - s < Math.max(1, batchSize)
+      while (e < order.length && e - s < maxBatchSize
+        && (!sameWidthBatch || Math.max(REC_MIN_WIDTH, crops[order[e]].w) === Math.max(REC_MIN_WIDTH, crops[order[s]].w))
         && (e - s + 1) * Math.max(REC_MIN_WIDTH, crops[order[e]].w) * plane <= REC_BATCH_MAX_PIXELS) e++
       const idx = order.slice(s, e)
       const bw = Math.max(REC_MIN_WIDTH, crops[idx[idx.length - 1]].w)

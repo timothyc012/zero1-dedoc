@@ -61,6 +61,10 @@ node dist/cli.js german-scan.pdf --ocr --ocr-language de -o scan.md
 
 ### German OCR CPU budget
 
+For German OCR on Windows DirectML, `ZERO1_OCR_REC_BATCH=32` optionally recognizes up to 32 lines with the same padded width together. The default is 1; values 1–32 are accepted. Each line keeps its input pixels, padding and decoder, though GPU floating-point confidence can still differ across batch shapes. CPU, CUDA, Korean and English retain their existing recognition batching. If automatic GPU inference falls back to CPU, subsequent batches return to single-line recognition. The existing tensor pixel cap may reduce the effective batch size. Measure your documents: short table cells benefit more than long prose, and new GPU batch shapes incur first-run costs.
+
+Keep multiple pages/files in one process to reuse engines and GPU kernels. The CLI accepts multiple input paths, and `parse()` reuses engines across calls. Startup and first-run costs still apply once per process. Use `--no-images` (or `images:false`) when extracted image bytes are unnecessary.
+
 On CPU hosts, set `ZERO1_OCR_THREADS` before starting the process to choose 1–64 native threads (capped by available CPUs). The German default remains four. Eight threads reduced three German WSL worker test PDFs by 20–31%; the dense form still took about 85 seconds. Measure your host before changing its budget. [Further accuracy and performance evidence](docs/benchmarks/german-ocr-efficiency.md).
 
 ```sh

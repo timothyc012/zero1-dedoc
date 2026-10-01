@@ -8,6 +8,15 @@ type Runtime = {
   InferenceSession: { create(path: string, options: InferenceSession.SessionOptions): Promise<Session> }
 }
 
+/** Optional Windows/v6 recognition batches; CPU/CUDA routing stays unchanged. */
+export function ocrSameWidthRecBatch(generation:number|undefined, requested?:string):number {
+  if (requested === undefined) return 1
+  if (!/^[1-9]\d?$/.test(requested) || Number(requested) > 32) {
+    throw new Error("ZERO1_OCR_REC_BATCH must be an integer from 1 to 32")
+  }
+  return generation === 6 ? Number(requested) : 1
+}
+
 export function ocrDevice(value = "auto"): OcrDevice {
   if (value === "auto" || value === "cpu" || value === "gpu") return value
   throw new Error("ZERO1_OCR_DEVICE must be auto, cpu, or gpu")
