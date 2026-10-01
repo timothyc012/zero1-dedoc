@@ -33,6 +33,32 @@ The built `zero1-dedoc setup` command registers the local MCP bundle directly. I
 
 These are measured cases, not a claim of universal German or English accuracy. German OCR now uses SHA-pinned PP-OCRv6 medium models and oriented line crops; English and Korean retain their PP-OCRv5 profiles. Prepare the new German cache with `zero1-dedoc check-ocr-models --language de` before offline parsing. See the [German PDF comparison](docs/benchmarks/german-pdf-ocr-comparison.md) for fixed inputs, competitor settings, accuracy, and limits.
 
+### OCR GPU and CPU selection
+
+Built-in text OCR defaults to `ZERO1_OCR_DEVICE=auto`: it tries DirectML on
+Windows or CUDA on Linux when that backend is provided by `onnxruntime-node`.
+Runtimes without a supported GPU backend use CPU. Failed GPU initialization
+(hardware/drivers or model incompatibility) and failed GPU inference retry on
+CPU, with a diagnostic on stderr. Models and decoding rules stay
+the same; GPU floating-point results can still differ, so compare accuracy on
+your documents before treating a new backend as an equivalent benchmark.
+PDF rendering and image preprocessing still use CPU.
+
+Use `ZERO1_OCR_DEVICE=cpu` for reproducible CPU comparisons, or `gpu` to require
+GPU initialization/inference to succeed instead of silently retrying on CPU.
+Unsupported GPU operators may still run on CPU within ONNX Runtime. On a
+multi-GPU machine, `ZERO1_OCR_GPU_DEVICE_ID` selects a non-negative adapter index
+(default `0`; DirectML uses DXGI adapter order, CUDA uses CUDA device order).
+Changing these settings requires a new process/engine. No model download or
+additional dependency is introduced by GPU selection; Linux CUDA still needs
+compatible native CUDA/cuDNN libraries. Custom OCR providers are unaffected.
+
+```powershell
+$env:ZERO1_OCR_DEVICE = "auto"
+$env:ZERO1_OCR_GPU_DEVICE_ID = "1" # only when adapter 1 is the intended GPU
+node dist/cli.js german-scan.pdf --ocr --ocr-language de -o scan.md
+```
+
 ### German OCR CPU budget
 
 On CPU hosts, set `ZERO1_OCR_THREADS` before starting the process to choose 1–64 native threads (capped by available CPUs). The German default remains four. Eight threads reduced three German WSL worker test PDFs by 20–31%; the dense form still took about 85 seconds. Measure your host before changing its budget. [Further accuracy and performance evidence](docs/benchmarks/german-ocr-efficiency.md).

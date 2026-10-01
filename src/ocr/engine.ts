@@ -26,6 +26,7 @@
  */
 
 import type { InferenceSession } from "onnxruntime-node"
+import { createOcrSessions, ocrDevice, ocrGpuDeviceId, type OcrSession } from "./execution.js"
 import { readFile } from "fs/promises"
 import { availableParallelism } from "node:os"
 import { ocrCpuThreads } from "./cpu-threads.js"
@@ -145,16 +146,16 @@ interface SharpChain {
 interface LineJob { box: Box; rot: 0 | 90 | 270; group: number; join?: number; dotsBefore?: boolean; trimDots?: boolean; keep?: { x0: number; x1: number; y0: number; y1: number; bg: number } }
 
 export class OcrEngine {
-  private det: InferenceSession
-  private rec: InferenceSession
+  private det: OcrSession
+  private rec: OcrSession
   private dict: string[]
   private ort: typeof import("onnxruntime-node")
   private sharp: SharpFactory
   private generation?: 6
 
   private constructor(parts: {
-    det: InferenceSession
-    rec: InferenceSession
+    det: OcrSession
+    rec: OcrSession
     dict: string[]
     ort: typeof import("onnxruntime-node")
     sharp: SharpFactory
@@ -169,6 +170,8 @@ export class OcrEngine {
   }
 
   static async create(language?: OcrLanguage): Promise<OcrEngine> {
+    const device = ocrDevice(process.env.ZERO1_OCR_DEVICE)
+    const deviceId = ocrGpuDeviceId(process.env.ZERO1_OCR_GPU_DEVICE_ID)
     const [ortMod, sharpModRaw] = await Promise.all([
       tryImport<typeof import("onnxruntime-node")>("onnxruntime-node", () => import("onnxruntime-node")),
       tryImport<{ default?: SharpFactory } & SharpFactory>(
@@ -189,16 +192,17 @@ export class OcrEngine {
       logSeverityLevel: 3, // paddle2onnx 변환 잔여물 W 로그 폭주 억제
       ...(threads !== undefined ? { intraOpNumThreads: threads, interOpNumThreads: 1 } : {}),
     }
-    const [det, rec, dictBytes] = await Promise.all([
-      ortMod.InferenceSession.create(join(dir, profile.det.filename), sessionOpts),
-      ortMod.InferenceSession.create(join(dir, profile.rec.filename), sessionOpts),
-      readFile(join(dir, profile.dict?.filename ?? profile.rec.filename)),
-    ])
+    const dictBytes = await readFile(join(dir, profile.dict?.filename ?? profile.rec.filename))
     const dict = profile.dict ? parseCharacterDict(dictBytes.toString("utf-8")) : readOnnxCharacterDict(dictBytes)
     if (dict.length === 0) throw new Error("OCR 사전 파싱 실패 — 모델 캐시를 삭제 후 재다운로드하세요")
+    const [det, rec] = await createOcrSessions(ortMod,
+      [join(dir, profile.det.filename), join(dir, profile.rec.filename)], sessionOpts, device, deviceId)
 
     return new OcrEngine({ det, rec, dict, ort: ortMod, sharp: sharpMod, generation: profile.generation })
   }
+
+  /** Selected backends, including any per-model CPU fallback. */
+  get executionProviders(): readonly string[] { return [this.det.provider, this.rec.provider] }
 
   /** onnxruntime-node 1.14+ InferenceSession.release() — 구버전은 무시 */
   async destroy(): Promise<void> {
