@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -25,4 +29,21 @@ jobs:
           ONNXRUNTIME_NODE_INSTALL: skip
       - run: npm run typecheck
       - run: npm test
+      - run: npm run build
+
+  windows-ocr:
+    name: Windows OCR backend checks
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+        env:
+          ONNXRUNTIME_NODE_INSTALL: skip
+      - run: npm run typecheck
+      - name: Verify GPU selection, CPU fallback, and thread budgets
+        run: node --import tsx --test tests/ocr-execution.test.ts tests/ocr-cpu-threads.test.ts
       - run: npm run build
