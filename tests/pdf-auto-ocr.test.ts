@@ -2,7 +2,9 @@
 
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { execFileSync } from "node:child_process"
+import { fileURLToPath } from "node:url"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { parse } from "../src/index.js"
@@ -43,6 +45,28 @@ async function scanPdf(): Promise<ArrayBuffer | null> {
 }
 
 describe("텍스트층 없는 쪽 자동 OCR", () => {
+  it("worker off and omitted mode never invoke cached automatic OCR", async (t) => {
+    if (!(await getOcrModelStatus()).every(s => s.exists)) { t.skip("OCR 모델 미설치"); return }
+    const pdf = await scanPdf()
+    if (!pdf) { t.skip("sharp 미설치"); return }
+    const dir = mkdtempSync(join(tmpdir(), "zero1-worker-ocr-off-"))
+    try {
+      const file = join(dir, "scan.pdf")
+      writeFileSync(file, Buffer.from(pdf))
+      const cli = fileURLToPath(new URL("../src/cli.ts", import.meta.url))
+      const output = execFileSync(process.execPath, ["--import", "tsx", cli, "parse-worker"], {
+        encoding: "utf8", timeout: 60000,
+        input: [JSON.stringify({ id: 1, file, images: false, ocr: "off" }),
+          JSON.stringify({ id: 2, file, images: false }), JSON.stringify({ cmd: "quit" })].join("\n") + "\n",
+        stdio: ["pipe", "pipe", "ignore"],
+      })
+      for (const message of output.trim().split("\n").map(line => JSON.parse(line)).filter(m => m.id)) {
+        assert.equal(message.result.success, true)
+        assert.ok(!message.result.warnings?.some((w: {code: string}) => w.code === "OCR_APPLIED"), `request ${message.id} ran OCR`)
+        assert.ok(!message.result.markdown.includes("대한민국"))
+      }
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
   it("ocr 미지정 + 모델 캐시 있음 → 스캔 쪽을 읽는다", async (t) => {
     if (!(await getOcrModelStatus()).every(s => s.exists)) { t.skip("OCR 모델 미설치"); return }
     const pdf = await scanPdf()

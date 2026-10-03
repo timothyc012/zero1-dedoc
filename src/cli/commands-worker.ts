@@ -41,6 +41,7 @@ async function parseOne(req: ParseWorkerRequest & { file: string }): Promise<Par
     if (req.images === false) options.images = false
     if (req.ocr === "force") options.ocr = "force"
     else if (req.ocr === "auto") options.ocr = true
+    else options.ocr = false // Worker defaults to off, independent of the local model cache.
     if (req.ocrLanguage) options.ocrLanguage = req.ocrLanguage
     if (req.formulaOcr) options.formulaOcr = true
     if (req.password) options.password = req.password
