@@ -20,8 +20,9 @@ export async function loadGenerationImages(
   const seen = new Set<string>()
   for (const match of markdown.matchAll(/!\[[^\]]*\]\(([^)\s]+)\)/g)) {
     const url = match[1]
-    // Remote URLs are not fetched; inline data is handled by the generator.
-    if (/^[a-z][a-z0-9+.-]*:/i.test(url) || seen.has(url)) continue
+    const isWindowsAbsolutePath = /^[a-zA-Z]:[\\/]/.test(url)
+    // Remote URLs are not fetched; Windows drive paths are local paths, not schemes.
+    if ((/^[a-z][a-z0-9+.-]*:/i.test(url) && !isWindowsAbsolutePath) || seen.has(url)) continue
     seen.add(url)
     let name = url
     try { name = decodeURIComponent(url) } catch { /* Keep literal malformed percent sequences. */ }
