@@ -164,6 +164,26 @@ for (const command of ["render-worker", "parse-worker"]) {
   }
 }
 
+test("parse-worker successful request returns parsed content then quits with stdin open", async t => {
+  const g = guarded(t, conversion)
+  const r = await runNodeWorker([...g.args, "parse-worker"], {
+    input: JSON.stringify({ id: 42, file: DUMMY, images: false, ocr: "off" }) + '\n{"cmd":"quit"}\n',
+    timeout: 10000, env: g.env, waitForReady: true,
+  })
+  assertProcessExit(r, 0)
+  assert.equal(r.stderr, "")
+  const lines = r.stdout.trim().split("\n").map(line => JSON.parse(line))
+  assert.equal(lines.length, 2)
+  assert.equal(lines[0].ready, true)
+  assert.equal(lines[0].protocol, 1)
+  assert.equal(lines[1].id, 42)
+  assert.equal(lines[1].result.success, true, processDiagnostic(r))
+  assert.equal(lines[1].result.fileType, "hwpx")
+  assert.match(lines[1].result.markdown, /서면자문 의견서/)
+  assert.ok(lines[1].result.blocks.length > 0)
+  assert.equal(lines[1].result.images, undefined)
+})
+
 test("render-worker valid render positive control writes real SVG then quits", async t => {
   const { markdownToHwpx } = await import("../src/hwpx/generator.js")
   const file = join(dir, "render.hwpx"), out = join(dir, "render.svg")
