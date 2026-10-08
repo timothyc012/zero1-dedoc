@@ -222,6 +222,7 @@ export class OcrEngine {
    * 페이지 RGBA 픽셀 → 텍스트 라인 인식.
    * 반환 좌표는 입력 픽셀 기준. 라인은 위→아래, 좌→우 정렬.
    * @param stats 저신뢰(conf<0.5) 폐기 라인 카운트 출력 — 종전엔 무음 폐기라 관측 불가
+   * @param signal 단계 사이 협력 취소. 이미 실행 중인 sharp/ONNX 호출은 종료까지 기다린다.
    */
   async recognizePage(
     rgba: Uint8Array,
@@ -230,24 +231,26 @@ export class OcrEngine {
     stats?: OcrPageStats,
     tuning: Readonly<OcrTuning> = DEFAULT_OCR_TUNING,
     cellRules: Array<{ x1: number; y1: number; y2: number; thicknessPx: number }> = [],
+    signal?: AbortSignal,
   ): Promise<OcrItem[]> {
+    signal?.throwIfAborted()
     if (this.generation === 6) {
       // A single detailed pass keeps line geometry separate. Legacy cross-scale
       // row coalescing can combine an invoice name and address into one box.
       const v6Tuning = { ...tuning, detLongSide: 1760, detBoxThresh: 0.5, detUnclip: 1.4,
         trimEdges: false, postprocess: false, tightBoxes: false, splitTall: false,
         splitLeaders: false, minInkContrast: 0 }
-      return this.recognizeSinglePass(rgba, width, height, stats, v6Tuning, cellRules, false)
+      return this.recognizeSinglePass(rgba, width, height, stats, v6Tuning, cellRules, false, signal)
     }
     const detailTuning = ocrTuningForImage(width, height, tuning)
     if (detailTuning === tuning) {
-      return this.recognizeSinglePass(rgba, width, height, stats, tuning, cellRules, true)
+      return this.recognizeSinglePass(rgba, width, height, stats, tuning, cellRules, true, signal)
     }
 
     const coarseStats: OcrPageStats = { droppedLowConf: 0 }
     const detailStats: OcrPageStats = { droppedLowConf: 0 }
-    const coarse = await this.recognizeSinglePass(rgba, width, height, coarseStats, tuning, cellRules, false)
-    const detail = await this.recognizeSinglePass(rgba, width, height, detailStats, detailTuning, cellRules, true)
+    const coarse = await this.recognizeSinglePass(rgba, width, height, coarseStats, tuning, cellRules, false, signal)
+    const detail = await this.recognizeSinglePass(rgba, width, height, detailStats, detailTuning, cellRules, true, signal)
     if (stats) {
       stats.droppedLowConf += Math.max(coarseStats.droppedLowConf, detailStats.droppedLowConf)
       stats.truncatedBoxes = (stats.truncatedBoxes ?? 0) + Math.max(coarseStats.truncatedBoxes ?? 0, detailStats.truncatedBoxes ?? 0)
@@ -263,10 +266,12 @@ export class OcrEngine {
     tuning: Readonly<OcrTuning>,
     cellRules: Array<{ x1: number; y1: number; y2: number; thicknessPx: number }>,
     allowTiles: boolean,
+    signal?: AbortSignal,
   ): Promise<OcrItem[]> {
+    signal?.throwIfAborted()
     if (width < DET_MIN_SIZE || height < DET_MIN_SIZE) return []
     const pageTuning = tuning
-    const detected = await this.detect(rgba, width, height, tuning, stats, allowTiles)
+    const detected = await this.detect(rgba, width, height, tuning, stats, allowTiles, signal)
     const boxes = cellRules.length ? detected.flatMap(b => splitBoxAtCellRules(b, cellRules)) : detected
 
     // 박스 픽셀 분석 → 인식 작업(라인) 목록. group = 한 결과로 합칠 후보 묶음(회전 후보)
@@ -329,7 +334,7 @@ export class OcrEngine {
       jobs.push({ box: b, rot: 0, group: group++ })
     }
 
-    const results = await this.recognizeJobs(rgba, width, jobs, pageTuning.recBatch)
+    const results = await this.recognizeJobs(rgba, width, jobs, pageTuning.recBatch, signal)
 
     // 회전 후보 그룹은 최고 신뢰도 하나만
     const best = new Map<number, { job: LineJob; text: string; confidence: number; steps: number[]; stepPx: number }>()
@@ -414,10 +419,12 @@ export class OcrEngine {
     tuning: Readonly<OcrTuning>,
     stats?: OcrPageStats,
     allowTiles = true,
+    signal?: AbortSignal,
   ): Promise<Box[]> {
+    signal?.throwIfAborted()
     const tiles = allowTiles ? planDetectionTiles(width, height, tuning.detLongSide) : [{ x: 0, y: 0, width, height }]
     if (tiles.length === 1) {
-      const result = await this.detectRegion(rgba, width, height, tuning)
+      const result = await this.detectRegion(rgba, width, height, tuning, signal)
       if (stats) stats.truncatedBoxes = (stats.truncatedBoxes ?? 0) + result.truncatedBoxes
       return result.boxes
     }
@@ -426,12 +433,13 @@ export class OcrEngine {
     // different page context and can miss a title/banner that the global pass
     // sees, so tiles contribute detections instead of replacing that pass.
     const fullPage = { x: 0, y: 0, width, height }
-    const coarse = await this.detectRegion(rgba, width, height, tuning)
+    const coarse = await this.detectRegion(rgba, width, height, tuning, signal)
     const detections = [{ tile: fullPage, boxes: coarse.boxes }]
     let truncatedBoxes = coarse.truncatedBoxes
     for (const tile of tiles) {
+      signal?.throwIfAborted()
       const pixels = cropRgba(rgba, width, tile)
-      const result = await this.detectRegion(pixels, tile.width, tile.height, tuning)
+      const result = await this.detectRegion(pixels, tile.width, tile.height, tuning, signal)
       truncatedBoxes += result.truncatedBoxes
       detections.push({ tile, boxes: result.boxes })
     }
@@ -444,7 +452,9 @@ export class OcrEngine {
     width: number,
     height: number,
     tuning: Readonly<OcrTuning>,
+    signal?: AbortSignal,
   ): Promise<{ boxes: Box[]; truncatedBoxes: number }> {
+    signal?.throwIfAborted()
     const ratio = tuning.detLongSide / Math.max(width, height)
     const dw = Math.max(32, Math.round((width * ratio) / 32) * 32)
     const dh = Math.max(32, Math.round((height * ratio) / 32) * 32)
@@ -454,6 +464,7 @@ export class OcrEngine {
       .removeAlpha()
       .raw()
       .toBuffer()
+    signal?.throwIfAborted()
 
     // HWC RGB → CHW BGR float32 정규화
     const plane = dw * dh
@@ -471,6 +482,7 @@ export class OcrEngine {
 
     const tensor = new this.ort.Tensor("float32", input, [1, 3, dh, dw])
     const out = await this.det.run({ [this.det.inputNames[0]]: tensor })
+    signal?.throwIfAborted()
     const probMap = out[this.det.outputNames[0]].data as Float32Array
 
     if (this.generation === 6) {
@@ -512,12 +524,15 @@ export class OcrEngine {
     pageW: number,
     jobs: LineJob[],
     batchSize: number,
+    signal?: AbortSignal,
   ): Promise<Array<{ text: string; confidence: number; steps: number[]; stepPx: number } | null>> {
+    signal?.throwIfAborted()
     const crops = jobs.map(j => lineCrop(rgba, pageW, j.box, j.rot, j.keep))
     const order = crops.map((_, i) => i).sort((a, b) => crops[a].w - crops[b].w)
     const results: Array<{ text: string; confidence: number; steps: number[]; stepPx: number } | null> = new Array(jobs.length).fill(null)
     const plane = REC_HEIGHT
     for (let s = 0; s < order.length;) {
+      signal?.throwIfAborted()
       // A CPU fallback can change the provider during the preceding run.
       // Keep each GPU sample's single-line padding, and stop batching on CPU.
       const sameWidthBatch = this.generation === 6 && this.rec.provider === "dml" && batchSize === 1 && this.sameWidthRecBatch > 1
@@ -549,6 +564,7 @@ export class OcrEngine {
       })
       const tensor = new this.ort.Tensor("float32", input, [n, 3, REC_HEIGHT, bw])
       const out = await this.rec.run({ [this.rec.inputNames[0]]: tensor })
+      signal?.throwIfAborted()
       const logits = out[this.rec.outputNames[0]]
       const [, T, C] = logits.dims as number[]
       if (this.generation === 6 && C !== this.dict.length + 2) throw new Error("OCR recognizer/alphabet class mismatch")

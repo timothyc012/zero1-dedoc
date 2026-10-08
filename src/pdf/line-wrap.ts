@@ -18,6 +18,7 @@
  */
 
 import type { BoundingBox, IRBlock } from "../types.js"
+import { stripControlChars } from "./quality.js"
 
 /** 줄 글에서 판정에 방해되는 마크업 — 밑줄·취소선 표시 (page-blocks 가 아이템 글에 감싼 것) */
 const MARKUP = /<\/?u>|~~/g
@@ -251,6 +252,22 @@ const titleLike = (text: string): boolean => {
  *  gap 은 그 사이 이음자 길이, tail 은 뒤 쪽 블록(쪽 번호·기하·모양만 쓴다). 세 쪽 넘게 이으면 앞에서부터 차례로 쌓인다 */
 const PAGE_BREAK_JOINS = new WeakMap<BoundingBox, { head: string; gap: number; tail: IRBlock }[]>()
 
+/** Keep saved page boundaries in the same text coordinate space as character cleanup. */
+export function mapPageBreakText(block: IRBlock, transform: (text: string) => string): void {
+  if (!block.text) return
+  const cuts = block.bbox && PAGE_BREAK_JOINS.get(block.bbox)
+  if (cuts) for (const cut of cuts) {
+    const head = transform(cut.head)
+    cut.gap = transform(cut.head + " ".repeat(cut.gap)).length - head.length
+    cut.head = head
+  }
+  block.text = transform(block.text)
+}
+
+/** Link syntax is not a printed item marker; retain the visible label for boundary decisions. */
+const pageBoundaryText = (text: string): string =>
+  text.replace(MARKUP, "").replace(/(?<!!)\[([^\]\n]*)\]\(([^)\s]+)\)/g, "$1")
+
 /**
  * 쪽 넘김 꺾임 잇기 — 쪽 끝 문단의 끝줄이 그 쪽 본문 오른끝까지 차 있고 다음 쪽 첫 블록이 같은 글자 크기의 이어지는 문단이면
  * 한 문단으로 (…보여준다. 아이 ⏎ [다음 쪽] 들은 인공지능…). 머리말·꼬리말을 지운 뒤라 두 블록이 배열에서 이웃하면 쪽 끝과 쪽 머리다.
@@ -259,14 +276,13 @@ const PAGE_BREAK_JOINS = new WeakMap<BoundingBox, { head: string; gap: number; t
  */
 export function joinPageBreakWraps(blocks: IRBlock[], lex?: WrapLexicon): void {
   const pageRight = new Map<number, number>()
+  const pageLeft = new Map<number, number>()
+  const pageParagraphs = new Map<number, number>()
   for (const b of blocks) {
     if (b.type !== "paragraph" || !b.bbox || !b.pageNumber) continue
     pageRight.set(b.pageNumber, Math.max(pageRight.get(b.pageNumber) ?? -Infinity, b.bbox.x + b.bbox.width))
-  }
-  const pageLeft = new Map<number, number>()
-  for (const b of blocks) {
-    if (b.type !== "paragraph" || !b.bbox || !b.pageNumber) continue
     pageLeft.set(b.pageNumber, Math.min(pageLeft.get(b.pageNumber) ?? Infinity, b.bbox.x))
+    pageParagraphs.set(b.pageNumber, (pageParagraphs.get(b.pageNumber) ?? 0) + 1)
   }
   for (let i = blocks.length - 1; i > 0; i--) {
     const a = blocks[i - 1], b = blocks[i]
@@ -282,18 +298,24 @@ export function joinPageBreakWraps(blocks: IRBlock[], lex?: WrapLexicon): void {
     //   시작한 4곳은 같은 문단 3
     // · 글자 크기(정수 반올림)가 다른 짧은 제목꼴 블록은 제목·캡션. 크기만 다른 블록 34곳 중 같은 문단 24(긴 본문 — 쪽마다 반올림
     //   크기가 13·12 로 흔들리는 문서)라 크기만으로는 가르지 않는다
-    const bt = b.text.replace(MARKUP, "")
-    if (startsNewItem(a.text, b.text) || PAGE_REF_TAIL.test(a.text) || PAGE_ITEM_HEAD.test(bt)) continue
+    const at = pageBoundaryText(a.text), bt = pageBoundaryText(b.text)
+    if (startsNewItem(at, bt) || PAGE_REF_TAIL.test(at) || PAGE_ITEM_HEAD.test(bt)) continue
     if (PAGE_HEAD_MARK.test(bt) && !(/^[\u25a0-\u25ff]/.test(bt) && a.text.includes(bt[0]))) continue
     const firstLeft = b.bbox && PARA_FIRST_LEFT.get(b.bbox)
-    const indented = firstLeft === undefined || firstLeft - (pageLeft.get(b.pageNumber!) ?? firstLeft) >= 0.3 * fs
-    if (indented && SENTENCE_END.test(a.text.replace(MARKUP, "").trimEnd())) continue
-    if (Math.round(b.style?.fontSize ?? 0) !== Math.round(fs) && titleLike(b.text)) continue
+    // A sole paragraph cannot establish its own body margin. Use the preceding
+    // page conservatively rather than treating an indented singleton as flush.
+    const left = pageLeft.get(b.pageNumber!) ?? firstLeft ?? Infinity
+    const bodyLeft = pageParagraphs.get(b.pageNumber!) === 1 ? Math.min(left, pageLeft.get(a.pageNumber) ?? left) : left
+    const indented = firstLeft === undefined || firstLeft - bodyLeft >= 0.3 * fs
+    // Cleanup later removes these glyphs; they must not hide a sentence end.
+    // Keep the uncleaned next-page head above, where PUA can mark a new item.
+    if (indented && SENTENCE_END.test(stripControlChars(at).replace(/\uF000/g, "").trimEnd())) continue
+    if (Math.round(b.style?.fontSize ?? 0) !== Math.round(fs) && titleLike(bt)) continue
     // 탭으로 칸을 나눈 행("‘상록수’의 별도 정의\t일 년 내내 …") 다음 쪽 첫 줄이 짧은 제목꼴이면 표 같은 목록이 끝나고 새 제목이 선 것이다
     // (lo-pairs DOCX 쌍 3곳). 문장 속 탭 뒤로 문장이 이어지는 옛 문서("…crash로 인해서\tclinet에 … option은 ⏎ 무엇인가?")와 줄 앞 조항
     // 번호 뒤 탭(".2.3\t손상을 입은 후 … 고 ⏎ 가정한다;")은 칸 구분이 아니다
     if (/\t/.test(a.text.slice(a.text.lastIndexOf("\n") + 1).replace(/^\S{1,8}\t/, "")) && titleLike(bt.trim().split("\n")[0])) continue
-    const head = a.text, joiner = wrapJoiner(a.text, b.text, lex)
+    const head = a.text, joiner = wrapJoiner(at, bt, lex)
     a.text += joiner + b.text
     // b 가 이미 다음 쪽과 이어졌으면 그 경계는 a 글 안에서 head + 이음자만큼 뒤로 밀린다
     const later = (b.bbox && PAGE_BREAK_JOINS.get(b.bbox)) || []
@@ -311,7 +333,7 @@ export function joinPageBreakWraps(blocks: IRBlock[], lex?: WrapLexicon): void {
  * 앞 글을 바꿔 경계를 못 찾으면 거기서부터는 가르지 않는다
  */
 export function splitPageBreakWraps(blocks: IRBlock[]): IRBlock[] {
-  return blocks.flatMap(b => {
+  const splitText = (b: IRBlock): IRBlock[] => {
     const cuts = b.bbox && PAGE_BREAK_JOINS.get(b.bbox)
     const text = b.text
     if (!cuts || !text) return [b]
@@ -326,6 +348,22 @@ export function splitPageBreakWraps(blocks: IRBlock[]): IRBlock[] {
     if (!out.length) return [b]
     out.push({ ...cur, text: text.slice(from) })
     return out
+  }
+  return blocks.flatMap(b => {
+    const own = splitText(b)
+    if (!b.children?.length) return own
+    // Keep same-page nesting. A child on another page becomes a root there;
+    // repeating the parent label would invent text absent from that page.
+    const projected: IRBlock[] = own.map(part => ({ ...part, children: undefined }))
+    const owners = new Map(projected.map(part => [part.pageNumber, part]))
+    for (const child of splitPageBreakWraps(b.children)) {
+      const page = child.pageNumber ?? b.pageNumber
+      const owner = owners.get(page)
+      // A restored continuation can be a paragraph: its renderer ignores children.
+      if (owner?.type === "list") (owner.children ??= []).push(child)
+      else projected.push({ ...child, pageNumber: page })
+    }
+    return projected
   })
 }
 

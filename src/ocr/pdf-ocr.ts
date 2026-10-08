@@ -35,7 +35,7 @@ const OCR_RENDER_SCALE = 3
  * 공문서 판형은 줄지 않는다
  */
 export const MAX_OCR_PIXELS = 24_000_000
-/** 페이지 하나당 OCR 타임아웃 — det+rec 수십 라인 기준 넉넉히 */
+/** 페이지 협력 취소 예산 — 진행 중 native 작업은 종료까지 기다리므로 hard deadline 은 아니다 */
 const PAGE_TIMEOUT_MS = 120_000
 
 export function isCloserReadUseful(
@@ -91,33 +91,41 @@ export async function runPdfOcr(
   const engine = mode === "builtin" ? await getOcrEngine(language) : null
 
   const pdfium = await pdfiumMod.PDFiumLibrary.init()
-  const doc = await pdfium.loadDocument(new Uint8Array(buffer))
   try {
-    let done = 0
-    // 대상 쪽만 연다 — doc.pages() 는 모든 쪽을 불러오고, 쪽은 render() 가 끝에서만 닫아 대상 밖 쪽이 문서를 닫을 때까지 남았다
-    // (changwon 328쪽 문서의 한 쪽 OCR: 6ms·26MB → 전 쪽 순회 970ms·330MB). pdfium 쪽 번호는 0-based — 대외 계약(1-based)으로 환산
-    const count = doc.getPageCount()
-    for (const pageNo of [...targets].filter(p => p >= 1 && p <= count).sort((a, b) => a - b)) {
-      const page = doc.getPage(pageNo - 1)
-      onProgress?.(++done, targets.size)
-      try {
-        const read = await withTimeout(
-          ocrOnePage(page, pageNo, mode, engine, warnings, detectTables, vectorOps?.get(pageNo), imageRegions?.get(pageNo)),
-          PAGE_TIMEOUT_MS,
-          `OCR 페이지 ${pageNo} 타임아웃 (${PAGE_TIMEOUT_MS / 1000}초)`,
-        )
-        result.set(pageNo, read.blocks)
-        lines?.push(...read.lines)
-      } catch (e) {
-        warnings.push({
-          page: pageNo,
-          message: `페이지 ${pageNo} OCR 실패: ${e instanceof Error ? e.message : String(e)}`,
-          code: "OCR_FAILED",
-        })
+    const doc = await pdfium.loadDocument(new Uint8Array(buffer))
+    try {
+      let done = 0
+      // 대상 쪽만 연다 — doc.pages() 는 모든 쪽을 불러오고, 쪽은 render() 가 끝에서만 닫아 대상 밖 쪽이 문서를 닫을 때까지 남았다
+      // (changwon 328쪽 문서의 한 쪽 OCR: 6ms·26MB → 전 쪽 순회 970ms·330MB). pdfium 쪽 번호는 0-based — 대외 계약(1-based)으로 환산
+      const count = doc.getPageCount()
+      for (const pageNo of [...targets].filter(p => p >= 1 && p <= count).sort((a, b) => a - b)) {
+        onProgress?.(++done, targets.size)
+        try {
+          const page = doc.getPage(pageNo - 1)
+          // 결과·줄·경고는 성공한 쪽만 커밋한다. 취소된 작업의 늦은 진단은 공유 배열에 닿지 않는다.
+          const pageWarnings: ParseWarning[] = []
+          const read = await withTimeout(
+            signal => ocrOnePage(page, pageNo, mode, engine, pageWarnings, detectTables, vectorOps?.get(pageNo), imageRegions?.get(pageNo), signal),
+            PAGE_TIMEOUT_MS,
+            `OCR 페이지 ${pageNo} 타임아웃 (${PAGE_TIMEOUT_MS / 1000}초)`,
+          )
+          // 빈 인식은 검증된 백지가 아니다 — 기존 텍스트를 지울 성공 항목으로 넘기지 않는다.
+          if (read.blocks.length === 0) throw new Error(`페이지 ${pageNo} OCR 결과 없음`)
+          result.set(pageNo, read.blocks)
+          lines?.push(...read.lines)
+          warnings.push(...pageWarnings)
+        } catch (e) {
+          warnings.push({
+            page: pageNo,
+            message: `페이지 ${pageNo} OCR 실패: ${e instanceof Error ? e.message : String(e)}`,
+            code: "OCR_FAILED",
+          })
+        }
       }
+    } finally {
+      doc.destroy()
     }
   } finally {
-    doc.destroy()
     pdfium.destroy()
   }
   return result
@@ -132,7 +140,9 @@ async function ocrOnePage(
   detectTables: boolean,
   vectorOps?: PageOps,
   regions?: Array<{ x1: number; y1: number; x2: number; y2: number }>,
+  signal?: AbortSignal,
 ): Promise<{ blocks: IRBlock[]; lines: OcrLine[] }> {
+  signal?.throwIfAborted()
   const { originalWidth: pdfW, originalHeight: pdfH } = page.getOriginalSize()
   const renderScale = Math.min(OCR_RENDER_SCALE, Math.sqrt(MAX_OCR_PIXELS / Math.max(1, pdfW * pdfH)))
   if (renderScale < OCR_RENDER_SCALE) {
@@ -146,6 +156,7 @@ async function ocrOnePage(
     scale: closer ? renderScale * 2 : renderScale,
     render: async ({ data }) => data,
   })
+  signal?.throwIfAborted()
   const hiRgba = closer ? bgraToRgba(rendered.data) : null
   const { rgba, width: rw, height: rh } = hiRgba
     ? halve(hiRgba, rendered.width, rendered.height)
@@ -157,7 +168,8 @@ async function ocrOnePage(
     const { rgba: upright, angle: deskewAngle } = vectorOps ? { rgba, angle: 0 } : deskewPage(rgba, rw, rh)
     const stats: OcrPageStats = { droppedLowConf: 0 }
     const ruling = vectorOps ? undefined : detectRulingLines(upright, rw, rh, rh / pdfH)
-    const items = await engine!.recognizePage(upright, rw, rh, stats, regions ? REGION_TUNING : undefined, ruling?.cellDividers)
+    const items = await engine!.recognizePage(upright, rw, rh, stats, regions ? REGION_TUNING : undefined, ruling?.cellDividers, signal)
+    signal?.throwIfAborted()
     if (stats.droppedLowConf > 0) {
       warnings.push({
         page: pageNo,
@@ -176,7 +188,7 @@ async function ocrOnePage(
         const cx = (it.x + it.w / 2) / scale, cy = pdfH - (it.y + it.h / 2) / scale
         return cx >= r.x1 && cx <= r.x2 && cy >= r.y1 && cy <= r.y2
       }
-      const reads = hiRgba ? await closerReads(hiRgba, rw * 2, rh * 2, pdfW, pdfH, scale * 2, regions, engine!) : []
+      const reads = hiRgba ? await closerReads(hiRgba, rw * 2, rh * 2, pdfW, pdfH, scale * 2, regions, engine!, signal) : []
       const lines: OcrLine[] = []
       const blocks = regions.flatMap((r, k) => {
         let own = items.filter(it => inside(it, r))
@@ -207,18 +219,19 @@ async function ocrOnePage(
     "sharp",
     () => import("sharp") as unknown as Promise<{ default?: SharpPngFactory } & SharpPngFactory>,
   )
+  signal?.throwIfAborted()
   const sharpAny = sharpModRaw as { default?: SharpPngFactory } | SharpPngFactory
   const sharp: SharpPngFactory =
     typeof sharpAny === "function" ? sharpAny : (sharpAny.default ?? (sharpAny as unknown as SharpPngFactory))
   const png = await sharp(rgba, { raw: { width: rw, height: rh, channels: 4 } })
     .png()
     .toBuffer()
+  signal?.throwIfAborted()
 
+  // OcrProvider 의 기존 3인자 계약에는 취소 신호가 없다. 완료까지 기다린 뒤 늦은 결과를 버린다.
   const text = await mode(new Uint8Array(png), pageNo, "image/png")
-  if (!text.trim()) {
-    warnings.push({ page: pageNo, message: `페이지 ${pageNo} OCR 결과 없음`, code: "OCR_FAILED" })
-    return { blocks: [], lines: [] }
-  }
+  signal?.throwIfAborted()
+  if (!text.trim()) throw new Error(`페이지 ${pageNo} OCR 결과 없음`)
   // 사용자 프로바이더는 줄 좌표를 주지 않는다 — ocrLines 없음
   return { blocks: [{ type: "paragraph", text: text.trim(), pageNumber: pageNo }], lines: [] }
 }
@@ -282,9 +295,11 @@ async function closerReads(
   rgba: Uint8Array, rw: number, rh: number, pdfW: number, pdfH: number, hi: number,
   regions: Array<{ x1: number; y1: number; x2: number; y2: number }>,
   engine: NonNullable<Awaited<ReturnType<typeof getOcrEngine>>>,
+  signal?: AbortSignal,
 ): Promise<Array<OcrItem[] | null>> {
   const out: Array<OcrItem[] | null> = []
   for (const r of regions) {
+    signal?.throwIfAborted()
     const regionArea = Math.max(0, r.x2 - r.x1) * Math.max(0, r.y2 - r.y1)
     if (regionArea >= pdfW * pdfH * 0.8) { out.push(null); continue }
     const x0 = Math.max(0, Math.floor(r.x1 * hi)), y0 = Math.max(0, Math.floor((pdfH - r.y2) * hi))
@@ -292,7 +307,8 @@ async function closerReads(
     if (cw < 16 || ch < 16) { out.push(null); continue }
     const crop = new Uint8Array(cw * ch * 4)
     for (let y = 0; y < ch; y++) crop.set(rgba.subarray(((y0 + y) * rw + x0) * 4, ((y0 + y) * rw + x0 + cw) * 4), y * cw * 4)
-    const items = await engine.recognizePage(crop, cw, ch, undefined, REGION_TUNING)
+    const items = await engine.recognizePage(crop, cw, ch, undefined, REGION_TUNING, undefined, signal)
+    signal?.throwIfAborted()
     out.push(items.map(it => ({ ...it, x: (it.x + x0) / 2, y: (it.y + y0) / 2, w: it.w / 2, h: it.h / 2 })))
   }
   return out
@@ -344,19 +360,20 @@ async function tryImport<T>(name: string, loader: () => Promise<T>): Promise<T> 
   }
 }
 
-async function withTimeout<T>(promise: Promise<T>, ms: number, msg: string): Promise<T> {
-  // 타임아웃 패배 후 원 promise 의 사후 reject 가 unhandled rejection 이 되지 않게 흡수
-  promise.catch(() => {})
-  let timer: NodeJS.Timeout | undefined
+async function withTimeout<T>(operation: (signal: AbortSignal) => Promise<T>, ms: number, msg: string): Promise<T> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(new Error(msg)), ms)
   try {
-    return await Promise.race([
-      promise,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(msg)), ms)
-      }),
-    ])
+    // Promise.race 는 PDFium/ONNX/프로바이더를 취소하지 않는다. 진행 중 호출을 반드시 drain 해야
+    // 다음 쪽과 겹치지 않고, 사용 중인 문서·라이브러리가 파괴되지 않는다. hard deadline 은 worker 격리가 필요하다.
+    const value = await operation(controller.signal)
+    controller.signal.throwIfAborted()
+    return value
+  } catch (error) {
+    controller.signal.throwIfAborted() // 늦은 실패도 원래 타임아웃으로 보고
+    throw error
   } finally {
-    if (timer) clearTimeout(timer)
+    clearTimeout(timer)
   }
 }
 
