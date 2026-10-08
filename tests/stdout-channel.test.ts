@@ -10,7 +10,7 @@ import { spawn, spawnSync } from "node:child_process"
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import { parse } from "../src/index.js"
 
 const CLI = fileURLToPath(new URL("../src/cli.ts", import.meta.url))
@@ -63,7 +63,7 @@ describe("stdout 채널 — pdfjs 경고가 기계 출력에 섞이지 않는다
   })
 
   it("routeConsoleToStderr: console.log·info·warn·debug 가 stderr 로", () => {
-    const code = `import { routeConsoleToStderr } from ${JSON.stringify(UTILS)}; routeConsoleToStderr(); console.log("L"); console.info("I"); console.debug("D")`
+    const code = `import { routeConsoleToStderr } from ${JSON.stringify(pathToFileURL(UTILS).href)}; routeConsoleToStderr(); console.log("L"); console.info("I"); console.debug("D")`
     const r = spawnSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", code], { encoding: "utf-8", timeout: 60000 })
     assert.equal(r.status, 0, r.stderr)
     assert.equal(r.stdout, "")
