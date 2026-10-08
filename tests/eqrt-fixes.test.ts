@@ -3,7 +3,7 @@
 
 import { describe, it, test } from "node:test"
 import assert from "node:assert/strict"
-import { spawn } from "node:child_process"
+import { assertProcessExit, runNodeWorker } from "./helpers/cli-startup-process.js"
 import { fileURLToPath } from "node:url"
 import { hmlToLatex } from "../src/hwpx/equation.js"
 import { blocksToMarkdown } from "../src/index.js"
@@ -41,22 +41,16 @@ describe("수식·왕복 이스케이프 회귀 (eqrt-1~4)", () => {
 
 describe("render-worker stdin 견고성 (eqrt-5/6)", () => {
   const CLI = fileURLToPath(new URL("../src/cli.ts", import.meta.url))
-  const runWorker = (input: string, timeoutMs = 10000): Promise<{ out: string; code: number | null }> =>
-    new Promise((resolve) => {
-      const child = spawn(process.execPath, ["--import", "tsx", CLI, "render-worker"], { stdio: ["pipe", "pipe", "ignore"] })
-      let out = ""
-      child.stdout.on("data", (d) => { out += String(d) })
-      const timer = setTimeout(() => { child.kill("SIGKILL"); resolve({ out, code: null }) }, timeoutMs)
-      child.on("exit", (code) => { clearTimeout(timer); resolve({ out, code }) })
-      child.stdin.write(input)
-    })
+  const runWorker = (input: string, timeoutMs = 10000) =>
+    runNodeWorker(["--import", "tsx", CLI, "render-worker"], { input, timeout: timeoutMs })
 
   test("eqrt-5: 'null' 라인에 크래시하지 않고 오류 응답 후 생존", async () => {
-    const { out } = await runWorker('null\n{"cmd":"quit"}\n')
-    assert.match(out, /"ok":false/, "null 에 오류 응답(전체 크래시 아님)")
+    const result = await runWorker('null\n{"cmd":"quit"}\n')
+    assertProcessExit(result, 0)
+    assert.match(result.stdout, /"ok":false/, "null 에 오류 응답(전체 크래시 아님)")
   })
   test("eqrt-6: {\"cmd\":\"quit\"} 로 프로세스가 종료된다", async () => {
-    const { code } = await runWorker('{"cmd":"quit"}\n')
-    assert.equal(code, 0, "quit 후 exit 0 로 종료(무기한 잔류 아님)")
+    const result = await runWorker('{"cmd":"quit"}\n')
+    assertProcessExit(result, 0) // quit 후 정상 종료, stdin 은 열어둔다
   })
 })

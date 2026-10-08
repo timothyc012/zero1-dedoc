@@ -3,8 +3,8 @@
 import { readFileSync, writeFileSync, mkdirSync, statSync } from "fs"
 import { basename, dirname, resolve, extname } from "path"
 import { Command } from "commander"
-import { parse, detectFormat, detectZipFormat, fillFormFields, extractFormFields, blocksToMarkdown, markdownToHwpx, fillHwpx, fillWithUniqueGuard, PRESET_ALIAS, extractClickHereFields, BUILTIN_TEMPLATES, resolveBuiltinTemplate, readBuiltinTemplate } from "../index.js"
-import type { FillInput } from "../index.js"
+import { detectFormat, detectZipFormat } from "../detect.js"
+import type { FillInput } from "../form/match.js"
 import { toArrayBuffer, sanitizeError } from "../utils.js"
 
 export function registerDocCommands(program: Command): void {
@@ -62,6 +62,8 @@ export function registerDocCommands(program: Command): void {
 
         // --list-templates: 내장 서식 목록 + 누름틀 필드
         if (opts.listTemplates) {
+          const { BUILTIN_TEMPLATES, readBuiltinTemplate } = await import("../form/templates.js")
+          const { extractClickHereFields } = await import("../form/click-here.js")
           const list = []
           for (const t of BUILTIN_TEMPLATES) {
             const fields = await extractClickHereFields(readBuiltinTemplate(t))
@@ -76,6 +78,7 @@ export function registerDocCommands(program: Command): void {
         let arrayBuffer: ArrayBuffer
         let inputName: string
         if (templateName) {
+          const { BUILTIN_TEMPLATES, resolveBuiltinTemplate, readBuiltinTemplate } = await import("../form/templates.js")
           const t = resolveBuiltinTemplate(templateName)
           if (!t) {
             process.stderr.write(`[kordoc] 알 수 없는 내장 템플릿: ${templateName} (사용 가능: ${BUILTIN_TEMPLATES.map(x => `${x.id}(${x.aliases[0]})`).join(", ")})\n`)
@@ -102,6 +105,9 @@ export function registerDocCommands(program: Command): void {
 
         // --dry-run: 필드 목록만 출력 — 서식 입력란(빈 후행 열)이 목록에 나오도록 보존 (#47)
         if (opts.dryRun) {
+          const { parse } = await import("../parse.js")
+          const { extractFormFields } = await import("../form/recognize.js")
+          const { extractClickHereFields } = await import("../form/click-here.js")
           const result = await parse(arrayBuffer, { keepTrailingEmptyCols: true })
           if (!result.success) {
             process.stderr.write(`[kordoc] 파싱 실패: ${result.error}\n`)
@@ -192,6 +198,8 @@ export function registerDocCommands(program: Command): void {
             if (!opts.silent) process.stderr.write(`[kordoc] HWPX가 아니므로 hwpx 모드로 전환합니다\n`)
             outputFormat = "hwpx"
           } else {
+            const { fillHwpx } = await import("../form/filler-hwpx.js")
+            const { fillWithUniqueGuard } = await import("../form/match.js")
             const hwpxResult = opts.requireUnique
               ? await fillWithUniqueGuard(inputs, (vals, blocked) => fillHwpx(arrayBuffer, vals, blocked))
               : { ...(await fillHwpx(arrayBuffer, inputs)), rejected: [] as string[] }
@@ -216,6 +224,11 @@ export function registerDocCommands(program: Command): void {
         }
 
         // ─── 일반 경로: parse → fill → output ─── (양식 입력란 보존, #47)
+        const { parse } = await import("../parse.js")
+        const { extractFormFields } = await import("../form/recognize.js")
+        const { fillFormFields } = await import("../form/filler.js")
+        const { fillWithUniqueGuard } = await import("../form/match.js")
+        const { blocksToMarkdown } = await import("../table/builder.js")
         const result = await parse(arrayBuffer, { keepTrailingEmptyCols: true })
         if (!result.success) {
           process.stderr.write(`[kordoc] 파싱 실패: ${result.error}\n`)
@@ -243,6 +256,7 @@ export function registerDocCommands(program: Command): void {
         const markdown = blocksToMarkdown(fillResult.blocks)
 
         if (outputFormat === "hwpx") {
+          const { markdownToHwpx } = await import("../hwpx/generator.js")
           const hwpxBuffer = await markdownToHwpx(markdown)
           if (opts.output) {
             mkdirSync(dirname(resolve(opts.output)), { recursive: true })

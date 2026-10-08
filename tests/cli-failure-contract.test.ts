@@ -8,7 +8,7 @@
 
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { spawnSync } from "node:child_process"
+import { assertProcessExit, runNodeSync } from "./helpers/cli-startup-process.js"
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -20,9 +20,7 @@ const CLI = fileURLToPath(new URL("../src/cli.ts", import.meta.url))
 const DUMMY = fileURLToPath(new URL("./fixtures/dummy.hwpx", import.meta.url))
 
 function runCli(args: string[]) {
-  return spawnSync(process.execPath, ["--import", "tsx", CLI, ...args], {
-    encoding: "utf-8", timeout: 60000,
-  })
+  return runNodeSync(["--import", "tsx", CLI, ...args], 60000)
 }
 
 /** 지원하지 않는 바이트열 파일 생성 */
@@ -36,7 +34,7 @@ test("#69 markdown 모드 실패 — stdout 에 실패 JSON + exit 1", () => {
   const dir = mkdtempSync(join(tmpdir(), "kordoc-fail-"))
   try {
     const r = runCli([makeUnsupported(dir)])
-    assert.equal(r.status, 1)
+    assertProcessExit(r, 1)
     const j = JSON.parse(r.stdout)
     assert.equal(j.success, false)
     assert.equal(j.code, "UNSUPPORTED_FORMAT")
@@ -51,14 +49,14 @@ test("#69 chunks 모드 실패 — 동일 실패 JSON, 성공(배열)과 객체�
   const dir = mkdtempSync(join(tmpdir(), "kordoc-fail-"))
   try {
     const fail = runCli(["--format", "chunks", makeUnsupported(dir)])
-    assert.equal(fail.status, 1)
+    assertProcessExit(fail, 1)
     const j = JSON.parse(fail.stdout)
     assert.equal(Array.isArray(j), false, "실패는 객체")
     assert.equal(j.success, false)
     assert.equal(j.code, "UNSUPPORTED_FORMAT")
 
     const ok = runCli(["--format", "chunks", DUMMY])
-    assert.equal(ok.status, 0)
+    assertProcessExit(ok, 0)
     assert.ok(Array.isArray(JSON.parse(ok.stdout)), "성공 페이로드는 JSON 배열")
   } finally {
     rmSync(dir, { recursive: true, force: true })
@@ -70,7 +68,7 @@ test("#69 markdown --output 실패 — 출력 파일 미생성 + stdout 실패 J
   try {
     const out = join(dir, "out.md")
     const r = runCli(["-o", out, makeUnsupported(dir)])
-    assert.equal(r.status, 1)
+    assertProcessExit(r, 1)
     assert.equal(existsSync(out), false, "실패 시 출력 파일이 생기면 안 됨")
     assert.equal(JSON.parse(r.stdout).success, false)
   } finally {
@@ -94,7 +92,7 @@ test("#70 이미지 저장 시 images/manifest.json — name/mimeType/bytes/sour
 
     const outDir = join(dir, "out")
     const r = runCli(["-d", outDir, src])
-    assert.equal(r.status, 0, `CLI 실패: ${r.stderr}`)
+    assertProcessExit(r, 0)
 
     const manifestPath = join(outDir, "images", "withimg", "manifest.json") // 문서별 폴더 (#98)
     assert.ok(existsSync(manifestPath), "images/<문서 이름>/manifest.json 이 생성되어야 함")
@@ -119,7 +117,7 @@ test("없는 입력 경로 — FILE_NOT_FOUND 로 분류 + 실패 JSON 이 파�
   const dir = mkdtempSync(join(tmpdir(), "kordoc-fail-"))
   try {
     const r = runCli([missingFile(dir)])
-    assert.equal(r.status, 1)
+    assertProcessExit(r, 1)
     const j = JSON.parse(r.stdout)
     assert.equal(j.success, false)
     // 없는 파일은 문서 파싱 실패가 아니라 입력 경로 문제다 — PARSE_ERROR 로 덮으면
@@ -137,7 +135,7 @@ test("다중 입력 중 하나만 없음 — 정상 파일은 변환되고 file 
   try {
     const outDir = join(dir, "out")
     const r = runCli([DUMMY, missingFile(dir), "-d", outDir])
-    assert.equal(r.status, 1, "한 건이라도 실패하면 exit 1")
+    assertProcessExit(r, 1) // 한 건이라도 실패하면 exit 1
     assert.ok(existsSync(join(outDir, "dummy.md")), "정상 파일은 실패와 무관하게 변환돼야 함")
     const j = JSON.parse(r.stdout)
     assert.equal(j.code, "FILE_NOT_FOUND")
