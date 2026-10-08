@@ -144,7 +144,12 @@ describe("KORDOC_ROOT — 파일 접근 루트 제한", () => {
     const output = join(root, "late-output.hwpx")
     writeFileSync(victim, "original")
     const checked = safeOutputPath(output, new Set([".hwpx"]))
-    symlinkSync(victim, output)
+    try {
+      symlinkSync(victim, output)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EPERM") return
+      throw error
+    }
     await assert.rejects(writeOutputFile(checked, "overwritten"), /ELOOP|심볼릭 링크/)
     assert.equal(readFileSync(victim, "utf-8"), "original")
   })
@@ -155,7 +160,12 @@ describe("KORDOC_ROOT — 파일 접근 루트 제한", () => {
     mkdirSync(parent)
     const checked = safeOutputPath(join(parent, "output.hwpx"), new Set([".hwpx"]))
     renameSync(parent, join(root, "old-parent"))
-    symlinkSync(sibling, parent)
+    try {
+      symlinkSync(sibling, parent)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EPERM") return
+      throw error
+    }
     await assert.rejects(writeOutputFile(checked, "overwritten"), /KORDOC_ROOT/)
     assert.equal(existsSync(join(sibling, "output.hwpx")), false)
   })

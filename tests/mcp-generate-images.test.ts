@@ -44,8 +44,16 @@ test("MCP embeds Korean, encoded and nested image names without losing bytes", a
     await writeFile(join(root, "그림 하나.png"), PNG)
     await mkdir(join(root, "그림"))
     await writeFile(join(root, "그림", "표.png"), PNG)
-    await symlink(join(root, "재고-합계.png"), join(root, "alias.png"))
-    for (const url of ["재고-합계.png", encodeURIComponent("그림 하나.png"), "그림/표.png", "alias.png"]) {
+    let aliasSupported = true
+    try {
+      await symlink(join(root, "재고-합계.png"), join(root, "alias.png"))
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EPERM") throw error
+      aliasSupported = false
+    }
+    const urls = ["재고-합계.png", encodeURIComponent("그림 하나.png"), "그림/표.png"]
+    if (aliasSupported) urls.push("alias.png")
+    for (const url of urls) {
       const result = await generate(url)
       assert.ok(result.images.some(bytes => bytes.equals(PNG)), `original bytes missing: ${url}`)
       assert.doesNotMatch(result.text, /이미지 건너뜀/)
@@ -56,9 +64,15 @@ test("MCP embeds Korean, encoded and nested image names without losing bytes", a
 test("MCP blocks outside image targets and reports skipped references", async () => {
   await fixture(async (root, outside, generate) => {
     await writeFile(join(outside, "private.png"), PNG)
-    await symlink(join(outside, "private.png"), join(root, "linked.png"))
-    await symlink(outside, join(root, "linked-dir"), "dir")
-    for (const url of ["linked.png", "linked-dir/private.png", "../outside/private.png", "%2e%2e%2foutside%2fprivate.png", join(outside, "private.png")]) {
+    const outsideUrls = ["../outside/private.png", "%2e%2e%2foutside%2fprivate.png", join(outside, "private.png")]
+    try {
+      await symlink(join(outside, "private.png"), join(root, "linked.png"))
+      await symlink(outside, join(root, "linked-dir"), "dir")
+      outsideUrls.unshift("linked.png", "linked-dir/private.png")
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EPERM") throw error
+    }
+    for (const url of outsideUrls) {
       const result = await generate(url)
       assert.ok(!result.images.some(bytes => bytes.equals(PNG)), `outside bytes embedded: ${url}`)
       assert.match(result.text, /이미지 건너뜀/, url)

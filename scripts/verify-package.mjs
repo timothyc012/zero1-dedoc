@@ -17,10 +17,10 @@ const required = new Set([
   "dist/mcp.js",
 ])
 
-const result = spawnSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], {
-  encoding: "utf8",
-  shell: true,
-})
+const npmCli = process.env.npm_execpath
+const result = npmCli
+  ? spawnSync(process.execPath, [npmCli, "pack", "--dry-run", "--json", "--ignore-scripts"], { encoding: "utf8" })
+  : spawnSync(process.platform === "win32" ? "npm.cmd" : "npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], { encoding: "utf8" })
 
 if (result.error) {
   console.error(`✗ could not run npm pack: ${result.error.message}`)
