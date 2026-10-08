@@ -10,10 +10,10 @@
 
 import { createHash } from "crypto"
 import { createReadStream } from "fs"
-import { mkdir, stat, unlink, rename } from "fs/promises"
+import { mkdir, mkdtemp, stat, rename, rm } from "fs/promises"
 import { createWriteStream } from "fs"
 import { homedir } from "os"
-import { join, dirname } from "path"
+import { join, dirname, resolve } from "path"
 import { pipeline } from "stream/promises"
 import { Readable } from "stream"
 import { assertNetworkAllowed } from "../../shared/offline.js"
@@ -153,36 +153,84 @@ export interface DownloadProgress {
 
 export type ProgressHandler = (p: DownloadProgress) => void
 
+// Only active preparations are shared. Settled results must be revalidated:
+// file timestamps alone are not proof that the model bytes are unchanged.
+const preparations = new Map<string, {
+  task: Promise<void>
+  listeners: Set<ProgressHandler>
+  progress: { latest?: DownloadProgress }
+}>()
+// Distinct expected hashes must not race to replace the same destination.
+const pathPreparations = new Map<string, Promise<void>>()
+
+async function ensureModel(localPath: string, spec: ModelSpec, onProgress?: ProgressHandler): Promise<void> {
+  localPath = resolve(localPath)
+  const key = JSON.stringify([localPath, spec.sha256])
+  let preparation = preparations.get(key)
+  if (!preparation) {
+    const listeners = new Set<ProgressHandler>()
+    const progress: { latest?: DownloadProgress } = {}
+    const report: ProgressHandler = event => {
+      progress.latest = event
+      // Snapshot subscribers: a reentrant subscriber receives the replay below.
+      for (const listener of [...listeners]) listener(event)
+    }
+    const previous = pathPreparations.get(localPath)
+    const task = (async () => {
+      // A failed preparation must not poison the queue for another hash.
+      if (previous) await previous.catch(() => {})
+      await mkdir(dirname(localPath), { recursive: true })
+      if (await isExistingValid(localPath, spec.sha256)) {
+        report({ spec, downloaded: 0, total: null, phase: "skip", message: "이미 존재 + SHA 일치" })
+        return
+      }
+      // Never unlink after a stale validation: another process may already
+      // have installed a valid file. Only replace with verified bytes.
+      await downloadToFile(spec, localPath, report)
+    })()
+    preparation = { task, listeners, progress }
+    preparations.set(key, preparation)
+    pathPreparations.set(localPath, task)
+    const clear = () => {
+      preparations.delete(key)
+      if (pathPreparations.get(localPath) === task) pathPreparations.delete(localPath)
+    }
+    void task.then(clear, clear)
+  }
+  // Keep each subscriber's spec and progress handler, not just the leader's.
+  let progressFailed = false
+  let progressError: unknown
+  const listener: ProgressHandler = progress => {
+    if (progressFailed) return
+    try {
+      onProgress?.({ ...progress, spec })
+    } catch (error) {
+      // Subscriber errors reject only that caller, never the shared download
+      // (including callbacks invoked from a stream's data event).
+      progressFailed = true
+      progressError = error
+    }
+  }
+  preparation.listeners.add(listener)
+  if (preparation.progress.latest) listener(preparation.progress.latest)
+  try {
+    await preparation.task
+    if (progressFailed) throw progressError
+  } finally {
+    preparation.listeners.delete(listener)
+  }
+}
+
 /**
  * 지정 모델군을 다운로드/검증한다.
  * - 이미 있고 SHA 일치 → skip
- * - 없음 → 다운로드 후 SHA 검증. 실패 시 파일 삭제.
+ * - 없음/손상 → 별도 임시파일 다운로드 + SHA 검증 후 원자적 교체.
  */
 export async function ensureModelsIn(dir: string, specs: ReadonlyArray<ModelSpec>, onProgress?: ProgressHandler): Promise<void> {
-  await mkdir(dir, { recursive: true })
-
+  dir = resolve(dir)
+  if (specs.length === 0) await mkdir(dir, { recursive: true })
   for (const spec of specs) {
-    const localPath = join(dir, spec.filename)
-
-    if (await isExistingValid(localPath, spec.sha256)) {
-      onProgress?.({
-        spec,
-        downloaded: 0,
-        total: null,
-        phase: "skip",
-        message: "이미 존재 + SHA 일치",
-      })
-      continue
-    }
-
-    // 기존 파일 있지만 SHA 불일치 → 삭제
-    try {
-      await unlink(localPath)
-    } catch {
-      // 없을 수 있음
-    }
-
-    await downloadToFile(spec, localPath, onProgress)
+    await ensureModel(join(dir, spec.filename), spec, onProgress)
   }
 }
 
@@ -193,19 +241,7 @@ export async function ensureFormulaModels(onProgress?: ProgressHandler): Promise
 
 /** 단일 모델만 확인/다운로드 (진단 UI 에서 개별 상태 새로고침용) */
 export async function ensureSingleModel(spec: ModelSpec, onProgress?: ProgressHandler): Promise<void> {
-  const dir = getFormulaModelsDir()
-  await mkdir(dir, { recursive: true })
-  const localPath = join(dir, spec.filename)
-  if (await isExistingValid(localPath, spec.sha256)) {
-    onProgress?.({ spec, downloaded: 0, total: null, phase: "skip" })
-    return
-  }
-  try {
-    await unlink(localPath)
-  } catch {
-    // 재다운로드 전 손상/잔존 파일 정리 best-effort — 애초에 없으면 실패해도 무방
-  }
-  await downloadToFile(spec, localPath, onProgress)
+  return ensureModelsIn(getFormulaModelsDir(), [spec], onProgress)
 }
 
 async function isExistingValid(localPath: string, sha256Expected: string): Promise<boolean> {
@@ -234,86 +270,70 @@ async function downloadToFile(
     "온라인 PC에서 `kordoc models --export <디렉토리>` 로 내보낸 뒤 이 PC에서 `kordoc models --import <디렉토리>` 하거나, KORDOC_MODEL_CACHE 로 모델 캐시 경로를 지정하세요",
   )
 
-  // 먼저 .part 로 받고 검증 후 rename — 중단된 다운로드가 "정상 파일"로 오인되는 걸 방지
-  const partPath = `${localPath}.part`
+  // A private sibling directory isolates temporary files across processes,
+  // while keeping the final rename on the same filesystem.
   await mkdir(dirname(localPath), { recursive: true })
-
-  const resp = await fetch(spec.url, {
-    headers: {
-      // HF CDN 은 UA 없으면 가끔 403 을 뱉는다
-      "User-Agent": "kordoc-formula-ocr/1.0 (+https://github.com/chrisryugj/kordoc)",
-    },
-  })
-  if (!resp.ok || !resp.body) {
-    throw new Error(
-      `${spec.name} 다운로드 실패: HTTP ${resp.status} ${resp.statusText} (${spec.url})`,
-    )
-  }
-
-  const lenHeader = resp.headers.get("content-length")
-  const total = lenHeader ? Number.parseInt(lenHeader, 10) : null
-  let downloaded = 0
-
-  const ws = createWriteStream(partPath)
+  const partDir = await mkdtemp(`${localPath}.part-`)
+  const partPath = join(partDir, "download")
   try {
-    const reader = Readable.fromWeb(resp.body as unknown as import("stream/web").ReadableStream)
-    reader.on("data", (chunk: Buffer | Uint8Array) => {
-      downloaded += chunk.length
-      onProgress?.({
-        spec,
-        downloaded,
-        total,
-        phase: "download",
-      })
+    const resp = await fetch(spec.url, {
+      headers: {
+        // HF CDN 은 UA 없으면 가끔 403 을 뱉는다
+        "User-Agent": "kordoc-formula-ocr/1.0 (+https://github.com/chrisryugj/kordoc)",
+      },
     })
-    await pipeline(reader, ws)
-  } catch (e) {
-    try {
-      await unlink(partPath)
-    } catch {
-      // .part 임시파일 정리 best-effort — 본 에러(스트리밍 실패)를 가리지 않도록 무시
+    if (!resp.ok || !resp.body) {
+      throw new Error(
+        `${spec.name} 다운로드 실패: HTTP ${resp.status} ${resp.statusText} (${spec.url})`,
+      )
     }
-    throw new Error(`${spec.name} 스트리밍 실패: ${(e as Error).message}`)
-  }
 
-  onProgress?.({
-    spec,
-    downloaded,
-    total,
-    phase: "verify",
-  })
+    const lenHeader = resp.headers.get("content-length")
+    const total = lenHeader ? Number.parseInt(lenHeader, 10) : null
+    let downloaded = 0
 
-  // SHA 검증
-  let actual: string
-  try {
-    actual = await sha256OfFile(partPath)
-  } catch (e) {
+    const ws = createWriteStream(partPath, { flags: "wx" })
     try {
-      await unlink(partPath)
-    } catch {
-      // .part 임시파일 정리 best-effort — 본 에러(SHA 계산 실패)를 가리지 않도록 무시
+      const reader = Readable.fromWeb(resp.body as unknown as import("stream/web").ReadableStream)
+      reader.on("data", (chunk: Buffer | Uint8Array) => {
+        downloaded += chunk.length
+        onProgress?.({ spec, downloaded, total, phase: "download" })
+      })
+      await pipeline(reader, ws)
+    } catch (e) {
+      throw new Error(`${spec.name} 스트리밍 실패: ${(e as Error).message}`)
     }
-    throw new Error(`${spec.name} SHA 계산 실패: ${(e as Error).message}`)
-  }
 
-  if (actual !== spec.sha256) {
+    onProgress?.({ spec, downloaded, total, phase: "verify" })
+
+    let actual: string
     try {
-      await unlink(partPath)
-    } catch {
-      // 오염된 .part 정리 best-effort — 본 에러(SHA mismatch)를 가리지 않도록 무시
+      actual = await sha256OfFile(partPath)
+    } catch (e) {
+      throw new Error(`${spec.name} SHA 계산 실패: ${(e as Error).message}`)
     }
-    throw new Error(
-      `${spec.name} SHA256 mismatch: expected ${spec.sha256}, got ${actual} — 모델 URL 이 오염되었거나 전송 중 손상되었습니다.`,
-    )
-  }
 
-  await rename(partPath, localPath)
-  onProgress?.({
-    spec,
-    downloaded,
-    total,
-    phase: "done",
-  })
+    if (actual !== spec.sha256) {
+      throw new Error(
+        `${spec.name} SHA256 mismatch: expected ${spec.sha256}, got ${actual} — 모델 URL 이 오염되었거나 전송 중 손상되었습니다.`,
+      )
+    }
+
+    try {
+      await rename(partPath, localPath)
+    } catch (error) {
+      // Another process may have won installation (Windows can return EPERM).
+      // Accept only freshly verified bytes, never merely the file's presence.
+      if (!await isExistingValid(localPath, spec.sha256)) throw error
+    }
+    onProgress?.({ spec, downloaded, total, phase: "done" })
+  } finally {
+    try {
+      await rm(partDir, { recursive: true, force: true })
+    } catch {
+      // Best-effort cleanup of our own temporary files; retain the real error.
+    }
+  }
 }
 
 async function sha256OfFile(p: string): Promise<string> {

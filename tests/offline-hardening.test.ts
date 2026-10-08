@@ -3,7 +3,7 @@
 
 import { describe, it, afterEach } from "node:test"
 import assert from "node:assert/strict"
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync, symlinkSync, renameSync, existsSync } from "node:fs"
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync, renameSync, existsSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
@@ -15,6 +15,7 @@ import {
 } from "../src/shared/offline.js"
 import { PARSE_EXTENSIONS, safePath, safeOutputPath } from "../src/mcp.js"
 import { writeOutputFile } from "../src/mcp/shared.js"
+import { symlinkOrSkip } from "./helpers/symlink.js"
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "kordoc-root-")))
 const inside = join(root, "doc.pdf")
@@ -102,60 +103,64 @@ describe("KORDOC_ROOT — 파일 접근 루트 제한", () => {
       const exts = new Set([".hwpx"])
       assert.equal(safeOutputPath(join(root, "out.hwpx"), exts), join(root, "out.hwpx"))
       assert.throws(() => safeOutputPath(join(sibling, "nope", "out.hwpx"), exts), /KORDOC_ROOT/)
-    })
-  })
-
-  it("루트를 심볼릭 링크로 우회할 수 없다 (realpath 기준 판정)", () => {
-    withEnv({ KORDOC_ROOT: root }, () => {
-      const link = join(root, "escape.pdf")
-      try {
-        symlinkSync(outside, link)
-      } catch {
-        return // 심볼릭 링크 미지원 환경(Windows 비관리자)에서는 검증 생략
-      }
-      assert.throws(() => safePath(link, PARSE_EXTENSIONS), /KORDOC_ROOT/)
-    })
-  })
-
-  it("safeOutputPath: 루트 안 심볼릭 링크로 쓰기가 밖으로 새지 않는다 (v4.14.4 리뷰 재현)", () => {
-    withEnv({ KORDOC_ROOT: root }, () => {
-      const exts = new Set([".hwpx"])
-      const victim = join(sibling, "victim.hwpx")
-      writeFileSync(victim, "원본")
-      try {
-        symlinkSync(victim, join(root, "out-link.hwpx")) // (a) 파일 링크 → 밖
-        symlinkSync(sibling, join(root, "dir-link")) // (b) 디렉토리 링크 → 밖
-        symlinkSync(join(sibling, "없음"), join(root, "dangling")) // (c) 끊긴 링크
-      } catch {
-        return // 심볼릭 링크 미지원 환경(Windows 비관리자)에서는 검증 생략
-      }
-      assert.throws(() => safeOutputPath(join(root, "out-link.hwpx"), exts), /심볼릭 링크/)
-      assert.throws(() => safeOutputPath(join(root, "dir-link", "newdir", "out2.hwpx"), exts), /KORDOC_ROOT/)
-      assert.throws(() => safeOutputPath(join(root, "dir-link", "out3.hwpx"), exts), /KORDOC_ROOT/)
-      assert.throws(() => safeOutputPath(join(root, "dangling", "x", "out4.hwpx"), exts), /출력 경로 처리 오류/)
       // 루트 안의 없는 하위 경로는 그대로 허용 (저장 시 생성)
       assert.equal(safeOutputPath(join(root, "sub", "new", "out5.hwpx"), exts), join(root, "sub", "new", "out5.hwpx"))
     })
   })
 
-  it("검사 뒤 출력 파일이 링크로 바뀌어도 외부 파일을 덮어쓰지 않는다", async () => {
+  it("루트를 심볼릭 링크로 우회할 수 없다 (realpath 기준 판정)", (t) => {
+    withEnv({ KORDOC_ROOT: root }, () => {
+      const link = join(root, "escape.pdf")
+      if (!symlinkOrSkip(t, outside, link)) return
+      assert.throws(() => safePath(link, PARSE_EXTENSIONS), /KORDOC_ROOT/)
+    })
+  })
+
+  it("safeOutputPath: 파일 심볼릭 링크로 밖에 쓰지 않는다", (t) => {
+    withEnv({ KORDOC_ROOT: root }, () => {
+      const exts = new Set([".hwpx"])
+      const victim = join(sibling, "victim.hwpx")
+      writeFileSync(victim, "원본")
+      if (!symlinkOrSkip(t, victim, join(root, "out-link.hwpx"))) return
+      assert.throws(() => safeOutputPath(join(root, "out-link.hwpx"), exts), /심볼릭 링크/)
+    })
+  })
+
+  it("safeOutputPath: 디렉토리 심볼릭 링크로 밖에 쓰지 않는다", (t) => {
+    withEnv({ KORDOC_ROOT: root }, () => {
+      const exts = new Set([".hwpx"])
+      if (!symlinkOrSkip(t, sibling, join(root, "dir-link"), "dir")) return
+      assert.throws(() => safeOutputPath(join(root, "dir-link", "newdir", "out2.hwpx"), exts), /KORDOC_ROOT/)
+      assert.throws(() => safeOutputPath(join(root, "dir-link", "out3.hwpx"), exts), /KORDOC_ROOT/)
+    })
+  })
+
+  it("safeOutputPath: 끊긴 디렉토리 심볼릭 링크를 거부한다", (t) => {
+    withEnv({ KORDOC_ROOT: root }, () => {
+      const exts = new Set([".hwpx"])
+      if (!symlinkOrSkip(t, join(sibling, "없음"), join(root, "dangling"), "dir")) return
+      assert.throws(() => safeOutputPath(join(root, "dangling", "x", "out4.hwpx"), exts), /출력 경로 처리 오류/)
+    })
+  })
+
+  it("검사 뒤 출력 파일이 링크로 바뀌어도 외부 파일을 덮어쓰지 않는다", async (t) => {
     process.env.KORDOC_ROOT = root
     const victim = join(sibling, "late-victim.hwpx")
     const output = join(root, "late-output.hwpx")
     writeFileSync(victim, "original")
     const checked = safeOutputPath(output, new Set([".hwpx"]))
-    symlinkSync(victim, output)
+    if (!symlinkOrSkip(t, victim, output)) return
     await assert.rejects(writeOutputFile(checked, "overwritten"), /ELOOP|심볼릭 링크/)
     assert.equal(readFileSync(victim, "utf-8"), "original")
   })
 
-  it("검사 뒤 부모 디렉토리가 외부 링크로 바뀌어도 밖에 쓰지 않는다", async () => {
+  it("검사 뒤 부모 디렉토리가 외부 링크로 바뀌어도 밖에 쓰지 않는다", async (t) => {
     process.env.KORDOC_ROOT = root
     const parent = join(root, "late-parent")
     mkdirSync(parent)
     const checked = safeOutputPath(join(parent, "output.hwpx"), new Set([".hwpx"]))
     renameSync(parent, join(root, "old-parent"))
-    symlinkSync(sibling, parent)
+    if (!symlinkOrSkip(t, sibling, parent, "dir")) return
     await assert.rejects(writeOutputFile(checked, "overwritten"), /KORDOC_ROOT/)
     assert.equal(existsSync(join(sibling, "output.hwpx")), false)
   })

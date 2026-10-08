@@ -3,7 +3,7 @@
 import { readFileSync, writeFileSync, mkdirSync, statSync } from "fs"
 import { basename, resolve } from "path"
 import { Command } from "commander"
-import { parse, detectFormat } from "./index.js"
+import { detectFormat } from "./detect.js"
 import type { ParseOptions } from "./types.js"
 import { VERSION, toArrayBuffer, sanitizeError, classifyError, routeConsoleToStderr } from "./utils.js"
 import { detectImageMime } from "./hwp5/images.js"
@@ -99,6 +99,7 @@ program
             process.stderr.write(`\r[kordoc] ${filePrefix}${fileName} (${format}) [${current}/${total}]`)
           }
         }
+        const { parse } = await import("./parse.js")
         const result = await parse(arrayBuffer, parseOptions)
         detectedFormat = result.fileType  // ZIP 세분화(xlsx·docx) 반영 — 실패 JSON 의 fileType
 

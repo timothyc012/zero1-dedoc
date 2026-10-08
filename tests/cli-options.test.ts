@@ -7,7 +7,8 @@
 
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { execFileSync, spawn, spawnSync } from "node:child_process"
+import { spawn } from "node:child_process"
+import { assertProcessExit, runNodeSync } from "./helpers/cli-startup-process.js"
 import { mkdtempSync, writeFileSync, existsSync, statSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -22,14 +23,14 @@ test("plugin-1: fill 서브커맨드 뒤 -o 가 루트에 흡수되지 않고 �
     const out = join(dir, "out.hwpx")
     const vals = join(dir, "vals.json")
     writeFileSync(vals, JSON.stringify({ 성명: "홍길동" }))
-    const stdout = execFileSync(
-      process.execPath,
+    const result = runNodeSync(
       ["--import", "tsx", CLI, "fill", DUMMY, "-j", vals, "-o", out],
-      { stdio: ["ignore", "pipe", "ignore"], timeout: 30000 },
+      30000,
     )
+    assertProcessExit(result, 0)
     assert.ok(existsSync(out), "fill … -o 결과 파일이 생성되어야 함")
     assert.ok(statSync(out).size > 0, "결과 파일이 비어있지 않아야 함")
-    assert.equal(stdout.length, 0, "결과가 stdout(HWPX 바이너리 덤프)으로 새지 않아야 함")
+    assert.equal(result.stdout.length, 0, "결과가 stdout(HWPX 바이너리 덤프)으로 새지 않아야 함")
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -43,26 +44,32 @@ test("plugin-5: watch 서브커맨드 뒤 -d 가 루트에 흡수되지 않고 o
     ["--import", "tsx", CLI, "watch", inDir, "-d", outDir],
     { stdio: ["ignore", "ignore", "pipe"] },
   )
+  let stderr = ""
+  let error: Error | undefined
+  child.on("error", err => { error = err })
+  child.stderr.on("data", data => { stderr += String(data) })
+  const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(resolve => {
+    child.on("close", (code, signal) => resolve({ code, signal }))
+  })
   try {
     // outDir 이 watch 로 전달되어야만 '출력:' 로그가 뜬다 (watch.ts:32 `if (outDir)`).
     const sawOutputLog = await new Promise<boolean>((resolve) => {
-      let buf = ""
       const timer = setTimeout(() => resolve(false), 20000)
-      child.stderr.on("data", (d) => {
-        buf += String(d)
-        if (buf.includes("[kordoc watch] 출력:")) {
+      child.stderr.on("data", () => {
+        if (stderr.includes("[kordoc watch] 출력:")) {
           clearTimeout(timer)
           resolve(true)
         }
       })
-      child.on("exit", () => {
+      void closed.then(() => {
         clearTimeout(timer)
-        resolve(buf.includes("[kordoc watch] 출력:"))
+        resolve(stderr.includes("[kordoc watch] 출력:"))
       })
     })
-    assert.ok(sawOutputLog, "watch … -d 가 outDir 로 전달되어 '출력:' 로그가 나와야 함")
+    assert.ok(sawOutputLog, `watch … -d: 출력 로그 없음; error=${error?.stack ?? "none"}; stderr=${stderr}`)
   } finally {
     child.kill("SIGKILL")
+    await closed
     rmSync(inDir, { recursive: true, force: true })
     rmSync(outDir, { recursive: true, force: true })
   }
@@ -75,12 +82,11 @@ test("generate: 잘못된 --pt/--line-spacing은 실패하고 HWPX를 쓰지 않
     writeFileSync(input, "# 제목\n\n본문")
     for (const [flag, value] of [["--pt", "abc"], ["--line-spacing", "nope"]]) {
       const out = join(dir, `${flag.slice(2)}.hwpx`)
-      const result = spawnSync(
-        process.execPath,
+      const result = runNodeSync(
         ["--import", "tsx", CLI, "generate", input, "-o", out, flag, value, "--silent"],
-        { encoding: "utf-8", timeout: 30000 },
+        30000,
       )
-      assert.notEqual(result.status, 0, `${flag} ${value}는 exit 0이면 안 됨`)
+      assertProcessExit(result, 1)
       assert.ok(!existsSync(out), `${flag} ${value} 입력으로 결과 파일을 쓰면 안 됨`)
       assert.match(result.stderr, new RegExp(flag.slice(2).replace("-", ""), "i"))
     }

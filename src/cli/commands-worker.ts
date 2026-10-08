@@ -2,7 +2,6 @@
 
 import { readFileSync, statSync } from "fs"
 import { resolve } from "path"
-import { parse } from "../index.js"
 import type { ParseOptions, ParseResult } from "../types.js"
 import { VERSION, toArrayBuffer, sanitizeError, classifyError, routeConsoleToStderr } from "../utils.js"
 import type { Command } from "commander"
@@ -45,7 +44,9 @@ async function parseOne(req: ParseWorkerRequest & { file: string }): Promise<Par
     if (req.ocrLanguage) options.ocrLanguage = req.ocrLanguage
     if (req.formulaOcr) options.formulaOcr = true
     if (req.password) options.password = req.password
-    return await parse(toArrayBuffer(readFileSync(absPath)), options)
+    const buffer = toArrayBuffer(readFileSync(absPath))
+    const { parse } = await import("../parse.js")
+    return await parse(buffer, options)
   } catch (err) {
     return { success: false, fileType: "unknown", error: sanitizeError(err), code: classifyError(err) }
   }

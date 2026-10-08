@@ -2,7 +2,6 @@
 
 import { readFileSync, writeFileSync, mkdirSync } from "fs"
 import { dirname, resolve } from "path"
-import { parse } from "../index.js"
 import { VERSION, toArrayBuffer, sanitizeError, KordocError } from "../utils.js"
 import type { Command } from "commander"
 
@@ -188,7 +187,6 @@ export function registerRenderCommands(program: Command): void {
       //  응답 {"id":1,"ok":true,"out":"a.svg","width":..,"height":..,"pageCount":..,"stats":{..},"warnings":[..]}
       //  {"cmd":"quit"} 로 종료. 모듈은 최초 1회만 로드 → 이후 요청은 콜드스타트 없음.
       const { createInterface } = await import("node:readline")
-      const { renderHwpxToSvg } = await import("../render/index.js")
       const rl = createInterface({ input: process.stdin })
       const write = (o: unknown): void => void process.stdout.write(JSON.stringify(o) + "\n")
       write({ ready: true, version: VERSION })
@@ -204,6 +202,7 @@ export function registerRenderCommands(program: Command): void {
         try {
           if (!req.file || !req.out) throw new Error("file·out 필수")
           const buffer = readFileSync(resolve(req.file))
+          const { renderHwpxToSvg } = await import("../render/svg-render.js")
           const result = await renderHwpxToSvg(toArrayBuffer(buffer), {
             highlights: req.highlight, reflow: req.reflow, reflowMode: req.reflowMode as "keep" | "charAll" | undefined,
           })

@@ -23,7 +23,7 @@ import { computePageQuality, summarizeDocumentQuality, type PageQuality } from "
 import { scanVectorGlyphs, ocrVectorOps } from "./vector-glyphs.js"
 import { type PdfTextItem, type NormItem, normalizeItems, filterHiddenText } from "./text-line.js"
 import { extractPageBlocksWithLines, type PageCarry } from "./page-blocks.js"
-import { WrapLexicon, joinPageBreakWraps } from "./line-wrap.js"
+import { WrapLexicon, joinPageBreakWraps, splitPageBreakWraps } from "./line-wrap.js"
 import { mergeCrossPageTables } from "./table-parts.js"
 import { mergeContinuedCells } from "./cell-continuation.js"
 import { trimTrailingEmptyTableCols } from "./table-trim.js"
@@ -125,7 +125,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
   // pdfjs receives a copy; both OCR paths can reuse the caller's original bytes.
   const formulaBuffer: ArrayBuffer | null = options?.formulaOcr ? buffer : null
   // ocr 을 지정하지 않으면(false 아님) 텍스트층 없는 쪽과 큰 그림 속 글을 자동 OCR — 내장 모델이 이미 캐시에 있을 때만(다운로드하지 않는다)
-  const autoOcr = options?.ocr === undefined && await ocrModelsCached()
+  const autoOcr = options?.ocr === undefined && await ocrModelsCached(options?.ocrLanguage)
   const ocrBuffer: ArrayBuffer | null = options?.ocr || autoOcr ? buffer : null
   const doc = await loadPdfWithTimeout(buffer)
 
@@ -573,7 +573,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
 
     return {
       markdown,
-      pages: blocksToPages(outBlocks, finishMarkdown),
+      pages: blocksToPages(splitPageBreakWraps(outBlocks), finishMarkdown),
       blocks,
       metadata,
       outline: outline.length > 0 ? outline : undefined,

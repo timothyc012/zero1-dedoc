@@ -2,7 +2,7 @@
 
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { spawnSync } from "node:child_process"
+import { assertProcessExit, runNodeSync } from "./helpers/cli-startup-process.js"
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -12,7 +12,7 @@ import { createRequire } from "node:module"
 const require = createRequire(import.meta.url)
 const CLI = fileURLToPath(new URL("../src/cli.ts", import.meta.url))
 const DUMMY = fileURLToPath(new URL("./fixtures/dummy.hwpx", import.meta.url))
-const runCli = (args: string[]) => spawnSync(process.execPath, ["--import", "tsx", CLI, ...args], { encoding: "utf-8", timeout: 60000 })
+const runCli = (args: string[]) => runNodeSync(["--import", "tsx", CLI, ...args], 60000)
 
 /** dummy.hwpx 에 서로 다른 PNG 를 넣은 문서 */
 async function docWith(dir: string, name: string, pngB64: string): Promise<string> {
@@ -32,7 +32,7 @@ test("#98 -d 일괄 변환 — 문서마다 images/<문서 이름>/ 에 그림·
     const a = await docWith(dir, "a.hwpx", RED), b = await docWith(dir, "b 문서.hwpx", BLUE)
     const out = join(dir, "out")
     const r = runCli(["-d", out, a, b])
-    assert.equal(r.status, 0, r.stderr)
+    assertProcessExit(r, 0)
     for (const [stem, b64] of [["a", RED], ["b 문서", BLUE]] as const) {
       const manifest = JSON.parse(readFileSync(join(out, "images", stem, "manifest.json"), "utf-8"))
       const entry = manifest.find((m: { source?: string }) => m.source === "BinData/extra.png")
@@ -49,8 +49,8 @@ test("#98 -o 로 같은 폴더에 차례로 변환해도 앞 문서 그림이 �
   const dir = mkdtempSync(join(tmpdir(), "kordoc-imgdir-"))
   try {
     const a = await docWith(dir, "a.hwpx", RED), b = await docWith(dir, "b.hwpx", BLUE)
-    assert.equal(runCli([a, "-o", join(dir, "a.md")]).status, 0)
-    assert.equal(runCli([b, "-o", join(dir, "b.md")]).status, 0)
+    assertProcessExit(runCli([a, "-o", join(dir, "a.md")]), 0)
+    assertProcessExit(runCli([b, "-o", join(dir, "b.md")]), 0)
     const ma = JSON.parse(readFileSync(join(dir, "images", "a", "manifest.json"), "utf-8"))
     const ea = ma.find((m: { source?: string }) => m.source === "BinData/extra.png")
     assert.deepEqual(readFileSync(join(dir, "images", "a", ea.name)), Buffer.from(RED, "base64"))

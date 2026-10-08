@@ -9,7 +9,7 @@ import { latinSoftWrap } from "./cell-text.js"
 import type { IRBlock, IRTable } from "../types.js"
 import { stripControlChars } from "./quality.js"
 import { collapseEvenSpacing } from "./text-line.js"
-import { wrapJoiner } from "./line-wrap.js"
+import { wrapJoiner, mapPageBreakText } from "./line-wrap.js"
 
 /**
  * 한컴 PDF 가 가운뎃점(ㆍ U+318D)을 조합형 중성 아래아(ᆞ U+119E)로 내는 것을 되돌린다.
@@ -41,7 +41,7 @@ const cleanChars = (text: string): string => normalizeLoneChoseong(normalizeArae
 /** 블록 트리의 텍스트에서 비표시 제어문자 제거 + 조합형 가운뎃점 정규화 (in-place, 셀 blocks 포함) */
 export function sanitizeBlockControlChars(blocks: IRBlock[]): void {
   for (const b of blocks) {
-    if (b.text) b.text = cleanChars(b.text)
+    mapPageBreakText(b, cleanChars)
     if (b.table) {
       for (const row of b.table.cells) {
         for (const cell of row) {

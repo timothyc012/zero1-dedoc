@@ -18,6 +18,7 @@
  */
 
 import type { BoundingBox, IRBlock } from "../types.js"
+import { stripControlChars } from "./quality.js"
 
 /** 줄 글에서 판정에 방해되는 마크업 — 밑줄·취소선 표시 (page-blocks 가 아이템 글에 감싼 것) */
 const MARKUP = /<\/?u>|~~/g
@@ -229,17 +230,59 @@ export function wrapJoiner(prevText: string, nextText: string, lex?: WrapLexicon
 /** 문단 블록의 끝줄 기하 — 쪽 넘김 꺾임 판정용 (page-blocks 가 본문 줄을 문단으로 묶을 때 남긴다, 공개 IR 에 안 나감).
  *  키는 블록의 bbox 객체 — 목록 감지(detectListBlocks)가 블록을 {...block} 으로 새로 만들어도 bbox 는 그대로 넘어간다 */
 export const PARA_LAST_LINE = new WeakMap<BoundingBox, { right: number; width: number; fontSize: number }>()
+/** 문단 블록의 첫 줄 왼끝 — 쪽 넘김 잇기가 다음 쪽 첫 줄 들여쓰기를 볼 때 (키는 PARA_LAST_LINE 과 같다) */
+export const PARA_FIRST_LEFT = new WeakMap<BoundingBox, number>()
+
+/** 쪽 번호로 끝나는 목차·슬라이드 바닥 줄 — "2.3. 회의록의 구성 \t 7"·"…………… 53"·"·· 167"·"\t13/39" */
+const PAGE_REF_TAIL = /(?:\t|…|·{2}|\.{3})\s*\d{1,4}(?:\s*\/\s*\d{1,4})?\s*$/
+/** 쪽 머리에서 새 항목·제목을 여는 기호 — ITEM_HEAD 밖: 사용자 정의 영역 글머리(U+F000 등, 글꼴 기호), 자모 "ㅇ ", 꺾쇠·대괄호 제목
+ *  "< … >"·"[1]"·"[그림 Ⅱ-78]"·"〔서식 4-1〕", 사각·딩뱃 기호 "▮"·"▣"·"❐", 제어 문자. 쪽 넘김 잇기에만 쓴다 — 같은 쪽 줄 잇기는
+ *  줄 간격 근거가 따로 있다. PDF 코퍼스(98문서) 쪽 넘김 잇기 138곳 가운데 이 기호로 여는 30곳이 모두 새 항목·제목이었다 */
+const PAGE_HEAD_MARK = /^(?:[\u0000-\u001f\ue000-\uf8ff\u25a0-\u25ff\u2750-\u275f<〈《〔\[]|ㅇ\s)/
+/** 쪽 머리의 새 항목 — ITEM_HEAD 밖: 짧은 머리 + 탭인 용어·설명 행("N\t- 앞쪽에서 …"), 점으로 여는 조항 번호(".13 사용되는 …") */
+const PAGE_ITEM_HEAD = /^(?:\S{1,4}\t|\.\d{1,3}\s)/
+/** 문장 끝 — 마침표·물음표·느낌표 뒤 닫는 따옴표·괄호까지 ("격려했다." "전했다.”") */
+const SENTENCE_END = /[.?!。][”"’」』)]?$/
+/** 짧은 제목꼴 — 한 줄 40자 이하, 문장 끝이 아님 ("세부 행사 일정"·"위치도"·"행정정보 데이터세트 폐기") */
+const titleLike = (text: string): boolean => {
+  const t = text.replace(MARKUP, "").trim()
+  return !t.includes("\n") && [...t].length <= 40 && !SENTENCE_END.test(t)
+}
+/** 쪽 넘김 잇기로 이은 문단의 쪽 경계 (#136) — 키는 이은 블록의 bbox(PARA_LAST_LINE 과 같은 이유). head 는 뒤 쪽 몫 앞까지의 글,
+ *  gap 은 그 사이 이음자 길이, tail 은 뒤 쪽 블록(쪽 번호·기하·모양만 쓴다). 세 쪽 넘게 이으면 앞에서부터 차례로 쌓인다 */
+const PAGE_BREAK_JOINS = new WeakMap<BoundingBox, { head: string; gap: number; tail: IRBlock }[]>()
+
+/** Keep saved page boundaries in the same text coordinate space as character cleanup. */
+export function mapPageBreakText(block: IRBlock, transform: (text: string) => string): void {
+  if (!block.text) return
+  const cuts = block.bbox && PAGE_BREAK_JOINS.get(block.bbox)
+  if (cuts) for (const cut of cuts) {
+    const head = transform(cut.head)
+    cut.gap = transform(cut.head + " ".repeat(cut.gap)).length - head.length
+    cut.head = head
+  }
+  block.text = transform(block.text)
+}
+
+/** Link syntax is not a printed item marker; retain the visible label for boundary decisions. */
+const pageBoundaryText = (text: string): string =>
+  text.replace(MARKUP, "").replace(/(?<!!)\[([^\]\n]*)\]\(([^)\s]+)\)/g, "$1")
 
 /**
  * 쪽 넘김 꺾임 잇기 — 쪽 끝 문단의 끝줄이 그 쪽 본문 오른끝까지 차 있고 다음 쪽 첫 블록이 같은 글자 크기의 이어지는 문단이면
  * 한 문단으로 (…보여준다. 아이 ⏎ [다음 쪽] 들은 인공지능…). 머리말·꼬리말을 지운 뒤라 두 블록이 배열에서 이웃하면 쪽 끝과 쪽 머리다.
- * 쪽 본문 오른끝은 그 쪽 문단 블록 오른끝의 최댓값. 이은 문단은 앞 쪽 소속으로 남는다 (제자리 수정)
+ * 쪽 본문 오른끝은 그 쪽 문단 블록 오른끝의 최댓값. 이은 문단은 앞 쪽 소속으로 남는다 (제자리 수정) —
+ * 쪽별 마크다운은 splitPageBreakWraps 로 다시 갈라 뒤 쪽 몫을 뒤 쪽에 둔다
  */
 export function joinPageBreakWraps(blocks: IRBlock[], lex?: WrapLexicon): void {
   const pageRight = new Map<number, number>()
+  const pageLeft = new Map<number, number>()
+  const pageParagraphs = new Map<number, number>()
   for (const b of blocks) {
     if (b.type !== "paragraph" || !b.bbox || !b.pageNumber) continue
     pageRight.set(b.pageNumber, Math.max(pageRight.get(b.pageNumber) ?? -Infinity, b.bbox.x + b.bbox.width))
+    pageLeft.set(b.pageNumber, Math.min(pageLeft.get(b.pageNumber) ?? Infinity, b.bbox.x))
+    pageParagraphs.set(b.pageNumber, (pageParagraphs.get(b.pageNumber) ?? 0) + 1)
   }
   for (let i = blocks.length - 1; i > 0; i--) {
     const a = blocks[i - 1], b = blocks[i]
@@ -248,13 +291,80 @@ export function joinPageBreakWraps(blocks: IRBlock[], lex?: WrapLexicon): void {
     const last = a.bbox && PARA_LAST_LINE.get(a.bbox), fs = last ? last.fontSize : 0
     if (!last || fs <= 0 || (pageRight.get(a.pageNumber) ?? Infinity) - last.right >= BODY_FULL_TOL * fs) continue
     if (last.width < BODY_MIN_WIDTH_EM * fs || Math.abs((b.style?.fontSize ?? 0) - fs) > 0.15 * fs) continue
-    if (startsNewItem(a.text, b.text)) continue
-    a.text += wrapJoiner(a.text, b.text, lex) + b.text
+    // 쪽 사이에는 줄 간격 근거가 없다 — HWPX 쌍 대조(한컴 PDF 쌍의 잇기 후보 325곳, 원문 문단 경계와 비교)로 정한 가드:
+    // · 목차 줄·항목 기호·용어 행·조항 번호로 여는 블록은 새 줄. 단 앞 문단 안에 같은 사각 기호가 이미 있으면 문장 속 나열이 이어진 것
+    //   ("…주요 내용은 ▲ 가계조사 … 구축 ⏎ ▲빈곤선 설정 …")
+    // · 앞 쪽 문단이 문장으로 끝나고 다음 쪽 첫 줄이 들여 시작하면 새 문단: 문장 끝 26곳 중 들여쓴 20곳은 원문 경계 19, 왼끝에서
+    //   시작한 4곳은 같은 문단 3
+    // · 글자 크기(정수 반올림)가 다른 짧은 제목꼴 블록은 제목·캡션. 크기만 다른 블록 34곳 중 같은 문단 24(긴 본문 — 쪽마다 반올림
+    //   크기가 13·12 로 흔들리는 문서)라 크기만으로는 가르지 않는다
+    const at = pageBoundaryText(a.text), bt = pageBoundaryText(b.text)
+    if (startsNewItem(at, bt) || PAGE_REF_TAIL.test(at) || PAGE_ITEM_HEAD.test(bt)) continue
+    if (PAGE_HEAD_MARK.test(bt) && !(/^[\u25a0-\u25ff]/.test(bt) && a.text.includes(bt[0]))) continue
+    const firstLeft = b.bbox && PARA_FIRST_LEFT.get(b.bbox)
+    // A sole paragraph cannot establish its own body margin. Use the preceding
+    // page conservatively rather than treating an indented singleton as flush.
+    const left = pageLeft.get(b.pageNumber!) ?? firstLeft ?? Infinity
+    const bodyLeft = pageParagraphs.get(b.pageNumber!) === 1 ? Math.min(left, pageLeft.get(a.pageNumber) ?? left) : left
+    const indented = firstLeft === undefined || firstLeft - bodyLeft >= 0.3 * fs
+    // Cleanup later removes these glyphs; they must not hide a sentence end.
+    // Keep the uncleaned next-page head above, where PUA can mark a new item.
+    if (indented && SENTENCE_END.test(stripControlChars(at).replace(/\uF000/g, "").trimEnd())) continue
+    if (Math.round(b.style?.fontSize ?? 0) !== Math.round(fs) && titleLike(bt)) continue
+    // 탭으로 칸을 나눈 행("‘상록수’의 별도 정의\t일 년 내내 …") 다음 쪽 첫 줄이 짧은 제목꼴이면 표 같은 목록이 끝나고 새 제목이 선 것이다
+    // (lo-pairs DOCX 쌍 3곳). 문장 속 탭 뒤로 문장이 이어지는 옛 문서("…crash로 인해서\tclinet에 … option은 ⏎ 무엇인가?")와 줄 앞 조항
+    // 번호 뒤 탭(".2.3\t손상을 입은 후 … 고 ⏎ 가정한다;")은 칸 구분이 아니다
+    if (/\t/.test(a.text.slice(a.text.lastIndexOf("\n") + 1).replace(/^\S{1,8}\t/, "")) && titleLike(bt.trim().split("\n")[0])) continue
+    const head = a.text, joiner = wrapJoiner(at, bt, lex)
+    a.text += joiner + b.text
+    // b 가 이미 다음 쪽과 이어졌으면 그 경계는 a 글 안에서 head + 이음자만큼 뒤로 밀린다
+    const later = (b.bbox && PAGE_BREAK_JOINS.get(b.bbox)) || []
+    PAGE_BREAK_JOINS.set(a.bbox!, [{ head, gap: joiner.length, tail: b }, ...later.map(c => ({ ...c, head: head + joiner + c.head }))])
     const bl = b.bbox && PARA_LAST_LINE.get(b.bbox)
     if (bl) PARA_LAST_LINE.set(a.bbox!, bl)
     else PARA_LAST_LINE.delete(a.bbox!)
     blocks.splice(i, 1)
   }
+}
+
+/**
+ * 쪽별 사영용 블록 — 쪽 넘김 잇기로 이은 문단을 이음 자리에서 다시 쪽마다 가른다 (#136). 쪽 본문이 통째로 한 문단 블록이면 잇기가 뒤 쪽
+ * 글 전체를 앞 쪽으로 가져가 그 쪽 항목이 비거나 빠졌다. 문서 블록·마크다운은 이은 그대로 두고 새 배열만 낸다. 이음 뒤 단계(각주 넣기 등)가
+ * 앞 글을 바꿔 경계를 못 찾으면 거기서부터는 가르지 않는다
+ */
+export function splitPageBreakWraps(blocks: IRBlock[]): IRBlock[] {
+  const splitText = (b: IRBlock): IRBlock[] => {
+    const cuts = b.bbox && PAGE_BREAK_JOINS.get(b.bbox)
+    const text = b.text
+    if (!cuts || !text) return [b]
+    const out: IRBlock[] = []
+    let from = 0, cur = b
+    for (const c of cuts) {
+      if (c.head.length < from || !text.startsWith(c.head)) break
+      out.push({ ...cur, text: text.slice(from, c.head.length) })
+      from = c.head.length + c.gap
+      cur = c.tail
+    }
+    if (!out.length) return [b]
+    out.push({ ...cur, text: text.slice(from) })
+    return out
+  }
+  return blocks.flatMap(b => {
+    const own = splitText(b)
+    if (!b.children?.length) return own
+    // Keep same-page nesting. A child on another page becomes a root there;
+    // repeating the parent label would invent text absent from that page.
+    const projected: IRBlock[] = own.map(part => ({ ...part, children: undefined }))
+    const owners = new Map(projected.map(part => [part.pageNumber, part]))
+    for (const child of splitPageBreakWraps(b.children)) {
+      const page = child.pageNumber ?? b.pageNumber
+      const owner = owners.get(page)
+      // A restored continuation can be a paragraph: its renderer ignores children.
+      if (owner?.type === "list") (owner.children ??= []).push(child)
+      else projected.push({ ...child, pageNumber: page })
+    }
+    return projected
+  })
 }
 
 /** 본문 줄 기하 — 꺾임 판정 입력 (y 는 기준선, PDF 좌표라 아래 줄이 작다) */

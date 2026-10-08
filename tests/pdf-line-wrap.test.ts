@@ -1,6 +1,6 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { WrapLexicon, wrapJoiner, startsNewItem, bodyLineJoins, joinPageBreakWraps, PARA_LAST_LINE, type WrapLine } from "../src/pdf/line-wrap.js"
+import { WrapLexicon, wrapJoiner, startsNewItem, bodyLineJoins, joinPageBreakWraps, splitPageBreakWraps, PARA_LAST_LINE, PARA_FIRST_LEFT, type WrapLine } from "../src/pdf/line-wrap.js"
 import type { IRBlock } from "../src/types.js"
 import { cellTextToString, type TextItem } from "../src/pdf/line-detector.js"
 import { extractPageBlocksFallback } from "../src/pdf/page-blocks.js"
@@ -251,6 +251,112 @@ describe("joinPageBreakWraps — 쪽 끝 문단이 다음 쪽 첫 문단으로 �
     const item = pages(530, "○ 다음 항목")
     joinPageBreakWraps(item)
     assert.equal(item.length, 3)
+  })
+  it("목차 줄·글자 크기가 다른 블록·항목 기호로 여는 블록은 잇지 않는다 (코퍼스 쪽 넘김 오결합)", () => {
+    // 목차: 앞 쪽 끝줄이 쪽 번호로 끝남
+    const toc = pages(530, "2.3.1. 회의록 작성대상 \t 8")
+    toc[1].text = "2.3. 회의록의 구성 \t 7"
+    joinPageBreakWraps(toc)
+    assert.equal(toc.length, 3)
+    const slide = pages(530, "벽#2·문서 장벽")
+    slide[1].text = "PART 02·공무원업무의벽\t13/39"
+    joinPageBreakWraps(slide)
+    assert.equal(slide.length, 3)
+    // 다음 쪽 첫 블록 글자 크기가 1pt 라도 다르면 제목·캡션 (15 → 16)
+    const bigger = pages(530, "세부 행사 일정")
+    bigger[2].style = { fontSize: 11 }
+    joinPageBreakWraps(bigger)
+    assert.equal(bigger.length, 3)
+    // 항목 기호: 사용자 정의 영역 글머리(U+F000)·ㅇ·꺾쇠 제목·사각 기호 (eval-perf-2025 9쪽 "415건 최종 회신 ⏎  민생 안정과…")
+    for (const head of ["\uF000 민생 안정과 경제 성장을 지원하는 법제 구축", "ㅇ 진출기업 세무안정", "< 2022년도 과제추진 계획 >", "[1] 공문서 작성 일반원칙", "〔서식 4-1〕가격입찰서", "▮ 2029년", "❐ 약 ․ 특용작물"]) {
+      const bs = pages(530, head)
+      joinPageBreakWraps(bs)
+      assert.equal(bs.length, 3, head)
+    }
+  })
+  it("크기가 1pt 달라도 긴 본문·문장으로 끝나는 블록은 잇는다 — 쪽마다 반올림 크기가 흔들리는 문서 (HWPX 원문 같은 문단)", () => {
+    const long = pages(530, "들은 인공지능을 미래의 동반자로 그려냈으며 다음 세대의 일상을 바꾸어 나갈 것으로 기대를 모으고 있다는 평가가 이어졌다")
+    long[2].style = { fontSize: 11 }
+    joinPageBreakWraps(long)
+    assert.equal(long.length, 2)
+    const sentence = pages(530, "들은 발송되지 않습니다.")
+    sentence[2].style = { fontSize: 11 }
+    joinPageBreakWraps(sentence)
+    assert.equal(sentence.length, 2)
+  })
+  it("앞 쪽 문단이 문장으로 끝나면 잇지 않는다 — HWPX 쌍 대조에서 이 이음 26곳 중 20곳이 원문 문단 경계", () => {
+    for (const tail of ["상담사들을 격려했다.", "전했다.”", "요청할 예정입니까?"]) {
+      const bs = pages(530, "현수엽 제1차관은 이어서 말했다")
+      bs[1].text = "모습을 보여준다. " + tail
+      joinPageBreakWraps(bs)
+      assert.equal(bs.length, 3, tail)
+    }
+  })
+  it("문장 끝이어도 다음 쪽 첫 줄이 왼끝에서 시작하면 잇고, 들여 시작하면 끊는다 (HWPX 쌍: 왼끝 4곳 중 같은 문단 3, 들여씀 20곳 중 경계 19)", () => {
+    const flush = pages(530, "따라서 mkswap을 부주의하게 사용하면 중요한 파일을 잃는다")
+    flush[1].text = "모습을 보여준다. 판별해 주지 않기 때문이다."
+    PARA_FIRST_LEFT.set(flush[2].bbox!, 72)
+    joinPageBreakWraps(flush)
+    assert.equal(flush.length, 2)
+    const indent = pages(530, "현수엽 제1차관은 이어서 말했다")
+    indent[1].text = "모습을 보여준다. 상담사들을 격려했다."
+    PARA_FIRST_LEFT.set(indent[2].bbox!, 82)
+    joinPageBreakWraps(indent)
+    assert.equal(indent.length, 3)
+  })
+  it("용어·설명 행(짧은 머리 + 탭)과 점 조항 번호(.13)는 새 항목, 앞 문단에 같은 사각 기호가 있으면 문장 속 나열로 잇는다", () => {
+    for (const head of ["N\t- 앞쪽에서 입력했었던 문자의 다음 앞 단어를 검색", ".13 사용되는 무선주파수 및 유지되는 당직을 포함하여"]) {
+      const bs = pages(530, head)
+      joinPageBreakWraps(bs)
+      assert.equal(bs.length, 3, head)
+    }
+    const inline = pages(530, "▲빈곤선 설정 및 연관 빈곤율 추정 ▲국가별 빈곤선 비교")
+    inline[1].text = "금번 연수의 주요 내용은 ▲ 가계조사 자료를 활용한 복지지표 구축"
+    joinPageBreakWraps(inline)
+    assert.equal(inline.length, 2)
+  })
+  it("탭으로 칸을 나눈 행 다음 쪽 첫 줄이 짧은 제목꼴이면 끊고, 탭 뒤 문장이 이어지면 잇는다", () => {
+    const row = pages(530, "반수체 수명 주기")
+    row[1].text = "‘상록수’의 별도 정의\t일 년 내내 푸른 잎을 가짐"
+    joinPageBreakWraps(row)
+    assert.equal(row.length, 3)
+    const prose = pages(530, "무엇인가?")
+    prose[1].text = "Server 의 crash로 인해서\tclinet에 hang이 걸리지 않도록 지정하는 option은"
+    joinPageBreakWraps(prose)
+    assert.equal(prose.length, 2)
+    const clause = pages(530, "가정한다;")
+    clause[1].text = ".2.3\t손상을 입은 후 선박이 경사된 현측의 구명뗏목은 하강 준비로 스윙 아웃되었다 고"
+    joinPageBreakWraps(clause)
+    assert.equal(clause.length, 2)
+  })
+  it("쪽별 사영은 이은 문단을 쪽 경계에서 다시 가른다 — 뒤 쪽 글이 앞 쪽에 실리지 않게 (#136)", () => {
+    const blocks = pages(530, "들은 인공지능을 미래의 동반자로 그려냈다.\n다음 문단도 같은 쪽이다.")
+    joinPageBreakWraps(blocks)
+    const split = splitPageBreakWraps(blocks)
+    assert.deepEqual(split.map(b => [b.pageNumber, b.text]), [
+      [1, "앞 문단"], [1, "모습을 보여준다. 아이"], [2, "들은 인공지능을 미래의 동반자로 그려냈다.\n다음 문단도 같은 쪽이다."],
+    ])
+    // 문서 블록은 이은 그대로
+    assert.equal(blocks.length, 2)
+  })
+  it("세 쪽에 걸친 문단도 쪽마다 가른다", () => {
+    const fs = { fontSize: 10 }
+    const mk = (page: number, text: string, y: number): IRBlock => ({ type: "paragraph", text, pageNumber: page, bbox: { page, x: 72, y, width: 458, height: 10 }, style: fs })
+    const a = mk(1, "첫 쪽 끝 문장이 이어", 80), b = mk(2, "지고 둘째 쪽을 다 채운 뒤 또", 80), c = mk(3, "셋째 쪽으로 넘어간다.", 700)
+    PARA_LAST_LINE.set(a.bbox!, { right: 530, width: 458, fontSize: 10 })
+    PARA_LAST_LINE.set(b.bbox!, { right: 530, width: 458, fontSize: 10 })
+    const blocks = [a, b, c]
+    joinPageBreakWraps(blocks)
+    assert.equal(blocks.length, 1)
+    assert.deepEqual(splitPageBreakWraps(blocks).map(x => [x.pageNumber, x.text]), [
+      [1, "첫 쪽 끝 문장이 이어"], [2, "지고 둘째 쪽을 다 채운 뒤 또"], [3, "셋째 쪽으로 넘어간다."],
+    ])
+  })
+  it("이음 뒤 글이 앞부분에서 바뀌었으면 가르지 않는다 (잘못 가르느니 종전대로)", () => {
+    const blocks = pages(530, "들은 인공지능을")
+    joinPageBreakWraps(blocks)
+    blocks[1] = { ...blocks[1], text: "(주) " + blocks[1].text }
+    assert.deepEqual(splitPageBreakWraps(blocks).map(x => x.pageNumber), [1, 1])
   })
 })
 

@@ -2,10 +2,7 @@
 
 import { readFileSync, writeFileSync, mkdirSync, statSync } from "fs"
 import { basename, dirname, resolve } from "path"
-import { detectFormat, markdownToHwpx, hwpxToProfile, PRESET_ALIAS, unknownFontWarnings, incompatibleGongmunWarnings, lintGongmunText, gongmunLintWarnings, lintMuncheText, muncheLintWarnings, usesGaejosikMunche } from "../index.js"
-import { parseFormatProfileJson } from "../hwpx/profile-io.js"
-import { loadGenerationImages } from "../shared/generate-images.js"
-import { buildGongmunOptions, BODY_FONTS, H2_MARKERS, BULLET2_CHARS, parseLevelsSpec, levelFontRecord } from "../hwpx/gongmun-surface.js"
+import { detectFormat } from "../detect.js"
 import type { FormatProfile } from "../hwpx/gen-profile.js"
 import { toArrayBuffer, sanitizeError } from "../utils.js"
 import type { Command } from "commander"
@@ -82,6 +79,8 @@ export function registerGenerateCommands(program: Command): void {
         // commander 표면 사정(kv 파싱·--no-x 기본값)을 중립 입력으로 정돈하는 어댑터만
         let gongmun: import("../index.js").GongmunOptions | undefined
         if (!opts.plain) {
+          const { PRESET_ALIAS } = await import("../hwpx/gongmun.js")
+          const { buildGongmunOptions, BODY_FONTS, H2_MARKERS, BULLET2_CHARS, parseLevelsSpec } = await import("../hwpx/gongmun-surface.js")
           const preset = PRESET_ALIAS[String(opts.preset).trim()]
           if (!preset) {
             process.stderr.write(`[kordoc] 알 수 없는 프리셋: ${opts.preset} (기안문/보고서/계획서/통지/회의록/개조식/업무보고/서울방침/보도자료)\n`)
@@ -159,28 +158,37 @@ export function registerGenerateCommands(program: Command): void {
 
         // 폰트 오버라이드 오타·미설치 경고 (A2) — 생성은 진행
         if (gongmun?.fonts && !silent) {
+          const { unknownFontWarnings } = await import("../hwpx/font-catalog.js")
           for (const w of unknownFontWarnings(gongmun.fonts)) process.stderr.write(`[kordoc] ${w}\n`)
         }
         if (gongmun?.levels && !silent) {
+          const { unknownFontWarnings } = await import("../hwpx/font-catalog.js")
+          const { levelFontRecord } = await import("../hwpx/gongmun-surface.js")
           for (const w of unknownFontWarnings(levelFontRecord(gongmun.levels))) process.stderr.write(`[kordoc] ${w}\n`)
         }
         // 프리셋 비호환 옵션 경고 (v4.0.6) — 조용한 폐기 대신 노출, 생성은 진행
         if (gongmun && !silent) {
+          const { incompatibleGongmunWarnings } = await import("../hwpx/gongmun.js")
           for (const w of incompatibleGongmunWarnings(gongmun)) process.stderr.write(`[kordoc] ⚠ ${w}\n`)
         }
         // 공문서 표기법 검수 (편람 기준, 조언용) — 생성은 진행, stderr 경고만
         if (gongmun && !silent) {
+          const { gongmunLintWarnings } = await import("../hwpx/gongmun-lint.js")
           for (const w of gongmunLintWarnings(md, 5)) process.stderr.write(`[kordoc] ⚠ ${w}\n`)
         }
         // 개조식 문체 검수 — 보고서·계획서·개조식 프리셋만. 기안문(경어)·통지·보도자료는
         // 문체 관행이 달라 적용하지 않는다 (범위를 좁히는 것이 오탐을 막는다)
-        if (gongmun && !silent && usesGaejosikMunche(gongmun.preset)) {
-          for (const w of muncheLintWarnings(md, 5)) process.stderr.write(`[kordoc] ⚠ ${w}\n`)
+        if (gongmun && !silent) {
+          const { usesGaejosikMunche, muncheLintWarnings } = await import("../hwpx/munche-lint.js")
+          if (usesGaejosikMunche(gongmun.preset)) {
+            for (const w of muncheLintWarnings(md, 5)) process.stderr.write(`[kordoc] ⚠ ${w}\n`)
+          }
         }
 
         // 서식 프로필 (이슈 #41) — 경계 zod 검증 후 라이브러리에 전달 (MCP와 공유 스키마)
         let profile: FormatProfile | undefined
         if (opts.profile) {
+          const { parseFormatProfileJson } = await import("../hwpx/profile-io.js")
           profile = parseFormatProfileJson(readFileSync(resolve(String(opts.profile)), "utf-8"))
           if (!silent) process.stderr.write(`[kordoc] 서식 프로필 적용: 표 ${profile.tables.length}개 (${opts.profile})\n`)
         }
@@ -204,6 +212,7 @@ export function registerGenerateCommands(program: Command): void {
         // MCP와 같은 Unicode·실경로 검증을 적용한다.
         let imageBytes: Record<string, Uint8Array> | undefined
         if (opts.imageDir) {
+          const { loadGenerationImages } = await import("../shared/generate-images.js")
           const dir = resolve(String(opts.imageDir))
           const loaded = await loadGenerationImages(md, dir)
           imageBytes = loaded.images
@@ -214,6 +223,7 @@ export function registerGenerateCommands(program: Command): void {
         }
 
         const genWarnings: string[] = []
+        const { markdownToHwpx } = await import("../hwpx/generator.js")
         const buf = await markdownToHwpx(md, gongmun || profile || page || imageBytes
           ? {
             ...(gongmun ? { gongmun } : {}), ...(profile ? { profile } : {}),
@@ -247,6 +257,7 @@ export function registerGenerateCommands(program: Command): void {
         const output: string | undefined = opts.output ?? rootOpts.output
         const silent: boolean = opts.silent ?? rootOpts.silent
         const absPath = resolve(file)
+        const { hwpxToProfile } = await import("../hwpx/extract-profile.js")
         const profile = await hwpxToProfile(readFileSync(absPath))
         const outPath = resolve(output ?? absPath.replace(/\.hwpx$/i, "") + ".profile.json")
         mkdirSync(dirname(outPath), { recursive: true })
@@ -263,7 +274,7 @@ export function registerGenerateCommands(program: Command): void {
     .description("공문서 표기법 검수 — 날짜·시간·금액·붙임 등 행정업무운영 편람 표기법 (md/txt, '-'=stdin). error 있으면 exit 1")
     .option("--json", "JSON 출력")
     .option("--munche", "개조식 문체 검수 병행 — 서술형 종결·당위·수사·항목 길이 (보고서·계획서 원고용)")
-    .action((file: string, opts) => {
+    .action(async (file: string, opts) => {
       try {
         const raw = file === "-" ? readFileSync(0) : readFileSync(resolve(file))
         // 문서 파일을 UTF-8 텍스트로 읽으면 압축 바이트가 본문으로 둔갑해 위반 수백~수천 건이
@@ -279,10 +290,11 @@ export function registerGenerateCommands(program: Command): void {
           process.exit(1)
         }
         const text = raw.toString("utf-8")
+        const { lintGongmunText } = await import("../hwpx/gongmun-lint.js")
         const findings = lintGongmunText(text, { document: true })
         // 문체 검수는 옵트인 — 축이 다르고(표기법 vs 종결·수사), 개조식이 아닌 원고에는
         // 적용하면 안 되기 때문에 기본 동작은 종전 그대로 둔다
-        const munche = opts.munche ? lintMuncheText(text) : []
+        const munche = opts.munche ? (await import("../hwpx/munche-lint.js")).lintMuncheText(text) : []
         const errors = findings.filter((f) => f.severity === "error").length
           + munche.filter((f) => f.severity === "error").length
         if (opts.json) {
