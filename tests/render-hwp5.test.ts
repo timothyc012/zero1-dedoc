@@ -30,7 +30,7 @@ function docInfoRecords() {
     docBorderFill([[1, 1], [1, 1], [1, 1], [1, 1]]),                                       // 2: 실선 0.12mm
     docBorderFill([[1, 6], [8, 7], [0, 0], [1, 1, 0x0000ff]], 0x00f7e6df),                 // 3: 0.4 / 이중 0.5 / 없음 / 빨강 + 배경 #DFE6F7
     docCharShape({ baseSize: 1000 }),
-    docCharShape({ baseSize: 1500, bold: true, color: 0x0000ff }),
+    docCharShape({ baseSize: 1500, bold: true, color: 0x0000ff, shade: 0x00a67a3e }),
     docCharShape({ baseSize: 1200, italic: true, underline: true, relSize: 50, ratio: 90, spacing: -5 }),
     docParaShape({ align: 0 }),
     docParaShape({ align: 3, lineSpacing: 130 }),
@@ -64,7 +64,7 @@ describe("hwp5-scene: DocInfo → RenderStyles", () => {
     assert.deepEqual({ ...st.charPr.get("0")!, fontFamily: undefined }, { height: 1000, bold: false, italic: false, underline: false, ratio: 100, spacing: 0, face: "한컴돋움", fontFamily: undefined })
     assert.ok(st.charPr.get("0")!.fontFamily!.includes("HCR Dotum"))
     const c1 = st.charPr.get("1")!
-    assert.equal(c1.height, 1500); assert.equal(c1.bold, true); assert.equal(c1.color, "#FF0000")
+    assert.equal(c1.height, 1500); assert.equal(c1.bold, true); assert.equal(c1.color, "#FF0000"); assert.equal(c1.shade, "#3E7AA6")
     const c2 = st.charPr.get("2")!
     assert.equal(c2.height, 600); assert.equal(c2.italic, true); assert.equal(c2.underline, true); assert.equal(c2.ratio, 90); assert.equal(c2.spacing, -5)
   })
@@ -103,10 +103,10 @@ describe("hwp5-scene: 레코드 → section DOM", () => {
     // 글자 모양 경계에서 run 교체
     assert.ok(xml.includes('<hp:run charPrIDRef="1"><hp:t>가나</hp:t></hp:run><hp:run charPrIDRef="2"><hp:t>다라</hp:t></hp:run>'), xml.slice(0, 900))
     assert.ok(xml.includes('<hp:lineseg textpos="0" vertpos="1000" vertsize="1000" textheight="1000" baseline="850" spacing="600" horzpos="0" horzsize="48190" flags="393216"/>'))
-    assert.ok(xml.includes('<hp:tbl id="t1" textWrap="SQUARE" rowCnt="1" colCnt="2"'))
+    assert.ok(xml.includes('<hp:tbl id="t1" textWrap="SQUARE" pageBreak="NONE" repeatHeader="0" rowCnt="1" colCnt="2"'), xml.match(/<hp:tbl [^>]*>/)?.[0])
     assert.ok(xml.includes('<hp:pos treatAsChar="1" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>'))
     assert.ok(xml.includes('<hp:cellAddr colAddr="1" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="20000" height="4000"/>'))
-    assert.ok(xml.includes('<hp:tc borderFillIDRef="3">'))
+    assert.ok(xml.includes('<hp:tc borderFillIDRef="3" header="0">'), xml.match(/<hp:tc [^>]*>/)?.[0])
     assert.ok(xml.includes('<hp:pic textWrap="SQUARE"><hp:sz width="6000" height="3000"/>') && xml.includes('<hp:img binaryItemIDRef="bin1"/>'), xml)
     assert.ok(xml.includes('<hp:imgDim dimwidth="6000" dimheight="3000"/>') && !xml.includes("imgClip"), "크롭 없음")
   })

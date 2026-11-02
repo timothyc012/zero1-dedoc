@@ -62,8 +62,8 @@ const tableProfile = z.object({
   width_hwpunit: z.string().optional(),
   col_widths_hwpunit: z.array(z.string()).optional(),
   cells: z.array(cellProfile),
-  used_border_fills: z.record(borderFillDef),
-  used_char_prs: z.record(charPrDef).optional(),
+  used_border_fills: z.record(z.string(), borderFillDef),
+  used_char_prs: z.record(z.string(), charPrDef).optional(),
 })
 
 export const formatProfileSchema = z.object({
@@ -75,7 +75,7 @@ export const formatProfileSchema = z.object({
 export function parseFormatProfileJson(text: string): FormatProfile {
   let raw: unknown
   try {
-    raw = JSON.parse(text)
+    raw = JSON.parse(text.replace(/^﻿/, "")) // Windows 메모장·PowerShell 저장본의 UTF-8 BOM
   } catch (e) {
     throw new KordocError(`프로필 JSON 파싱 실패: ${e instanceof Error ? e.message : String(e)}`)
   }

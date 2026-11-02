@@ -30,6 +30,7 @@ export function renderSceneToHtml(scene: RenderScene, pageSvgs: Map<number, stri
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
 <title>${title}</title>
 <style>
 html, body { margin: 0; background: #e9e8e6; }

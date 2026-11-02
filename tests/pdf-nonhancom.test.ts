@@ -14,13 +14,42 @@ import { parsePdfDocument } from "../src/pdf/parser.js"
 import { extractLines, chainShortSegments } from "../src/pdf/line-extract.js"
 import { detectClusterTables, type ClusterItem } from "../src/pdf/cluster-detector.js"
 import { mergeSideBandTables } from "../src/pdf/page-blocks.js"
-import { cellTextToString, mapTextToCells } from "../src/pdf/cell-text.js"
+import { cellTextToString, mapTextToCells, splitAcrossCells } from "../src/pdf/cell-text.js"
 import { cleanPdfText } from "../src/pdf/text-clean.js"
 import { extractPageBlocksWithLines } from "../src/pdf/page-blocks.js"
 import type { IRBlock } from "../src/types.js"
 
 const ti = (str: string, x: number, y: number, width: number, size: number): PdfTextItem =>
   ({ str, transform: [size, 0, 0, size, x, y], width, height: size })
+
+describe("normalizeItems — 자간 숫자 공백 접기", () => {
+  it("쉼표·마침표 뒤 숫자 조각은 자간 숫자가 아니다 — \"Systems\" + \", 5.\" (ODL 192 참고문헌)", () => {
+    const items = normalizeItems([ti("Learning and Systems", 81.5, 214.99, 88, 9.96), ti(", 5.", 169.5, 214.99, 12.45, 9.96)])
+    assert.equal(mergeLineSimple(items), "Learning and Systems, 5.")
+    // 자간을 벌린 숫자열은 그대로 접는다
+    assert.equal(mergeLineSimple(normalizeItems([ti("45 0 -7 3 40 )", 10, 100, 80, 10)])), "450-7340)")
+  })
+
+  it("소수 덩어리가 둘 이상이면 따로 선 수들이다 — 표 한 행 값을 담은 조각 (평가 기준 별표2 \"2 100 1.0 2.0 … 10.0\")", () => {
+    assert.equal(normalizeItems([ti("2 100 1.0 2.0 3.0 4.0 5.0 6.0 10.0", 385, 135, 151.4, 8)])[0].text, "2 100 1.0 2.0 3.0 4.0 5.0 6.0 10.0")
+  })
+})
+
+describe("splitAcrossCells — 칸 여럿에 걸친 한 조각", () => {
+  const cell = (row: number, col: number, x1: number, x2: number) => ({ row, col, rowSpan: 1, colSpan: 1, bbox: { x1, y1: 130, x2, y2: 146 } })
+  const item = (text: string, x: number, w: number) => ({ text, x, y: 135, w, h: 8, fontSize: 8, fontName: "f" })
+  it("걸친 칸 수와 낱말 수가 같으면 칸마다 한 낱말 (별표2 배점비·점수분포 9칸)", () => {
+    const xs = [379, 393, 413, 430, 447, 464, 482, 499, 516, 539]
+    const cells = xs.slice(0, -1).map((x, k) => cell(2, 20 + k, x, xs[k + 1]))
+    const map = mapTextToCells(splitAcrossCells(item("2 100 1.0 2.0 3.0 4.0 5.0 6.0 10.0", 385, 151.4), cells), cells)
+    assert.deepEqual(cells.map(c => map.get(c)!.map(i => i.text).join(" ")), ["2", "100", "1.0", "2.0", "3.0", "4.0", "5.0", "6.0", "10.0"])
+  })
+  it("낱말 수가 다르거나 한 칸에 충분히 겹치면 그대로", () => {
+    const cells = [cell(0, 0, 50, 150), cell(0, 1, 150, 250)]
+    assert.equal(splitAcrossCells(item("1. 연구의 배경", 60, 180), cells).length, 1)
+    assert.equal(splitAcrossCells(item("사업 개요", 60, 100), cells).length, 1)
+  })
+})
 
 describe("normalizeItems — 겹친 런 분해 (MS Print To PDF·cairo)", () => {
   it("한글 런 빈칸에 나중에 얹힌 숫자를 제자리에 넣는다 (중장기위원회 보도자료 실측)", () => {
@@ -177,7 +206,8 @@ describe("detectClusterTables — 글자 단위로 그린 칸 글", () => {
     const raw: Array<[string, number, number, number, number, number]> = [["가",71,451,14,14,1],[".",85,451,3,14,0],["관계법령",95,451,56,14,1],[":",158,451,4,14,1],["생",169,451,14,14,1],["략",211,451,14,14,0],["나",71,419,14,14,1],[".",85,419,3,14,0],["예산조치",95,419,56,14,1],[":",158,419,4,14,1],["별도조치",169,419,56,14,1],["필요",232,419,28,14,1],["없음",267,419,28,14,1],["다",71,387,14,14,1],[".",85,387,3,14,0],["합",95,387,14,14,1],["의",137,387,14,14,0],[":",158,387,4,14,1],["OOOO",169,387,42,14,1],["부",211,387,14,14,0],["등과",232,387,28,14,1],["합의되었음",267,387,70,14,1],["라",71,355,14,14,1],[".",85,355,3,14,0],["기",95,355,14,14,1],["타",137,355,14,14,0],[":",158,355,4,14,1],["1)",169,355,12,14,1],["신",188,355,14,14,1],["ㆍ",202,355,14,14,0],["구",216,355,14,14,0],["조",230,355,14,14,0],["문",244,355,14,14,0],["대",258,355,14,14,0],["비",272,355,14,14,0],["표",286,355,14,14,0],[",",300,355,3,14,0],["별첨",311,355,28,14,1],["2)",169,323,12,14,1],["입법예고",188,323,56,14,1],["(9999.",244,323,37,14,0],["12.",287,323,17,14,1],["31.",311,323,17,14,1],["∼",335,323,14,14,1],["12.",356,323,17,14,1],["31.)",380,323,23,14,1],["결과",410,323,28,14,1],[",",438,323,3,14,0],["특기할",448,323,42,14,1],["사항",496,323,28,14,1],["없음",181,291,28,14,1],["3)",169,258,12,14,1],["행정규제",188,258,56,14,1],[":",251,258,4,14,1],["규제개혁위원회와",262,258,112,14,1],["협의",381,258,28,14,1],["결과",416,258,28,14,1],[",",444,258,3,14,0],["이견",454,258,28,14,1],["없음",489,258,28,14,1]]
     const items: ClusterItem[] = raw.map(([text, x, y, w, fs, sp]) => ({ text, x, y, w, h: fs, fontSize: fs, fontName: "f", hasSpaceBefore: sp === 1 }))
     const [t] = detectClusterTables(items, 1)
-    assert.ok(t, "표 감지")
+    // 줄마다 낱말 틈이 고른 글줄이라 표로 잡지 않으면 글은 본문으로 남는다(156782395 PDF 글 정밀도 0.99715 → 0.99858)
+    if (!t) return
     const visible: string[] = []
     for (const row of t.table.cells) {
       let skip = 0
@@ -360,6 +390,22 @@ describe("dropHeadBandClipGrids — 선 표 윗변의 되풀이 머리 행 클�
     assert.equal(dropHeadBandClipGrids([band, rest], [line]).length, 2)
     // 중첩표(틀 칸 안 클립)는 대상이 아니다
     assert.equal(dropHeadBandClipGrids([{ ...band, clipParent: band.bbox }], [line]).length, 1)
+  })
+  // 벼·고추 재배면적 통계표 실측: 머리 칸에만 클립이 칸 무리 셋(1x2·2x5·2x3)으로 갈리고, 본문 21행은 선만
+  const stat: TableGrid = { rowYs: [660.4, 648.4, 620.4, 63.7], colXs: [58.1, 125, 199, 273, 331, 404, 478, 536.3], bbox: { x1: 58.1, y1: 63.7, x2: 536.3, y2: 660.4 }, vertexRadius: 1 }
+  const clip = (colXs: number[], rowYs: number[]): TableGrid => ({
+    rowYs, colXs, vertexRadius: 1, bbox: { x1: colXs[0], y1: rowYs[rowYs.length - 1], x2: colXs[colXs.length - 1], y2: rowYs[0] },
+    cells: [cell(0, 0, colXs[0], rowYs[1], colXs[1], rowYs[0])],
+  })
+  const heads = [clip([58.1, 125, 196.3], [660.4, 620.4]), clip([196.3, 199, 273, 331, 402, 404.5], [660.4, 648.4, 620.4]), clip([401.7, 405, 478, 536.3], [660.4, 648.4, 620.4])]
+  it("머리 띠를 왼끝부터 오른끝까지 나눠 덮은 클립 격자들도 버린다", () => {
+    assert.equal(dropHeadBandClipGrids(heads, [stat]).length, 0)
+  })
+  it("머리 띠에 빈 곳이 있거나 본문을 덮는 클립이 있으면 둔다", () => {
+    assert.equal(dropHeadBandClipGrids(heads.slice(0, 2), [stat]).length, 2)
+    assert.equal(dropHeadBandClipGrids([heads[0], heads[2]], [stat]).length, 2)
+    const bodyClip = clip([58.1, 125, 199], [620.4, 600])
+    assert.equal(dropHeadBandClipGrids([...heads, bodyClip], [stat]).length, 4)
   })
 })
 

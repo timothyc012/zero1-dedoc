@@ -12,11 +12,14 @@
  */
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { isDotFragment, joinDigitGroups, joinLeaderItems, restoreBulletItems, restoreSymbols, smartQuotes } from "../src/ocr/postprocess.js"
+import { dateCommas, dateDots, dropNestedFragments, isDotFragment, joinDigitGroups, joinLeaderItems, restoreBulletItems, restoreSymbols, smartQuotes } from "../src/ocr/postprocess.js"
 
 describe("restoreSymbols — 사전 밖 기호 복원", () => {
   it("줄 머리 O/o + 한글 → ○", () => {
     assert.equal(restoreSymbols("O사회적경제 육성"), "○사회적경제 육성")
+    // 네모 친 번호의 왼 변을 읽은 "[" 는 지우고, 닫는 "]" 가 있는 대괄호는 둔다
+    assert.equal(restoreSymbols("[②식량산업 활성화"), "②식량산업 활성화")
+    assert.equal(restoreSymbols("[②번 서식] 참조"), "[②번 서식] 참조")
     assert.equal(restoreSymbols("o 추진계획"), "○ 추진계획")
   })
   it("라틴 약어·숫자·ㅇ 글머리는 그대로", () => {
@@ -92,6 +95,40 @@ describe("restoreBulletItems — 떨어진 글머리 O", () => {
   })
 })
 
+describe("restoreSymbols — 직함 앞 전(前)·현(現)", () => {
+  it("낱말 머리 전·현 뒤 빈 괄호만 채운다", () => {
+    assert.equal(restoreSymbols("트리셰 전()유럽중앙은행 총재"), "트리셰 전(前)유럽중앙은행 총재")
+    assert.equal(restoreSymbols("및 현()명예총재"), "및 현(現)명예총재")
+    assert.equal(restoreSymbols("하여 생기()되는 직무"), "하여 생기()되는 직무")
+    assert.equal(restoreSymbols("발전()"), "발전()")
+  })
+})
+
+describe("dateDots — 요일 붙은 날짜에서 빠진 마침표", () => {
+  it("일자 뒤·연도 뒤 마침표를 채운다", () => {
+    assert.equal(dateDots("2022. 3.3(목)"), "2022. 3.3.(목)")
+    assert.equal(dateDots("2022 1.8.(토)"), "2022. 1.8.(토)")
+    assert.equal(dateDots("2021. 12. 9.(목)"), "2021. 12. 9.(목)")
+  })
+  it("요일 괄호가 아니거나 날짜 꼴이 아니면 그대로", () => {
+    assert.equal(dateDots("2022. 3.3(안)"), "2022. 3.3(안)")
+    assert.equal(dateDots("12.2022 3.3(목)"), "12.2022 3.3(목)")
+    assert.equal(dateDots("1,2022 3.3(목)"), "1,2022 3.3(목)")
+  })
+})
+
+describe("dateCommas — 날짜 마침표를 쉼표로 읽은 것", () => {
+  it("네 자리 연도 뒤 한두 자리 월·일만 마침표로", () => {
+    assert.equal(dateCommas("2021, 12, 9(목)"), "2021. 12. 9(목)")
+    assert.equal(dateCommas("2026,1,8."), "2026.1.8.")
+  })
+  it("천 단위 숫자·세 자리 값·짧은 목록은 그대로", () => {
+    assert.equal(dateCommas("2,021,123"), "2,021,123")
+    assert.equal(dateCommas("총 2021, 12, 123명"), "총 2021, 12, 123명")
+    assert.equal(dateCommas("1,2,3"), "1,2,3")
+  })
+})
+
 describe("joinDigitGroups — 천 단위 숫자 공백", () => {
   it("쉼표 뒤 공백 제거", () => {
     assert.equal(joinDigitGroups("385, 426"), "385,426")
@@ -141,5 +178,69 @@ describe("joinLeaderItems — 목차 한 줄 잇기", () => {
     const a = it0("구분", 100, 60, 180), b = it0("12", 500, 30, 180)
     const c = it0("구분", 100, 60, 220), d = it0("내용", 900, 40, 220)
     assert.equal(joinLeaderItems([t1, t2, a, b, c, d], new Map()).length, 6)
+  })
+})
+
+describe("joinLeaderItems — 리더 가장자리 점·쌍점 잡티", () => {
+  it("제목과 쪽번호 사이 따로 검출된 쌍점 박스를 지우고 잇는다", () => {
+    const t = { text: "○ 행정지원국", x: 0, y: 0, w: 100, h: 30, confidence: 0.9 }
+    const c = { text: ":", x: 110, y: 15, w: 6, h: 4, confidence: 0.9 }
+    const n = { text: "…419", x: 110, y: 2, w: 200, h: 28, confidence: 0.9 }
+    const out = joinLeaderItems([t, c, n], new Map([[n, { lead: true, trail: false }]]))
+    assert.deepEqual(out.map(o => o.text), ["○ 행정지원국 … 419"])
+  })
+  it("제목 끝에 물린 가운뎃점은 리더로 본다", () => {
+    const t = { text: "○보건소·", x: 0, y: 0, w: 100, h: 30, confidence: 0.9 }
+    const n = { text: "…561", x: 110, y: 2, w: 200, h: 28, confidence: 0.9 }
+    assert.deepEqual(joinLeaderItems([t, n], new Map([[n, { lead: true, trail: false }]])).map(o => o.text), ["○보건소 … 561"])
+  })
+})
+
+describe("dropNestedFragments", () => {
+  const box = (text: string, x: number, y: number, w: number, h: number, confidence: number) => ({ text, x, y, w, h, confidence })
+  it("읽은 글자 상자 안 작은 획 조각(업 아래 ㅂ → D)은 버린다", () => {
+    const items = [box("업", 572, 1962, 39, 42, 0.999), box("D", 576, 1986, 35, 18, 0.62), box("기", 675, 1964, 37, 40, 0.999)]
+    assert.deepEqual(dropNestedFragments(items).map(i => i.text), ["업", "기"])
+  })
+  it("겹치기만 하거나 키가 비슷한 상자는 둔다", () => {
+    const items = [box("가나", 100, 100, 80, 40, 0.99), box("다", 170, 110, 30, 20, 0.5), box("라", 110, 102, 30, 36, 0.5)]
+    assert.deepEqual(dropNestedFragments(items).map(i => i.text), ["가나", "다", "라"])
+  })
+})
+
+describe("dateDots — 물결 기간 앞 날짜 끝점", () => {
+  it("끝 날짜에 점이 있으면 앞 날짜에도 찍는다", () => {
+    assert.equal(dateDots("’26.4~’26.12."), "’26.4.~’26.12.")
+    assert.equal(dateDots("2025.3.1~2025.12.31."), "2025.3.1.~2025.12.31.")
+  })
+  it("붙임표 기간·끝점 없는 기간은 그대로", () => {
+    assert.equal(dateDots("2020.04.13 - 2020.11.30."), "2020.04.13 - 2020.11.30.")
+    assert.equal(dateDots("’26.4~’26.12"), "’26.4~’26.12")
+  })
+})
+
+describe("restoreSymbols — 전화 기호 ☎", () => {
+  it("괄호 뒤 홑 라틴 글자 + 붙임표 전화번호는 ☎", () => {
+    assert.equal(restoreSymbols("과장(a750-2730)"), "과장(☎750-2730)")
+    assert.equal(restoreSymbols("사무관(a 02-750-2740)"), "사무관(☎02-750-2740)")
+  })
+  it("괄호 속 낱말(G20)은 그대로", () => {
+    assert.equal(restoreSymbols("주요 20개국(G20) 글로벌"), "주요 20개국(G20) 글로벌")
+  })
+})
+
+describe("dateDots — 끝 날짜 가운데 점", () => {
+  it("끝 날짜가 일까지 가고 끝점이 없으면 앞 날짜도 그대로", () => {
+    assert.equal(dateDots("입법예고(’25.11.25~’26.1.5)"), "입법예고(’25.11.25~’26.1.5)")
+  })
+})
+
+describe("restoreSymbols — 리터 ℓ", () => {
+  it("한글 줄의 숫자 바로 뒤 홑 l 은 ℓ", () => {
+    assert.equal(restoreSymbols("유류비 1,500원*200l *12월"), "유류비 1,500원*200ℓ *12월")
+  })
+  it("영문 줄·단위 글자(ml·lb)는 그대로", () => {
+    assert.equal(restoreSymbols("200l bottle"), "200l bottle")
+    assert.equal(restoreSymbols("10lb 무게"), "10lb 무게")
   })
 })

@@ -1,0 +1,97 @@
+{
+  "review": "HWP5 exact-visual unchanged no-op follow-up",
+  "scope": [
+    "src/roundtrip/hwp5-patch.ts",
+    "tests/hwp5-patch.test.ts"
+  ],
+  "readOnlyProduction": true,
+  "sourceStable": true,
+  "changedDuringReview": [],
+  "reviewHead": "5aeafcb593ef94dbc7a910da7edcd93f4bd2f352",
+  "finalHead": "be7f50c004e74c5c06d3018aaee00085cdc244d4",
+  "edgeChecks": {
+    "checks": [
+      {
+        "name": "nonzero-offset-input-owned-copy-and-verify-true",
+        "passed": true,
+        "inputLength": 4096,
+        "unitCount": 3
+      },
+      {
+        "name": "unchanged-keep-route",
+        "passed": true
+      },
+      {
+        "name": "nonexact-visual-cannot-use-new-noop-gate",
+        "passed": true
+      },
+      {
+        "name": "security-refusal-before-visual-noop",
+        "flag": 2,
+        "passed": true
+      },
+      {
+        "name": "security-refusal-before-visual-noop",
+        "flag": 4,
+        "passed": true
+      },
+      {
+        "name": "security-refusal-before-visual-noop",
+        "flag": 16,
+        "passed": true
+      },
+      {
+        "name": "security-refusal-before-visual-noop",
+        "flag": 22,
+        "passed": true
+      },
+      {
+        "name": "compressed-stream-byte-identical-noop",
+        "passed": true
+      }
+    ],
+    "total": 8,
+    "passed": 8,
+    "failed": 0,
+    "originalBytes": 4096,
+    "compressedBytes": 3584
+  },
+  "edgeCommand": {
+    "command": [
+      "node",
+      "--import",
+      "tsx",
+      "/tmp/kordoc-hwpx-r3-verify-20261001/hwp5-visual-noop-review/edge-checks.mjs"
+    ],
+    "cwd": "/Users/mong-e/workspace/kordoc-quality-99",
+    "exitCode": 0,
+    "elapsedSeconds": 0.18949987506493926
+  },
+  "diffCheck": {
+    "command": "git diff --check -- src/roundtrip/hwp5-patch.ts tests/hwp5-patch.test.ts",
+    "exitCode": 0
+  },
+  "independentTypecheck": false,
+  "independentFullTests": false,
+  "buildExecuted": false,
+  "fullBenchmarkExecuted": false,
+  "publishExecuted": false,
+  "newFindings": [],
+  "parentReportedValidation": {
+    "source": "parent message 2026-10-01",
+    "focusedTests": 60,
+    "skipped": 0,
+    "failed": 0,
+    "elapsedSeconds": 7.49,
+    "typecheck": "PASS",
+    "diffcheck": "PASS"
+  },
+  "reviewConclusions": [
+    "Gate requires exact visual Markdown equality and keep/visual divergence. Actual visual edits still use preexisting layout mode mismatch guard.",
+    "Encryption/distribution/DRM rejection precedes parsing and the new no-op branch.",
+    "Returned data is an independent Uint8Array copy including nonzero-byteOffset input; no stream rewriting or source mutation occurs.",
+    "verify:false omits verification, otherwise diff compares already-parsed original visual units with exact equal edited units; bytes identical to original justify residual zero without mapping.",
+    "Fixture is a small in-memory CFB with border-fill DocInfo plus 2x2 empty table and two body paragraphs; no local corpus dependency is added.",
+    "HWPX parser/reference/scorer hashes remained stable during this review; prior full score matrix is parent evidence, not rerun here."
+  ]
+}

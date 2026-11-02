@@ -10,6 +10,7 @@ import type { IRBlock, IRTable } from "../types.js"
 import { stripControlChars } from "./quality.js"
 import { collapseEvenSpacing } from "./text-line.js"
 import { wrapJoiner, mapPageBreakText } from "./line-wrap.js"
+import { FRAME_TITLE_BLOCKS } from "./table-meta.js"
 
 /**
  * 한컴 PDF 가 가운뎃점(ㆍ U+318D)을 조합형 중성 아래아(ᆞ U+119E)로 내는 것을 되돌린다.
@@ -55,7 +56,7 @@ export function sanitizeBlockControlChars(blocks: IRBlock[]): void {
 }
 
 /**
- * 최상위 1×1 표(중첩표 없음)를 줄마다 문단 블록으로 편다 (PDF 전용, v4.12.3).
+ * 최상위 1×1 상자를 원문 문단·중첩표 순서대로 편다. 기하 없는 종전 셀은 줄 경계를 보존한다.
  * 1×1 셀 줄바꿈은 표 셀 줄바꿈 보존 정책(v4.12.1 1열 다행)과 같이 지켜야 하는데, 1×1 은
  * tableToMarkdown 이 "줄\n줄" 로 내고 cleanPdfText 의 mergeKoreanLines 가 한글 줄을 이어 붙여
  * "선 서 나는 헌법을 …"(선서문 안쪽 상자, 제목 줄+본문 줄 결합)이 됐다. 문단 블록 사이는 빈 줄이라
@@ -76,6 +77,8 @@ export function splitSingleCellTables(blocks: IRBlock[]): IRBlock[] {
   const out: IRBlock[] = []
   for (const b of blocks) {
     const t = b.type === "table" ? b.table : undefined
+    const title = t && FRAME_TITLE_BLOCKS.get(t)
+    if (title) { out.push({ ...title, text: `${t!.cells[0][0].text.trim()} ${t!.cells[0][2].text.trim()}` }); continue }
     // 캡션 상자 — 표가 아니라 캡션 문단이다(1칸 틀 안에 든 것도)
     // 틀 칸 글은 비었거나 안쪽 표 글을 되풀이한 것
     const only = t && t.rows === 1 && t.cols === 1 && t.cells[0]?.[0]?.blocks?.length === 1 ? t.cells[0][0].blocks[0] : undefined
@@ -85,10 +88,11 @@ export function splitSingleCellTables(blocks: IRBlock[]): IRBlock[] {
     const caption = captionTableText(t) ?? (inner?.type === "table" ? captionTableText(inner.table) : null)
     if (caption) { out.push({ type: "paragraph", text: caption, pageNumber: b.pageNumber, bbox: b.bbox }); continue }
     const cell = t && t.rows === 1 && t.cols === 1 ? t.cells[0]?.[0] : undefined
-    if (!cell || cell.blocks?.some((x) => x.type === "table")) { out.push(b); continue }
+    if (!cell) { out.push(b); continue }
     const lines = (cell.text ?? "").split(/\n/).map((l) => l.trim()).filter(Boolean)
     // 표에 붙은 캡션은 푼 줄 앞 문단으로 남긴다 (표를 풀면서 캡션까지 사라지던 것)
     if (t?.caption?.trim()) out.push({ type: "paragraph", text: t.caption.trim(), pageNumber: b.pageNumber, bbox: b.bbox })
+    if (cell.blocks?.length) { out.push(...splitSingleCellTables(cell.blocks)); continue }
     for (const text of lines) out.push({ type: "paragraph", text, pageNumber: b.pageNumber, bbox: b.bbox })
   }
   return out

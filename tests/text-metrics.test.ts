@@ -67,6 +67,13 @@ describe("simulateWrap — 어절(keep)·글자(charAll) 모델", () => {
     assert.equal(r.lines, 2)
     assert.deepEqual(r.starts, [0, 3])
   })
+  it("금칙으로 직전 이모지를 옮겨도 서로게이트 쌍을 나누지 않는다", () => {
+    for (const mode of ["keep", "charAll"] as const) {
+      const r = simulateWrap("가😀,나", 1940, 1940, 1000, 100, mode)
+      assert.deepEqual(r.starts, [0, 1, 4])
+      for (const start of r.starts) assert.ok(!/[\uDC00-\uDFFF]/.test("가😀,나"[start]))
+    }
+  })
 })
 
 describe("fitRatioForFewerLines — 자동 장평(orphan 축소)", () => {
@@ -86,9 +93,9 @@ describe("fitRatioForFewerLines — 자동 장평(orphan 축소)", () => {
 
 describe("faceClass — 고정폭 글꼴 폭 테이블 (v4.0.6 회귀)", () => {
   it("실측 폭표 글꼴은 font:이름, 나머지 '체' 고정폭은 fixedPitch, 그 외·미지정은 hcr", () => {
-    for (const f of ["굴림체", "굴림", "HY견고딕", "맑은 고딕", "한컴돋움", "휴먼명조"]) assert.equal(faceClassOf(f), `font:${f}`)
-    for (const f of ["돋움체", "바탕체", "궁서체"]) assert.equal(faceClassOf(f), "fixedPitch")
-    for (const f of ["함초롬바탕", "나눔고딕", "", undefined, null]) assert.equal(faceClassOf(f), "hcr")
+    for (const f of ["굴림체", "돋움체", "굴림", "HY견고딕", "맑은 고딕", "한컴돋움", "휴먼명조"]) assert.equal(faceClassOf(f), `font:${f}`)
+    for (const f of ["바탕체", "궁서체"]) assert.equal(faceClassOf(f), "fixedPitch")
+    for (const f of ["함초롬바탕", "나눔명조", "", undefined, null]) assert.equal(faceClassOf(f), "hcr")
   })
   it("fixedPitch: 한글 1.0em·ASCII 0.5em (함초롬 0.97em·비례폭과 구분)", () => {
     assert.equal(measureTextWidth("가나다라", 1000, 100, { faceClass: "fixedPitch" }), 4000)
@@ -100,6 +107,15 @@ describe("faceClass — 고정폭 글꼴 폭 테이블 (v4.0.6 회귀)", () => {
     const text = "가나다라마바사아자차"
     assert.equal(simulateWrap(text, 9800, 9800, 1000, 100, "charAll").lines, 1)
     assert.equal(simulateWrap(text, 9800, 9800, 1000, 100, "charAll", { faceClass: "fixedPitch" }).lines, 2)
+  })
+  it("미등록 글꼴명이 객체 속성과 같아도 고딕 근사 폭으로 계산한다", () => {
+    const text = "가나다 ABC 123,😀"
+    for (const face of ["constructor", "toString", "__proto__", "없는글꼴"]) {
+      const opts = { faceClass: `font:${face}` as const }
+      assert.equal(measureTextWidth(text, 1500, 97, opts), measureTextWidth(text, 1500, 97, { faceClass: "gothic" }))
+      assert.deepEqual(simulateWrap(text, 5000, 6000, 1500, 97, "keep", opts),
+        simulateWrap(text, 5000, 6000, 1500, 97, "keep", { faceClass: "gothic" }))
+    }
   })
 })
 

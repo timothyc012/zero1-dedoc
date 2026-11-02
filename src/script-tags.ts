@@ -8,6 +8,18 @@ import type { IRBlock } from "./types.js"
 
 export type ScriptKind = "sup" | "sub"
 
+/** 원문 글자 가운데 파서가 넣는 표지(<u>·<sup>·<sub>)와 같은 꼴의 `<` */
+const LITERAL_TAG = /<(?=\/?(?:u|sup|sub)>)/g
+
+/**
+ * IR 글 규약: 원문 글자 "<sub>"·"</sup>"·"<u>" 의 `<` 는 `\<` 로 담는다(리터럴 `$` → `\$` 와 같은 규약, escapeLiteralDollar).
+ * 파서가 넣는 첨자·밑줄 표지와 같은 꼴이면 첨자 끔(stripScriptTags)·평문(plainScripts)·태그 정리(tidyScriptTags)가 원문 글자까지
+ * 걷거나 고쳤다(#122 "Close it with </sup> please." → "Close it with  please."). `\<` 는 CommonMark 이스케이프라 렌더는 `<` 그대로
+ */
+export function escapeLiteralTags(text: string): string {
+  return text.includes("<") ? text.replace(LITERAL_TAG, "\\<") : text
+}
+
 /** 첨자 글을 태그로 감싼다 — 앞뒤 공백은 태그 밖으로, 공백뿐이면 그대로 */
 export function wrapScript(text: string, kind: ScriptKind | null | undefined): string {
   if (!kind) return text
@@ -18,11 +30,12 @@ export function wrapScript(text: string, kind: ScriptKind | null | undefined): s
 /** 조각마다 감싼 태그 정리 — 이웃한 같은 태그를 합치고, 태그 안 앞뒤 공백을 밖으로 내고, 빈 태그를 지운다 */
 export function tidyScriptTags(text: string): string {
   if (!text.includes("<su")) return text
+  // 이스케이프된 \< 는 원문 글자 (escapeLiteralTags)
   return text
-    .replace(/<\/(sup|sub)><\1>/g, "")
-    .replace(/<(sup|sub)>(\s+)/g, "$2<$1>")
+    .replace(/(?<!\\)<\/(sup|sub)><\1>/g, "")
+    .replace(/(?<!\\)<(sup|sub)>(\s+)/g, "$2<$1>")
     .replace(/(\s+)<\/(sup|sub)>/g, "</$2>$1")
-    .replace(/<(sup|sub)><\/\1>/g, "")
+    .replace(/(?<!\\)<(sup|sub)><\/\1>/g, "")
 }
 
 /**
@@ -31,13 +44,14 @@ export function tidyScriptTags(text: string): string {
  */
 export function plainScripts(md: string): string {
   if (!md.includes("<su")) return md
-  return md.replace(/<(sup|sub)>([^<\n]*)<\/\1>/g, (_, kind: string, body: string) => {
+  return md.replace(/(?<!\\)<(sup|sub)>([^<\n]*)<\/\1>/g, (_, kind: string, body: string) => {
     const mark = kind === "sup" ? "^" : "_"
     return /^(?:[+\-−]?[\p{L}\p{N}]+|[*∗†‡§¶]+)$/u.test(body) ? mark + body : `${mark}(${body})`
   })
 }
 
-const TAG_RE = /<\/?su[bp]>/g
+/** 파서가 넣은 첨자 표지 — 이스케이프된 \< 는 원문 글자 (escapeLiteralTags) */
+const TAG_RE = /(?<!\\)<\/?su[bp]>/g
 
 /**
  * 첨자 표기를 끈 결과(`scriptTags: false`, PDF·이미지 기본) — 마크다운·쪽별 마크다운·IR 글(문단·span·각주·목록·표 칸·캡션)에서
@@ -51,6 +65,7 @@ export function stripScriptTags<T extends { markdown?: string; blocks?: IRBlock[
       if (b.footnoteText) b.footnoteText = s(b.footnoteText)
       for (const sp of b.spans ?? []) sp.text = s(sp.text)
       walk(b.children)
+      walk(b.footnoteBlocks)
       if (b.table) {
         if (b.table.caption) b.table.caption = s(b.table.caption)
         walk(b.table.captionBlocks)

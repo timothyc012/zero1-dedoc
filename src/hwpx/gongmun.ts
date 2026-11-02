@@ -12,6 +12,7 @@
 import { charWidthEm1000, SPACE_EM_FIXED } from "./text-metrics.js"
 import { gaejosikMarker, gaejosikLevelIndent, type GaejosikSizeOverrides } from "./gaejosik.js"
 import { KordocError } from "../utils.js"
+import { applyAgency, agencyWarnings, type ResolvedAgency } from "./agency.js"
 import { CHECKLIST_ITEMS } from "./gen-frame-seoul-front.js"
 import { hangulOrdinal, circledNumber, circledHangul } from "../shared/numbering.js"
 
@@ -19,6 +20,8 @@ import { hangulOrdinal, circledNumber, circledHangul } from "../shared/numbering
 
 export type GongmunPreset = "official" | "report" | "plan" | "notice" | "minutes" | "gaejosik" | "press" | "ministry" | "bangchim"
 export type GongmunNumbering = "standard" | "report" | "gaejosik"
+/** 2단계 항목부호 */
+export type Bullet2 = "ㅇ" | "○" | "◦" | "❍"
 export type GongmunFont = "myeongjo" | "gothic"
 
 /** 프리셋 입력값 — 영문 키 또는 한글 별칭(기안문·보고서·계획서·통지·회의록 등) */
@@ -79,8 +82,10 @@ export interface GongmunOptions {
    * 문단별 자동 장평 — 한두 글자(짧은 꼬리)만 다음 줄로 넘어가는 문단의 장평을
    * 95→90%까지 자동 축소해 한 줄에 담는다(공무원 실무 관행의 자동화).
    * false로 끄거나 minRatio(기본 90)로 하한 조정. 기본 켜짐.
+   * safety: "한 줄에 들어간다"고 볼 가용폭 비율의 상한(기본 실폭표 0.98). 한컴 밖의 조판기(rhwp 미리보기·PDF 등)로도
+   * 그리는 문서는 0.95 처럼 낮춰 꽉 찬 줄을 조금 더 줄여 둔다. 기본보다 느슨해지지는 않는다.
    */
-  autoFit?: boolean | { minRatio?: number }
+  autoFit?: boolean | { minRatio?: number; safety?: number }
   /**
    * 요소별 글꼴 오버라이드 — 기관 표준 폰트 적용이나 미설치 폰트 대체용.
    * body=본문(개조식 ○·-) / heading=제목 계열(□·장헤더·표지·목차) / ref=※ 참고 / table=표 셀.
@@ -124,9 +129,9 @@ export interface GongmunOptions {
   bandTextColor?: string
   /**
    * 2단계 항목부호 — 'ㅇ'(이응, 전자결재 기안문·공고문 실측 지배) / '○'(원, 보고서
-   * 양식 계열 실측). 기본: notice·press 'ㅇ', 그 외 '○' (v4.1.0 실결재 60건 분포).
+   * 양식 계열 실측) / '◦'·'❍'(일부 중앙부처 — agency 실측). 기본: notice·press 'ㅇ', 그 외 '○' (v4.1.0 실결재 60건 분포).
    */
-  bullet2?: "ㅇ" | "○"
+  bullet2?: Bullet2
   /**
    * 단일 형제 항목 부호 생략(편람 규정: 항목이 하나면 부호 미부여). 기본 false —
    * 부호 없는 계단 들여쓰기가 실무 눈에 더 어색하다(실무자 QA, v4.0.2).
@@ -134,6 +139,11 @@ export interface GongmunOptions {
    * 적용되지 않으므로, 기본 numbering이 report인 plan 프리셋은 numbering:'standard' 병기 필요.
    */
   suppressSingle?: boolean
+  /**
+   * 표 합계·총계·계 행 위치 — 'top'(머리행 바로 아래, 기본: 공문 실무 관행) / 'bottom'(맨 아래) / 'keep'(원고 그대로).
+   * GFM 표에만 적용, HTML 병합 표는 원고 그대로.
+   */
+  totalRow?: "top" | "bottom" | "keep"
   /** 기안문 두문표 — 행정기관명·(원훈 slogan)·수신·경유·제목 (별지 제1호서식·서울 실결재 6행 표, official 전용) */
   docHead?: { org?: string; slogan?: string; to?: string; via?: string; title?: string }
   /**
@@ -145,7 +155,7 @@ export interface GongmunOptions {
     approvers?: string[]; cooperator?: string; recipients?: string; docNum?: string; receive?: string
     zip?: string; address?: string; site?: string; phone?: string; fax?: string; email?: string; disclosure?: string
   }
-  /** 보고서 요약 박스(제목표 아래 #DFE6F7 상자, 서울 실결재) — 마크다운 제목 직후 인용문(>)으로도 지정 가능 */
+  /** 요약 박스(제목표·개조식 본문 첫 쪽 제목 상자 아래 #DFE6F7 상자, 서울 실결재) — 마크다운 제목 직후 인용문(>)으로도 지정 가능 */
   summary?: string
   /** 보고서 표지 문서정보표 — 문서번호·결재일자·공개여부·방침번호 (cover와 함께) */
   docInfo?: { docNum?: string; date?: string; disclosure?: string; policyNo?: string }
@@ -159,7 +169,17 @@ export interface GongmunOptions {
   /** 공고문 두문·결문 — 공고번호(본문 위)·날짜·발신명의(본문 아래 우측, 실측 바이오헬스 공고) */
   noticeHead?: { no?: string; date?: string; sender?: string }
   /** 보도자료(press) 머리·담당 — 보도시점/배포 행·부제·담당 부서 표 */
-  press?: { release?: string; distribute?: string; sub?: string[]; contact?: { dept?: string; manager?: string; phone?: string } }
+  press?: {
+    release?: string; distribute?: string; sub?: string[]
+    /** 담당 표 — people 를 주면 사람마다 한 행(구분 책임자·담당자 | 직급 | 이름 | 전화), 없으면 담당자·연락처 한 행 */
+    contact?: { dept?: string; manager?: string; phone?: string; people?: Array<{ role?: string; title?: string; name?: string; phone?: string }> }
+  }
+  /**
+   * 기관 서식 — 중앙행정기관 이름(예: "국세청") 또는 "공통". 정책브리핑 보도자료 2,670건 실측(UpstageAI/korean-report-hwpx)의
+   * 그 기관 단계별 글꼴·크기·2단계 부호·표 머리·기관 색을 기본값으로 깐다. 명시 옵션이 이긴다.
+   * 보고서·계획서·업무보고·개조식·보도자료 전용 (agency.ts)
+   */
+  agency?: string
 }
 
 export interface ResolvedGongmun {
@@ -172,6 +192,8 @@ export interface ResolvedGongmun {
   centerTitle: boolean
   /** 자동 장평 하한(%) — null이면 끔 */
   autoFitMinRatio: number | null
+  /** 한 줄 판정 가용폭 비율 상한 (autoFit.safety). 없으면 맞춤 함수 기본값 */
+  autoFitSafety?: number
   /** 표지 설정 — null이면 표지 없음 (개조식 외 프리셋 기본) */
   cover: { date: string | null; org: string; dept?: string; label?: string } | null
   /** 옵션이 명시됐는지 — v5 스킴이 실측 기본값(굴림 12·한컴돋움 15·160/180%)을 쓸지 판단 */
@@ -210,9 +232,11 @@ export interface ResolvedGongmun {
   bandColor: string
   bandTextColor: string
   /** 2단계 항목부호 — notice·press 기본 'ㅇ', 그 외 '○' (실결재 60건 분포, v4.1.0) */
-  bullet2: "ㅇ" | "○"
+  bullet2: Bullet2
   /** 단일 형제 부호 생략(규정) — 기본 false (실무 관행: 하나여도 부호, v4.0.2) */
   suppressSingle: boolean
+  /** 표 합계 행 위치 — 지정 없으면 null(서식 프로필이 있으면 keep, 없으면 top — resolveTotalRow) */
+  totalRow: "top" | "bottom" | "keep" | null
   /** 기안문 두문 — null이면 없음 */
   docHead: NonNullable<GongmunOptions["docHead"]> | null
   /** 기안문 결문 — null이면 없음 */
@@ -223,6 +247,8 @@ export interface ResolvedGongmun {
   noticeHead: { no?: string; date?: string; sender?: string } | null
   /** 보도자료 머리·담당 — press 프리셋이면 옵션 미지정이어도 빈 객체(머리박스는 항상) */
   press: NonNullable<GongmunOptions["press"]> | null
+  /** 기관 서식 중 옵션으로 표현하지 않는 값(※·표 크기, 표 머리 음영, 보도자료 본문 방식) — agency 미지정이면 null */
+  agency: ResolvedAgency | null
 }
 
 /**
@@ -322,6 +348,9 @@ function validateGongmunOptions(opts: GongmunOptions): void {
   if (typeof opts.autoFit === "object" && opts.autoFit.minRatio !== undefined) {
     assertFiniteRange("autoFit.minRatio", opts.autoFit.minRatio, 50, 99)
   }
+  if (typeof opts.autoFit === "object" && opts.autoFit.safety !== undefined) {
+    assertFiniteRange("autoFit.safety", opts.autoFit.safety, 0.8, 1)
+  }
   if (opts.margins) {
     for (const side of ["top", "bottom", "left", "right"] as const) {
       const value = opts.margins[side]
@@ -399,6 +428,9 @@ export function incompatibleGongmunWarnings(opts: GongmunOptions): string[] {
   if (opts.noticeHead && preset !== "notice") warns.push(`notice_head(공고번호·발신명의)는 통지(notice) 전용 — '${preset}' 프리셋에서 무시됨`)
   if (opts.press && preset !== "press") warns.push(`press(머리박스·부제·담당)는 보도자료(press) 전용 — '${preset}' 프리셋에서 무시됨`)
   if (opts.checklist && !SEOUL_REPORT_PRESETS.has(preset)) warns.push(`checklist(사전 검토항목 점검표)는 보고서·계획서·방침서 전용 — '${preset}' 프리셋에서 무시됨`)
+  warns.push(...agencyWarnings(opts, preset))
+  const contact = opts.press?.contact
+  if (contact?.people?.length && (contact.manager || contact.phone)) warns.push("press.contact: people(사람별 행)를 주면 manager·phone(한 행 꼴)은 무시됨")
   if (preset === "press" && (opts.cover === true || typeof opts.cover === "object" || opts.toc === true)) {
     warns.push("보도자료는 머리박스 서식과 양립 불가라 표지·목차가 무시됨")
   }
@@ -433,9 +465,11 @@ function hexColorOption(name: string, value: string | undefined): string | undef
   return v.toUpperCase()
 }
 
-export function resolveGongmun(opts: GongmunOptions): ResolvedGongmun {
-  validateGongmunOptions(opts)
-  const preset = normalizeGongmunPreset(opts.preset)
+export function resolveGongmun(input: GongmunOptions): ResolvedGongmun {
+  validateGongmunOptions(input)
+  const preset = normalizeGongmunPreset(input.preset)
+  // 기관 서식은 명시 옵션이 비운 자리만 채운다 — 이 아래는 깔린 옵션으로 해석
+  const { opts, agency } = applyAgency(input, preset)
   const d = PRESET_DEFAULTS[preset]
   const bodyPt = opts.bodyPt ?? d.bodyPt
   const autoFitMinRatio =
@@ -459,6 +493,7 @@ export function resolveGongmun(opts: GongmunOptions): ResolvedGongmun {
     margins: opts.margins ?? (ministry ? MINISTRY_MARGINS : preset === "report" || preset === "plan" || preset === "bangchim" ? SEOUL_REPORT_MARGINS : reportFamily ? GAEJOSIK_MARGINS : OFFICIAL_MARGINS),
     centerTitle: opts.centerTitle ?? true,
     autoFitMinRatio,
+    ...(typeof opts.autoFit === "object" && opts.autoFit.safety !== undefined ? { autoFitSafety: opts.autoFit.safety } : {}),
     // 보도자료는 머리박스가 1페이지 최상단을 차지하는 서식이라 표지·목차와 양립 불가 —
     // 켜면 머리박스가 표지에 얹히고 25pt 제목·부제가 유실된다 (docHead 프리셋 게이팅과 동일 관례)
     cover: coverOn && preset !== "press" ? { date: coverOpts.date ?? null, org: coverOpts.org ?? "", ...(coverOpts.dept ? { dept: coverOpts.dept } : {}), ...(coverOpts.label ? { label: coverOpts.label } : {}) } : null,
@@ -497,12 +532,15 @@ export function resolveGongmun(opts: GongmunOptions): ResolvedGongmun {
     bullet2: opts.bullet2 ?? (preset === "gaejosik" ? "○" : "ㅇ"),
     // 단일 형제 부호 생략 — 규정이지만 부호 없는 계단이 실무 눈에 어색 (실무자 QA)
     suppressSingle: opts.suppressSingle ?? false,
+    // 합계 행 — 공문 표는 머리행 바로 아래가 실무 관행(구청 실무자 확인 2026-10-21, gongmunseo-reference §7.4)
+    totalRow: opts.totalRow ?? null,
     docHead: preset === "official" && opts.docHead ? opts.docHead : null,
     docFoot: preset === "official" && opts.docFoot ? opts.docFoot : null,
     reportInfo: opts.reportInfo?.trim() || null,
     noticeHead: preset === "notice" && opts.noticeHead ? opts.noticeHead : null,
     // 보도자료 머리박스는 프리셋 자체가 요구 — 옵션 미지정이어도 빈 객체
     press: preset === "press" ? (opts.press ?? {}) : null,
+    agency,
   }
 }
 
@@ -536,7 +574,7 @@ export function standardMarker(depth: number, n: number): string {
 }
 
 /** 'report' 모드 마커(불릿, 순번 무관). bullet2로 2단계 ㅇ/○ 전환. */
-export function reportMarker(depth: number, bullet2: "ㅇ" | "○" = "○", asteriskThird = false): string {
+export function reportMarker(depth: number, bullet2: Bullet2 = "○", asteriskThird = false): string {
   const bullets = asteriskThird ? ASTERISK_BULLETS : REPORT_BULLETS
   const m = bullets[Math.min(depth, bullets.length - 1)]
   return depth === 1 ? bullet2 : m
@@ -580,7 +618,7 @@ export function levelIndent(
   bodyHeight: number,
   numbering: GongmunNumbering,
   sizes: GaejosikSizeOverrides = {},
-  bullet2: "ㅇ" | "○" = "○",
+  bullet2: Bullet2 = "○",
   asteriskThird = false,
   markerHeight: number = bodyHeight,
 ): LevelIndent {
@@ -627,7 +665,7 @@ export class GongmunNumberer {
   private counts: number[] = []
   constructor(
     private numbering: GongmunNumbering,
-    private bullet2: "ㅇ" | "○" = "○",
+    private bullet2: Bullet2 = "○",
     private asteriskThird = false,
   ) {}
 

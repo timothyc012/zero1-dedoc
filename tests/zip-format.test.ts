@@ -1,4 +1,4 @@
-/** ZIP 포맷 세분화 + PPTX 라우팅 오류 (#80). */
+/** ZIP 포맷 세분화 + PPTX 라우팅 (#80). */
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import JSZip from "jszip"
@@ -39,7 +39,7 @@ describe("ZIP 포맷 감지", () => {
     })
     assert.equal(await detectZipFormat(buffer), "pptx")
     const result = await parse(buffer)
-    assert.equal(result.success, false)
+    assert.equal(result.success, true)
     assert.equal(result.fileType, "pptx")
   })
 
@@ -51,18 +51,15 @@ describe("ZIP 포맷 감지", () => {
 })
 
 describe("PPTX 라우팅 (#80)", () => {
-  it("ArrayBuffer와 슬라이스된 Buffer 입력 모두 malformed PPTX 오류", async () => {
+  it("ArrayBuffer와 슬라이스된 Buffer 입력 모두 PPTX 파서로 간다 (HWPX 섹션 탐색으로 새지 않는다)", async () => {
     const buffer = await archive({ "ppt/presentation.xml": presentation })
     const padded = Buffer.concat([Buffer.from("prefix"), Buffer.from(buffer), Buffer.from("suffix")])
     for (const input of [buffer, padded.subarray(6, 6 + buffer.byteLength)]) {
       const result = await parse(input)
-      assert.equal(result.success, false)
       assert.equal(result.fileType, "pptx")
-      if (result.success) assert.fail("malformed PPTX must fail")
-      assert.equal(result.code, "PARSE_ERROR")
-      assert.match(result.error, /PPTX/)
-      assert.match(result.error, /presentation parts are missing/)
-      assert.doesNotMatch(result.error, /HWPX|섹션/)
+      if (!result.success) assert.fail(result.error)
+      assert.equal(result.pageCount, 0)
+      assert.equal(result.markdown, "")
     }
   })
 

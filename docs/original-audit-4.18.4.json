@@ -1,0 +1,142 @@
+{
+  "version": "4.18.4",
+  "baselineCommit": "467e4cddc104748ca163d94eace6d2259f35a3e9",
+  "referenceCriteriaChanged": false,
+  "original": {
+    "url": "https://www.kha.or.kr/kha_home/notice_list.do?articleNo=47408&attachNo=426369&mode=download",
+    "contentDigest": "f10be4c227de0de939826ca5033d9b3d9efc9a8c06e6155a21c6cffece6d52ac",
+    "pages": 140,
+    "modes": [
+      {
+        "options": {
+          "ocr": false
+        },
+        "selectedPages": 140,
+        "wholeDocument": true
+      },
+      {
+        "options": {},
+        "selectedPages": 41,
+        "wholeDocument": true
+      }
+    ]
+  },
+  "relations": [
+    {
+      "name": "fees",
+      "correct": 12,
+      "total": 12,
+      "notesOutside": true
+    },
+    {
+      "name": "equipment",
+      "correct": 27,
+      "total": 27,
+      "special": 17,
+      "general": 10
+    },
+    {
+      "name": "medicine",
+      "correct": 18,
+      "total": 18,
+      "special": 11,
+      "general": 7
+    },
+    {
+      "name": "commonInternalDevices",
+      "correct": 10,
+      "total": 10,
+      "basis": "5 item/quantity facts shared by ordinary and special ambulance categories"
+    }
+  ],
+  "penalties": {
+    "firstPageRelations": {
+      "correct": 9,
+      "total": 9
+    },
+    "allTables": 24,
+    "allRelations": {
+      "correct": 78,
+      "total": 78
+    },
+    "detachedHeaders": {
+      "restored": 22,
+      "total": 22
+    }
+  },
+  "frames": {
+    "oneCellSourceFrames": 102,
+    "pages": 75,
+    "characterMultisetsPreserved": 102,
+    "multilineFrames": 33,
+    "multilinePages": 24,
+    "fewerOutputBlocks": 30,
+    "nestedPage44CellsExact": 38,
+    "annexTitlesPreserved": 16,
+    "falseAnnexTitleTables": 0
+  },
+  "selectedPageMargins": {
+    "headersRemoved": 67,
+    "pageNumbersRemoved": 134,
+    "nonMarginTextAdded": 0,
+    "nonMarginTextRemoved": 0
+  },
+  "residuals": [
+    "PDF55 third penalty table still contains its full-width caption/legal-notes rows; all 9 target/value relations survive.",
+    "PDF68 source frame preserves two separate prose boxes as one 3x1 frame with its nested 2x4 table; semantic data cells survive.",
+    "PDF71 case-box caption and PDF73 flowchart caption/branch ordering retain existing residuals; independent original-page inspection confirms the V6 paragraph changes preserve all body text and improve grouping."
+  ],
+  "visual": {
+    "sourcePDFRenderedAndInspected": true,
+    "liveHancomExecuted": false,
+    "reason": "Hancom Office HWP is unavailable on this host",
+    "referenceBaselineChanged": false
+  },
+  "ocrRuntimeInitialization": {
+    "posixTelemetry": "disabled-before-native-import",
+    "externalORTEnvironmentRequired": false,
+    "normalProcessExitVerified": true,
+    "pngBytesPreserved": 8
+  },
+  "finalVerification": {
+    "revision": 7,
+    "nativePageSnapshots": 140,
+    "defaultSelectedPageSnapshots": 41,
+    "wholeDocumentPages": 140,
+    "sourceFilesUnchanged": 561,
+    "distFilesUnchanged": 142,
+    "odlReferenceFilesUnchanged": 425,
+    "tests": {
+      "total": 3181,
+      "passed": 3176,
+      "failed": 0,
+      "skipped": 5
+    }
+  },
+  "additionalCorpusInvestigation": {
+    "documents": 21,
+    "scope": "17 PDF coverage changes plus the failing reading-order document and other order-decreased documents",
+    "characterMultisetsExact": 15,
+    "repeatedHeaderChanges": 5,
+    "captionMetadataMovedToParagraph": 1,
+    "newUniqueBodyTextDeletionFound": false,
+    "readingOrderRegressionFound": true,
+    "readingOrderRegressionRecoveryPendingFinalBuild": false,
+    "targetReadingOrderRecoveredToBaseline": 0.89362,
+    "fullReleaseGatePending": false
+  },
+  "postPublicationReadingOrderInvestigation": {
+    "documents": 2,
+    "charactersPreserved": {
+      "iceArc": 114380,
+      "worldcup": 144
+    },
+    "deleted": 0,
+    "added": 0,
+    "readingOrderRegressions": [
+      "Worldcup full-width heading",
+      "ice-arc page 121 prose"
+    ],
+    "followupPlanned": "4.18.5"
+  }
+}

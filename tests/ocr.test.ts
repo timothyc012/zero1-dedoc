@@ -14,7 +14,7 @@
 
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { parseCharacterDict, getOcrModelStatus, getOcrModelProfile, normalizeOcrLanguage } from "../src/ocr/models.js"
+import { parseCharacterDict, getOcrModelStatus, languageModels, normalizeOcrLanguage } from "../src/ocr/models.js"
 import { ctcDecode, componentBoxes, OcrEngine, DEFAULT_OCR_TUNING } from "../src/ocr/engine.js"
 import { runPdfOcr, MAX_OCR_PIXELS, isCloserReadUseful } from "../src/ocr/pdf-ocr.js"
 import type { OcrProvider, ParseWarning } from "../src/types.js"
@@ -49,16 +49,17 @@ describe("OCR 언어 프로필", () => {
   it("korean/en/de profiles use distinct cached recognizers and dictionaries", () => {
     assert.equal(normalizeOcrLanguage("english"), "en")
     assert.equal(normalizeOcrLanguage("deutsch"), "de")
-    const korean = getOcrModelProfile("korean")
-    const english = getOcrModelProfile("en")
-    const german = getOcrModelProfile("de")
-    assert.equal(korean.rec.filename, "rec_korean.onnx")
-    assert.equal(english.rec.filename, "rec_en.onnx")
-    assert.equal(german.rec.filename, "rec_v6.onnx")
-    assert.notEqual(english.directory, german.directory)
-    assert.ok(english.dict)
-    assert.equal(german.dict, undefined)
+    const file = (s: object) => "spec" in s ? (s as { spec: { filename: string } }).spec.filename : null
+    const korean = languageModels("korean")
+    const english = languageModels("en")
+    const german = languageModels("de")
+    assert.equal(file(korean.rec), "rec_korean.onnx")
+    assert.equal(file(english.rec), "en/rec_en.onnx")
+    assert.equal(file(german.rec), "de-v6/rec_v6.onnx")
+    assert.equal(file(english.dict), "en/rec_en.txt")
+    assert.deepEqual(german.dict, { embedded: "rec" })
     assert.equal(german.generation, 6)
+    assert.equal(korean.generation, undefined)
   })
 
   it("rejects an unprofiled OCR language instead of falling back to Korean", () => {

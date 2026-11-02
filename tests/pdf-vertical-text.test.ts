@@ -19,9 +19,31 @@ describe("joinVerticalColumns", () => {
     assert.deepEqual(joinVerticalColumns(items).map(i => i.text), ["죽는 날까지", "한 점 부끄럼"])
   })
 
+  it("turns vertical 、。 back into the comma and period of Hangul text", () => {
+    const items = [...column("한 점 없기를、", 258), ...column("나는 괴로워했다。", 242)]
+    assert.deepEqual(joinVerticalColumns(items).map(i => i.text), ["한 점 없기를,", "나는 괴로워했다."])
+  })
+
+  it("keeps 、。 in non-Hangul columns", () => {
+    const items = [...column("春眠 不覺曉、", 258), ...column("處處 聞啼鳥。", 242)]
+    assert.deepEqual(joinVerticalColumns(items).map(i => i.text), ["春眠 不覺曉、", "處處 聞啼鳥。"])
+  })
+
   it("leaves table columns of stacked short labels alone (row pitch wider than the letters)", () => {
     const rows = ["팀장", "대리", "팀장", "대리"]
     const items = rows.flatMap((t, r) => [...t].map((c, k) => ch(c, 400 + k * 12, 700 - r * 22)))
     assert.equal(joinVerticalColumns(items), items)
+  })
+
+  it("joins a lone spine column at the page edge, split at wide gaps (표지 책등 \"제9차 의료혁신위원회 안건\")", () => {
+    const spine = [...column("제9차 의료혁신", 585), ...[..."2026․8"].map((c, k) => ch(c, 585, 300 - k * 10))]
+    const out = joinVerticalColumns(spine).map(i => i.text).sort()
+    assert.deepEqual(out, ["2026․8", "제9차 의료혁신"])
+  })
+
+  it("leaves a stacked number column between other text (표 번호 열)", () => {
+    const nums = [..."123456"].map((c, k) => ch(c, 60, 700 - k * 14))
+    const rows = nums.map(n => ({ ...ch("내용", 120, n.y), w: 20 }))
+    assert.equal(joinVerticalColumns([...nums, ...rows]).length, 12)
   })
 })

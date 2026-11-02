@@ -158,12 +158,20 @@ ${body}
  * Chromium 요청은 샜다. 기동 timeout 90초: CI(Node 22)가 부하 중 기본 30초 안에 WS 엔드포인트를 못 받아
  * 실패했다(같은 커밋 재실행은 통과한 플레이크)
  */
+/**
+ * Chromium 샌드박스 인자 — 기본은 샌드박스를 켠다(신뢰할 수 없는 문서의 그림·글꼴을 디코딩하므로 렌더러 탈출을 막는다).
+ * root 로 도는 Linux(컨테이너)는 Chromium 이 샌드박스 기동을 거부해 끄고, 그 밖엔 KORDOC_CHROMIUM_NO_SANDBOX=1 로만 끈다
+ */
+export function chromiumSandboxArgs(env: NodeJS.ProcessEnv = process.env, isRootLinux = process.platform === "linux" && process.getuid?.() === 0): string[] {
+  return env.KORDOC_CHROMIUM_NO_SANDBOX === "1" || isRootLinux ? ["--no-sandbox", "--disable-setuid-sandbox"] : []
+}
+
 export async function launchLockedPage(puppeteer: typeof import("puppeteer-core"), executablePath: string) {
   const browser = await puppeteer.default.launch({
     executablePath,
     headless: true,
     timeout: 90_000,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    args: chromiumSandboxArgs(),
   })
   try {
     const page = await browser.newPage()

@@ -49,6 +49,8 @@ export const CONVERT_MAP: Record<string, string> = {
   AST: "\\ast", STAR: "\\bigstar", BIGCIRC: "\\bigcirc",
   EMPTYSET: "\\emptyset",
   THEREFORE: "\\therefore", BECAUSE: "\\because", EXIST: "\\exists",
+  // 한글 수식 편집기는 소문자 therefore·because 도 같은 기호로 그린다(#148) — 생성 쪽 정준형은 대문자(equation-generate COMMAND_MAP)
+  therefore: "\\therefore", because: "\\because",
   "!=": "\\neq",
   SMCOPROD: "\\coprod", coprod: "\\coprod",
   SQCAP: "\\sqcap", SQCUP: "\\sqcup",

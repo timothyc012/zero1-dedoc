@@ -10,6 +10,7 @@
 
 import type { LineSegment, TableGrid, TextItem } from "./line-types.js"
 import { VERTEX_MERGE_FACTOR } from "./line-types.js"
+import { hasShadedRowBands } from "./shaded-row-bands.js"
 
 /** 선 교차점 (Vertex) — ODL의 핵심 개념 */
 interface Vertex {
@@ -23,6 +24,12 @@ interface Vertex {
 const CONNECT_TOL = 5
 /** 최소 열 폭 (pt) — 이보다 좁은 열은 인접 열과 병합 */
 const MIN_COL_WIDTH = 15
+/** 좁은 열 무리의 최소 열 폭 (pt) — 20pt 안 열이 셋 넘게 이어진 숫자 칸 무리(평가 기준 별표2 "참여업체수에 따른 배분업체수" 2~20 열,
+ *  14~17pt)는 12pt 까지 열이다. 15pt 에서 둘씩 합쳐져 29열 표가 21열이 되고 두 칸 값이 "1 1" 로 한 칸에 들었다. 홀로 좁은 들여쓰기 열은
+ *  종전대로 합친다(영문 계약서 틀 표 — 들여쓰기 열이 서자 문단까지 표로 품었다) */
+const NARROW_RUN_MIN_WIDTH = 12
+const NARROW_RUN_MAX_WIDTH = 20
+const NARROW_RUN_MIN = 4
 /** 최소 행 높이 (pt) */
 const MIN_ROW_HEIGHT = 6
 /** 좌표 병합 최소 tolerance (pt) — vertexRadius가 작아도 이 값 이하로 내려가지 않음 */
@@ -201,6 +208,9 @@ function mergeVertices(vertices: Vertex[]): Vertex[] {
 export function buildTableGrids(
   horizontals: LineSegment[],
   verticals: LineSegment[],
+  /** 좁은 열 무리를 12pt 까지 열로 둔다 — 텍스트층 벡터 괘선만. OCR 래스터 괘선은 조직도 상자 변이 좁은 열 무리처럼 보인다(web068) */
+  narrowRuns = true,
+  /** 같은 열 구조 격자 사이 틈의 글(캡션) — 있으면 두 표를 잇지 않는다 (mergeAdjacentGrids) */
   items: Pick<TextItem, "text" | "x" | "y" | "w" | "h">[] = [],
 ): TableGrid[] {
   if (horizontals.length < 2 || verticals.length < 2) return []
@@ -320,7 +330,7 @@ export function buildTableGrids(
     if (rowYs.length < 2 || colXs.length < 2) continue
 
     // 5. 그리드 검증: 최소 열 폭, 최소 행 높이
-    const validColXs = enforceMinWidth(colXs, MIN_COL_WIDTH)
+    const validColXs = enforceMinWidth(colXs, MIN_COL_WIDTH, narrowRuns)
     const validRowYs = enforceMinHeight(rowYs, MIN_ROW_HEIGHT)
 
     if (validRowYs.length < 2 || validColXs.length < 2) continue
@@ -353,7 +363,7 @@ const SHADE_CLIP_MAX_AREA = 0.5
  * 음영 칸 사이가 획 없이 흰 틈으로만 갈린 머리행(한컴 구버전 성과지표 표 "실적 | 목표치")은 클립이 선에 없는 칸
  * 경계를 주므로 둔다 — 클립 격자의 안쪽 칸 경계마다 그 띠를 덮는 세로 괘선이 있을 때만 버린다.
  */
-export function dropShadingClipGrids(clipGrids: TableGrid[], lineGrids: TableGrid[], fillRects: Array<{ x1: number; y1: number; x2: number; y2: number }>, verticals: LineSegment[] = []): TableGrid[] {
+export function dropShadingClipGrids(clipGrids: TableGrid[], lineGrids: TableGrid[], fillRects: Array<{ x1: number; y1: number; x2: number; y2: number }>, verticals: LineSegment[] = [], horizontals: LineSegment[] = []): TableGrid[] {
   if (clipGrids.length === 0 || lineGrids.length === 0 || fillRects.length === 0) return clipGrids
   const near = (a: number, b: number) => Math.abs(a - b) <= SHADE_CLIP_TOL
   const area = (b: TableGrid["bbox"]) => Math.max(0, b.x2 - b.x1) * Math.max(0, b.y2 - b.y1)
@@ -388,8 +398,37 @@ export function dropShadingClipGrids(clipGrids: TableGrid[], lineGrids: TableGri
         // 선 격자가 같은 열·행 경계에 마지막 행 하나를 더 가지면 온전한 선 격자를 쓴다.
         || (l.rowYs.length === c.rowYs.length + 1 && c.rowYs.every((y, i) => near(y, l.rowYs[i]))
           && l.colXs.length === c.colXs.length && c.colXs.every((x, i) => near(x, l.colXs[i]))
-          && !clipGrids.some(o => o !== c && inter(o.bbox, l.bbox) > 0))))
+          && !clipGrids.some(o => o !== c && inter(o.bbox, l.bbox) > 0))
+        || hasShadedRowBands(l, clipGrids, fillRects, verticals, horizontals)))
     return !host
+  })
+}
+
+/**
+ * 선 표 조각 클립 격자 버리기 — 한컴 PDF 가 글이 칸을 채우는 몇 칸에만 클립을 걸면(여수 업무계획 정원표 "합계" 행 6~9급 네 칸) 그 칸들이
+ * 작은 클립 표가 되어 먼저 글을 가져가고, 괘선으로 온전한 선 표는 그 칸이 빈 채 남고 값은 따로 1×4 표로 나갔다. 클립 격자의 행·열 경계가
+ * 모두 품는 선 격자의 괘선 자리이고 안쪽 칸 경계마다 세로 괘선이 그어졌으며, 선 표 안 클립 격자를 다 합쳐도 선 표 면적의 절반 이하이면
+ * (선 표 대부분에 클립이 없음) 선 표의 칸이지 따로 선 표가 아니다 — 선 표가 맡는다
+ */
+export function dropRuledFragmentClipGrids(clipGrids: TableGrid[], lineGrids: TableGrid[], verticals: LineSegment[], pageWidth: number, pageHeight: number): TableGrid[] {
+  // 쪽 테두리 틀이 이어 붙인 선 격자(쪽을 거의 다 덮음)는 표가 아니다 — 그 안 클립 표들은 진짜 표다(hwp3 쪽 테두리 안 표)
+  lineGrids = lineGrids.filter(l => l.bbox.x2 - l.bbox.x1 < pageWidth * 0.85 || l.bbox.y2 - l.bbox.y1 < pageHeight * 0.85)
+  if (clipGrids.length === 0 || lineGrids.length === 0) return clipGrids
+  const near = (a: number, b: number) => Math.abs(a - b) <= SHADE_CLIP_TOL
+  const area = (b: TableGrid["bbox"]) => Math.max(0, b.x2 - b.x1) * Math.max(0, b.y2 - b.y1)
+  const inter = (a: TableGrid["bbox"], b: TableGrid["bbox"]) => area({ x1: Math.max(a.x1, b.x1), y1: Math.max(a.y1, b.y1), x2: Math.min(a.x2, b.x2), y2: Math.min(a.y2, b.y2) })
+  return clipGrids.filter(c => {
+    if (!c.cells?.length || c.clipParent || c.cells.some(cell => cell.filler) || c.cells.length < 2) return true
+    const ruled = c.cells.every(cell => cell.bbox.x2 >= c.bbox.x2 - SHADE_CLIP_TOL || verticals.some(v =>
+      Math.abs(v.x1 - cell.bbox.x2) <= SHADE_CLIP_TOL * 2
+      && Math.min(v.y2, cell.bbox.y2) - Math.max(v.y1, cell.bbox.y1) >= (cell.bbox.y2 - cell.bbox.y1) * 0.75))
+    if (!ruled) return true
+    const hit = lineGrids.find(l =>
+      c.bbox.x1 >= l.bbox.x1 - SHADE_CLIP_TOL && c.bbox.x2 <= l.bbox.x2 + SHADE_CLIP_TOL
+      && c.bbox.y1 >= l.bbox.y1 - SHADE_CLIP_TOL && c.bbox.y2 <= l.bbox.y2 + SHADE_CLIP_TOL
+      && c.colXs.every(x => l.colXs.some(lx => near(lx, x))) && c.rowYs.every(y => l.rowYs.some(ly => near(ly, y)))
+      && clipGrids.reduce((sum, o) => sum + inter(o.bbox, l.bbox), 0) <= area(l.bbox) * SHADE_CLIP_MAX_AREA)
+    return !hit
   })
 }
 
@@ -421,10 +460,30 @@ export function dropHeadBandClipGrids(clipGrids: TableGrid[], lineGrids: TableGr
   if (clipGrids.length === 0 || lineGrids.length === 0) return clipGrids
   const near = (a: number, b: number) => Math.abs(a - b) <= SHADE_CLIP_TOL
   const overlaps = (a: TableGrid["bbox"], b: TableGrid["bbox"]) => Math.min(a.x2, b.x2) > Math.max(a.x1, b.x1) && Math.min(a.y2, b.y2) > Math.max(a.y1, b.y1)
-  return clipGrids.filter(c => c.clipParent || !c.cells?.length || !lineGrids.some(l =>
+  const kept = clipGrids.filter(c => c.clipParent || !c.cells?.length || !lineGrids.some(l =>
     l.rowYs.length > c.rowYs.length && l.colXs.length === c.colXs.length && c.colXs.every((x, k) => near(x, l.colXs[k]))
     && c.rowYs.every((y, k) => near(y, l.rowYs[k]))
     && !clipGrids.some(o => o !== c && overlaps(o.bbox, l.bbox))))
+  return kept.filter(c => !lineGrids.some(l => headBandTiles(kept, l, near, overlaps).includes(c)))
+}
+
+/**
+ * 머리 띠를 클립 격자 여럿이 나눠 덮은 선 표 — 한컴이 머리 칸에만 클립을 걸고 가로로 이어 붙인 머리를 칸 무리마다 따로 클립했다
+ * (벼·고추 재배면적 통계표 "연도|벼|증감|증감률|고추…" = 1x2·2x5·2x3 클립 셋, 본문 21행은 선만). 선 격자 윗변에 붙고 아랫변이
+ * 선 격자 행 경계에 놓인 클립 격자들이 왼끝부터 오른끝까지 이어 덮고, 그 아래 선 격자를 덮는 다른 클립이 없으면 그 클립들을 돌려준다
+ */
+function headBandTiles(clips: TableGrid[], l: TableGrid, near: (a: number, b: number) => boolean,
+  overlaps: (a: TableGrid["bbox"], b: TableGrid["bbox"]) => boolean): TableGrid[] {
+  const onRow = (y: number) => l.rowYs.some(r => near(r, y))
+  const band = clips.filter(c => !c.clipParent && c.cells?.length && near(c.bbox.y2, l.bbox.y2) && c.bbox.y1 > l.bbox.y1 + SHADE_CLIP_TOL
+    && c.bbox.x1 >= l.bbox.x1 - SHADE_CLIP_TOL && c.bbox.x2 <= l.bbox.x2 + SHADE_CLIP_TOL && c.rowYs.every(onRow))
+    .sort((a, b) => a.bbox.x1 - b.bbox.x1)
+  if (band.length < 2 || !near(band[0].bbox.x1, l.bbox.x1) || !near(band[band.length - 1].bbox.x2, l.bbox.x2)) return []
+  // 이웃 클립은 맞닿거나 겹친다(겹선 안쪽 클립은 3pt 남짓 겹친다)
+  if (band.some((c, k) => k > 0 && c.bbox.x1 > band[k - 1].bbox.x2 + SHADE_CLIP_TOL)) return []
+  const bottom = Math.min(...band.map(c => c.bbox.y1))
+  const body = { ...l.bbox, y2: bottom }
+  return clips.some(o => !band.includes(o) && overlaps(o.bbox, body)) ? [] : band
 }
 
 /**
@@ -493,12 +552,20 @@ export function dropCoarseClipGrids(
 }
 
 /** 최소 열 폭 보장 — 너무 좁은 열은 인접 열과 병합 */
-function enforceMinWidth(colXs: number[], minWidth: number): number[] {
+function enforceMinWidth(colXs: number[], minWidth: number, narrowRuns = true): number[] {
   if (colXs.length <= 2) return colXs
+  // 20pt 안 열이 NARROW_RUN_MIN 개 넘게 이어진 무리 안 경계는 12pt 까지 둔다
+  const inRun = new Array(colXs.length).fill(false)
+  for (let s = 0; s + 1 < colXs.length;) {
+    let e = s
+    while (e + 1 < colXs.length && colXs[e + 1] - colXs[e] < NARROW_RUN_MAX_WIDTH) e++
+    if (narrowRuns && e - s >= NARROW_RUN_MIN) for (let k = s; k <= e; k++) inRun[k] = true
+    s = Math.max(e, s + 1)
+  }
   const result: number[] = [colXs[0]]
   for (let i = 1; i < colXs.length; i++) {
     const prevX = result[result.length - 1]
-    if (colXs[i] - prevX < minWidth && i < colXs.length - 1) {
+    if (colXs[i] - prevX < (inRun[i] ? NARROW_RUN_MIN_WIDTH : minWidth) && i < colXs.length - 1) {
       // 너무 좁으면 스킵 (다음 열과 병합)
       continue
     }

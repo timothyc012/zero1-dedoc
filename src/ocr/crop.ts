@@ -145,3 +145,21 @@ function sliceBox(box: Box, left: number, right: number): Box {
     interpolate(bottomLeft, bottomRight, left)]
   return { ...box, x: left, w: right - left, quad }
 }
+
+/** Split a detected box stacked over two table rows at the ruled row boundary between them. */
+export function splitBoxAtRowRules(b: Box, rules: Array<{ x1: number; x2: number; y1: number; thicknessPx: number }>): Box[] {
+  const min = Math.max(8, b.h * 0.3)
+  const cuts = rules.filter(r => r.y1 > b.y + min && r.y1 < b.y + b.h - min
+    && r.x1 <= b.x + b.w * 0.25 && r.x2 >= b.x + b.w * 0.75).sort((a, c) => a.y1 - c.y1)
+  if (!cuts.length) return [b]
+  const out: Box[] = []
+  let top = b.y
+  for (const r of cuts) {
+    const edge = Math.floor(r.y1 - r.thicknessPx / 2 - 1)
+    if (edge - top < min) continue
+    out.push({ ...b, y: top, h: edge - top })
+    top = Math.ceil(r.y1 + r.thicknessPx / 2 + 1)
+  }
+  if (b.y + b.h - top >= min) out.push({ ...b, y: top, h: b.y + b.h - top })
+  return out.length ? out : [b]
+}

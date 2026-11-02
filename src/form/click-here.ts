@@ -16,10 +16,12 @@
 
 import JSZip from "jszip"
 import { escapeXmlText, decodeXmlEntities } from "../roundtrip/source-map.js"
-import { applySplices, type SpliceEdit } from "../roundtrip/source-map.js"
+import { applySplices, findElementEnd, type ScanParagraph, type SpliceEdit } from "../roundtrip/source-map.js"
+import { alignToRaw, commonEnds } from "../roundtrip/inline-edit.js"
 import { normalizeLabel, type ValueCursor } from "./match.js"
 import type { FormField } from "../types.js"
 import { precheckZipSize } from "../utils.js"
+import { readZipEntry } from "../hwpx/parser-shared.js"
 
 /** 문서에서 발견한 누름틀 필드 */
 export interface ClickHereField {
@@ -57,6 +59,9 @@ function attrOf(attrs: string, name: string): string | undefined {
 
 /** Clickhere Command 파라미터에서 안내문 추출 — `Direction:wstring:<N>:` 뒤 N자(UTF-16) */
 function extractPlaceholder(fieldBeginXml: string): string | undefined {
+  // 파서(section-walker clickHereGuide)와 같은 순서 — stringParam Direction, 없으면 Command 의 Direction
+  const d = fieldBeginXml.match(/<(?:[A-Za-z0-9_]+:)?stringParam\b[^>]*\bname="Direction"[^>]*>([^<]*)</)
+  if (d) return decodeXmlEntities(d[1]) || undefined
   const m = fieldBeginXml.match(/Direction:wstring:(\d+):/)
   if (!m) return undefined
   const start = (m.index ?? 0) + m[0].length
@@ -156,6 +161,65 @@ function valueXml(value: string, prefix: string): string {
   return `<${prefix}t>${lines.join(`<${prefix}lineBreak/>`)}</${prefix}t>`
 }
 
+/** 누름틀 영역을 값으로 채우는 splice — 사이 영역을 값으로 바꾸고(같으면 바이트 보존), 값이 있으면 수정 표시(dirty)를 켠다.
+ *  빈 값은 안내문 노출 그대로(미수정 유지) */
+function regionFillSplices(xml: string, region: ClickHereRegion, value: string): SpliceEdit[] {
+  const out: SpliceEdit[] = []
+  if (value !== "") {
+    const tag = xml.slice(region.beginTagStart, region.beginTagEnd)
+    if (attrOf(tag, "dirty") !== "1") {
+      const dirtyTag = /\sdirty="[^"]*"/.test(tag)
+        ? tag.replace(/(\sdirty=")[^"]*"/, (_, head: string) => head + '1"')
+        : tag.replace(/(\/?>)$/, ' dirty="1"$1')
+      out.push({ start: region.beginTagStart, end: region.beginTagEnd, replacement: dirtyTag })
+    }
+  }
+  const replacement = valueXml(value, region.prefix)
+  if (xml.slice(region.start, region.end) !== replacement) out.push({ start: region.start, end: region.end, replacement })
+  return out
+}
+
+/**
+ * patch: 문단 글 편집이 미기입 누름틀 자리에 글을 넣는 것(넣은 자리와 누름틀 사이가 공백뿐)이면 그 글을 안내문 대신 누름틀 안에
+ * 넣는 splice — 한글에서 누름틀을 눌러 입력한 것과 같다(fillClickHereInXml 과 같은 꼴: 값은 앞 run 글자 모양, dirty="1").
+ * origPlain 은 안내문을 뺀 IR 평문(마크다운)이다. 그런 편집이 아니면 null
+ */
+export function clickHereEditSplices(para: ScanParagraph, xml: string, origPlain: string, newPlain: string): SpliceEdit[] | null {
+  const paraEnd = findElementEnd(xml, para.start)
+  if (paraEnd < 0) return null
+  // 미기입(dirty≠1)이고 값 자리 글이 안내문 그대로인 누름틀 — 파서 section-walker 와 같은 판정. 문단 조각만 훑는다
+  const isGuide = (r: ClickHereRegion): boolean => {
+    if (r.placeholder === undefined || attrOf(xml.slice(r.beginTagStart, r.beginTagEnd), "dirty") === "1") return false
+    const v = regionText(xml.slice(r.start, r.end))
+    return v === r.placeholder || v.trimEnd() === r.placeholder
+  }
+  const guides = scanClickHereRegions(xml.slice(para.start, paraEnd))
+    .map(r => ({ ...r, start: r.start + para.start, end: r.end + para.start, beginTagStart: r.beginTagStart + para.start, beginTagEnd: r.beginTagEnd + para.start }))
+    .filter(isGuide)
+  if (!guides.length) return null
+  // 안내문 hp:t 를 뺀 보이는 글과 누름틀마다 그 앞 글 길이
+  let visible = ""
+  const visAt = new Map<ClickHereRegion, number>()
+  for (const t of para.tRanges) {
+    if (t.selfClosing) continue
+    const g = guides.find(r => t.contentStart >= r.start && t.contentEnd <= r.end)
+    if (g) { if (!visAt.has(g)) visAt.set(g, visible.length); continue }
+    const raw = xml.slice(t.contentStart, t.contentEnd)
+    if (/[<&]/.test(raw)) return null
+    visible += raw
+  }
+  const pos = alignToRaw(visible, origPlain)
+  const { p, s } = commonEnds(origPlain, newPlain)
+  const inserted = newPlain.slice(p, newPlain.length - s)
+  if (!pos || origPlain.length - s !== p || !inserted.trim()) return null
+  const at = p < pos.length ? pos[p] : pos.length ? pos[pos.length - 1] + 1 : 0
+  for (const [g, vis] of visAt) {
+    if (visible.slice(Math.min(at, vis), Math.max(at, vis)).trim()) continue
+    return regionFillSplices(xml, g, /\s$/.test(visible.slice(0, vis)) ? inserted.trimStart() : inserted)
+  }
+  return null
+}
+
 /** fillClickHereInXml 결과 */
 export interface ClickHereFillOutcome {
   /** 치환 적용된 XML — 변경 없으면 null */
@@ -164,6 +228,8 @@ export interface ClickHereFillOutcome {
   filled: FormField[]
   /** 매칭된 정규화 키 — 이후 라벨 매칭에서 제외할 대상 */
   matchedKeys: Set<string>
+  /** 고친 자리(치환 뒤 xml 좌표): 그 문단의 줄 배치 캐시만 지우는 데 쓴다 */
+  changedAt: number[]
 }
 
 /**
@@ -187,28 +253,23 @@ export function fillClickHereInXml(
     const value = cursor.consume(key)
     if (value === undefined) continue // 배열 값 소진 — 이후 등장은 채우지 않음
 
-    const replacement = valueXml(value, region.prefix)
-    const current = xml.slice(region.start, region.end)
     matchedKeys.add(key)
     filled.push({ label: region.name, value, row: -1, col: -1, key, source: "clickhere" })
-    // 값을 넣은 필드는 수정됨 — 빈 값은 안내문 노출 그대로(미수정 유지)
-    if (value !== "") {
-      const tag = xml.slice(region.beginTagStart, region.beginTagEnd)
-      if (attrOf(tag, "dirty") !== "1") {
-        const dirtyTag = /\sdirty="[^"]*"/.test(tag)
-          ? tag.replace(/(\sdirty=")[^"]*"/, (_, head: string) => head + '1"')
-          : tag.replace(/(\/?>)$/, ' dirty="1"$1')
-        splices.push({ start: region.beginTagStart, end: region.beginTagEnd, replacement: dirtyTag })
-      }
-    }
-    if (current === replacement) continue // 이미 같은 내용 — 바이트 보존
-    splices.push({ start: region.start, end: region.end, replacement })
+    splices.push(...regionFillSplices(xml, region, value))
   }
 
+  // 치환 뒤 좌표: 앞선 치환의 길이 차를 누적한다 (applySplices 와 같은 시작 위치 정렬)
+  const changedAt: number[] = []
+  let delta = 0
+  for (const s of [...splices].sort((a, b) => a.start - b.start)) {
+    changedAt.push(s.start + delta)
+    delta += s.replacement.length - (s.end - s.start)
+  }
   return {
     xml: splices.length > 0 ? applySplices(xml, splices) : null,
     filled,
     matchedKeys,
+    changedAt,
   }
 }
 
@@ -224,7 +285,7 @@ export async function extractClickHereFields(hwpxBuffer: ArrayBuffer): Promise<C
     .sort()
   const fields: ClickHereField[] = []
   for (let si = 0; si < sectionPaths.length; si++) {
-    const xml = await zip.file(sectionPaths[si])!.async("text")
+    const xml = await readZipEntry(zip.file(sectionPaths[si])!, "text")
     for (const r of scanClickHereRegions(xml)) {
       fields.push({
         name: r.name,

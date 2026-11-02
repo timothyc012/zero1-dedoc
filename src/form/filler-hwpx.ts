@@ -22,17 +22,18 @@
  */
 
 import JSZip from "jszip"
-import { isLabelCell } from "./recognize.js"
+import { isLabelCell, isColumnHeaderRow, isSubLabelBeside, isDatePlaceholder } from "./recognize.js"
 import { fillClickHereInXml } from "./click-here.js"
 import { KordocError, precheckZipSize } from "../utils.js"
-import { normalizeLabel, findMatchingKey, normalizeValues, resolveUnmatched, isKeywordLabel, fillInCellPatterns, scanInlineSegments, matchInlineSegment, clampSegmentEnd, padInsertion, ValueCursor, type FillValue , type FillInput } from "./match.js"
+import { normalizeLabel, findMatchingKey, normalizeValues, resolveUnmatched, isForeignLabel as isForeignLabelCell, ANNOTATION_BLANK_RE, fillInCellPatterns, scanInlineSegments, matchInlineSegment, clampSegmentEnd, padInsertion, ValueCursor, type FillValue , type FillInput } from "./match.js"
 import type { FormField } from "../types.js"
 import {
   scanSectionXml, buildParagraphSplices, buildRangeSplices, applySplices, paraTText, paraTextPureT,
-  allLinesegRemovalSplices,
-  type ScanParagraph, type ScanCell, type ScanTable, type SpliceEdit,
+  changedLinesegRemovalSplices,
+  type ScanParagraph, type ScanCell, type ScanTable, type SectionScan, type SpliceEdit,
 } from "../roundtrip/source-map.js"
 import { patchZipEntries } from "../roundtrip/zip-patch.js"
+import { readZipEntry } from "../hwpx/parser-shared.js"
 
 /** 채우기 결과 */
 export interface HwpxFillResult {
@@ -64,7 +65,7 @@ interface ParaEditLedger {
  * @param hwpxBuffer 원본 HWPX 파일 버퍼
  * @param values 채울 값 맵 (라벨 → 값). 값이 배열이면 같은 라벨의 등장 순서대로
  *   하나씩 소진된다 — 2~30장 반복 양식·명부형 표(헤더+여러 데이터 행) 채우기용.
- *   문자열이면 기존처럼 모든 등장에 동일값.
+ *   문자열이면 모든 등장에 동일값 (두 번째 이후 등장은 빈 칸·첫 등장과 같은 견본 글일 때만, 열 머리 표는 첫 데이터 행만).
  * @returns HwpxFillResult
  */
 export async function fillHwpx(
@@ -103,13 +104,14 @@ export async function fillHwpx(
   // (누름틀은 서식 제작자의 명시적 계약이라 라벨 추정보다 우선).
   // 모든 섹션을 먼저 훑은 뒤에 키를 제거해야 섹션2+의 동명 누름틀이 굶지 않는다.
   const sectionXmls = new Map<string, string>()
-  const fieldModified = new Set<string>()
+  /** 누름틀을 채운 섹션 → 고친 자리(채운 xml 좌표) */
+  const fieldModified = new Map<string, number[]>()
   const fieldMatchedKeys = new Set<string>()
   for (const p of sectionPaths) {
-    const xml = await zip.file(p)!.async("text")
+    const xml = await readZipEntry(zip.file(p)!, "text")
     const outcome = fillClickHereInXml(xml, cursor, blockedLabels)
     sectionXmls.set(p, outcome.xml ?? xml)
-    if (outcome.xml !== null) fieldModified.add(p)
+    if (outcome.xml !== null) fieldModified.set(p, outcome.changedAt)
     for (const f of outcome.filled) filled.push(f)
     for (const k of outcome.matchedKeys) fieldMatchedKeys.add(k)
   }
@@ -118,9 +120,36 @@ export async function fillHwpx(
     normalizedValues.delete(k)
   }
 
+  const scans = sectionPaths.map((p, si) => scanSectionXml(sectionXmls.get(p)!, si))
+  // 문서 어딘가에 제 칸(표 라벨 칸·인라인 "라벨:")이 있는 스칼라 키는 어노테이션 빈칸 "(전화번호: )" 으로 채우지 않는다.
+  // 법령 서식은 설계자·시공자·감리자 칸마다 "(전화번호: )" 를 두어 신고인 전화번호가 남의 칸 네 곳에 들어갔다 (착공신고서)
+  const annotationSkip = new Set<string>()
+  for (let si = 0; si < scans.length; si++) {
+    const xml = sectionXmls.get(sectionPaths[si])!
+    for (const table of collectAllTables(scans[si])) {
+      for (const row of table.rows) {
+        for (const cell of row) {
+          const t = cell.paragraphs.filter(p => !p.inTextbox).map(p => paraTText(p, xml) ?? p.text).join("")
+          if (!isLabelCell(t) || ANNOTATION_BLANK_RE.test(t)) continue // 어노테이션 빈칸 칸 자신은 제 칸이 아니다
+          const key = findMatchingKey(normalizeLabel(t), cursor)
+          if (key !== undefined && !cursor.isArray(key)) annotationSkip.add(key)
+        }
+      }
+    }
+    for (const para of scans[si].bodyParagraphs) {
+      for (const seg of scanInlineSegments(paraTText(para, xml) ?? para.text)) {
+        const key = matchInlineSegment(seg, cursor, blockedLabels)?.key
+        if (key !== undefined && !cursor.isArray(key)) annotationSkip.add(key)
+      }
+    }
+  }
+  /** 채운 칸 좌표(FormField.target)용 표 번호 — 섹션을 이어 문서 순서(XML 위치)로 매긴다. 채우는 순서와는 무관 */
+  const tableNo = new Map<ScanTable, number>()
+  let tableBase = 0
+
   for (let si = 0; si < sectionPaths.length; si++) {
     const xml = sectionXmls.get(sectionPaths[si])!
-    const scan = scanSectionXml(xml, si)
+    const scan = scans[si]
 
     const ledger = new Map<ScanParagraph, ParaEditLedger>()
     const led = (p: ScanParagraph): ParaEditLedger => {
@@ -137,27 +166,21 @@ export async function fillHwpx(
       cell.paragraphs.filter(p => !p.inTextbox).map(p => matchText(p)).join("")
 
     // 표 수집 — 문서 순서 DFS (중첩표 + 머리말 등 ctrl 내부 고아 표 포함)
-    const allTables: ScanTable[] = []
-    const collectTables = (tables: ScanTable[], depth: number): void => {
-      if (depth > 16) return
-      for (const t of tables) {
-        allTables.push(t)
-        for (const row of t.rows) {
-          for (const cell of row) collectTables(cell.tables, depth + 1)
-        }
-      }
-    }
-    collectTables(scan.tables, 0)
-    collectTables(scan.orphanTables, 0)
+    const allTables = collectAllTables(scan)
+    for (const [i, t] of [...allTables].sort((a, b) => a.start - b.start).entries()) tableNo.set(t, tableBase + i)
+    tableBase += allTables.length
+    /** 값을 쓴 칸의 격자 좌표 — 칸 주소가 없으면 스캔 순번으로 */
+    const targetOf = (table: ScanTable, cell: ScanCell, rowIdx: number, colIdx: number) =>
+      ({ table: tableNo.get(table)!, row: cell.rowAddr ?? rowIdx, col: cell.colAddr ?? colIdx })
 
     // ── 전략 0: 인셀 패턴 (전략 1보다 먼저 — 어노테이션 보존 순서) ──
     const patternApplied = new Set<ScanCell>()
     for (const table of allTables) {
-      for (const row of table.rows) {
-        for (const cell of row) {
+      for (const [ri, row] of table.rows.entries()) {
+        for (const [ci, cell] of row.entries()) {
           for (const para of cell.paragraphs) {
             const text = matchText(para)
-            const result = fillInCellPatterns(text, cursor, matchedLabels, blockedLabels)
+            const result = fillInCellPatterns(text, cursor, matchedLabels, blockedLabels, annotationSkip)
             if (!result) continue
             const l = led(para)
             if (l.fullText !== undefined) continue
@@ -173,43 +196,93 @@ export async function fillHwpx(
             for (const m of result.matches) {
               l.filledIdx.push(filled.length)
               l.matchKeys.push(m.key)
-              filled.push({ label: m.label, value: m.value, row: -1, col: -1, key: m.key })
+              filled.push({ label: m.label, value: m.value, row: -1, col: -1, key: m.key, target: targetOf(table, cell, ri, ci) })
             }
           }
         }
       }
     }
 
+    const isForeignLabel = (text: string): boolean => isForeignLabelCell(text, cursor)
+    const laterOk = (key: string, current: string): boolean => cursor.laterOk(key, current)
+    const markFirst = (key: string, current: string): void => cursor.markFirst(key, current)
+    /** 칸 안 라벨(법령 서식 "건축주"·"전화번호" 넓은 칸): 옆이 값 칸이 아니면 라벨 칸 안, 라벨 뒤에 값을 적는다.
+     *  스칼라는 첫 등장만 (설계자·시공자 칸의 같은 라벨은 남의 칸) */
+    const fillInLabelCell = (table: ScanTable, cell: ScanCell, labelText: string, key: string, rowIdx: number, colIdx: number): void => {
+      if (cell.colSpan < 2) return
+      if (!cursor.isArray(key) && matchedLabels.has(key)) return
+      const paras = cell.paragraphs.filter(p => !p.inTextbox && matchText(p).trim())
+      if (paras.length !== 1 || cell.tables.length > 0) return
+      const l = led(paras[0])
+      if (l.fullText !== undefined || l.ranges.length > 0) return
+      const value = cursor.consume(key)
+      if (value === undefined) return
+      const text = matchText(paras[0])
+      l.ranges.push({ start: text.trimEnd().length, end: text.length, replacement: " " + value })
+      l.filledIdx.push(filled.length)
+      l.matchKeys.push(key)
+      matchedLabels.add(key)
+      markFirst(key, labelText)
+      filled.push({ label: labelText.trim().replace(/[:：]\s*$/, ""), value, row: rowIdx, col: colIdx, key, target: targetOf(table, cell, rowIdx, colIdx) })
+    }
+
     // ── 전략 1 + 2: 표 단위 인터리브 (v3.0 DOM 버전과 동일 순서) ──
     for (const table of allTables) {
-      // 헤더+데이터 표(첫 행 전부 라벨 + 둘째 행 첫 셀이 라벨 아님)의 헤더 행은
-      // 전략 1에서 제외 — 헤더 이웃 셀("품명"→"규격") 오염 방지 (IR 경로 isHeaderDataTable과 동일 규칙)
-      const skipHeaderRow = table.rows.length >= 2 && (() => {
-        const first = table.rows[0]
-        const allLabels = first.length > 0 && first.every(cell => {
-          const t = cellLabelText(cell).trim()
-          return t.length > 0 && t.length <= 20 && isLabelCell(t)
-        })
-        if (!allLabels) return false
+      const firstRowAllLabels = table.rows.length >= 2 && table.rows[0].length > 0 && table.rows[0].every(cell => {
+        const t = cellLabelText(cell).trim()
+        return t.length > 0 && t.length <= 20 && isLabelCell(t)
+      })
+      // 열 머리 행: 라벨이 위, 값이 아래 (표 가운데 구역마다 머리 행이 다시 나오는 신청서·왼쪽 구역 라벨 rowSpan 포함).
+      // 인식(extractFormSchema)과 같은 규칙. 이 행은 옆 칸으로 채우지 않는다: 옆 칸은 다음 머리다
+      const headerRows = new Set<number>()
+      for (let r = 0; r + 1 < table.rows.length; r++) {
+        const heads = table.rows[r].filter(c => c.rowSpan <= 1)
+        const below = heads.map(h => table.rows[r + 1].find(c => c.colAddr === h.colAddr))
+        if (isColumnHeaderRow(heads.map(cellLabelText), below.map(b => (b ? cellLabelText(b) : undefined)))) headerRows.add(r)
+      }
+      // 첫 행이 전부 라벨 + 둘째 행 첫 셀이 라벨 아님: 헤더 이웃 셀("품명"→"규격") 오염 방지 (IR 경로 isHeaderDataTable과 동일 규칙)
+      const skipRows = new Set(headerRows)
+      if (firstRowAllLabels) {
         const d0 = table.rows[1][0]
-        return d0 === undefined || !isLabelCell(cellLabelText(d0))
-      })()
+        if (d0 === undefined || !isLabelCell(cellLabelText(d0)) || isDatePlaceholder(cellLabelText(d0))) skipRows.add(0) // "년 월 - 년 월" 자리표시는 값 칸 (#146)
+      }
+      // 2단 머리(#146): 열 머리 행 바로 위 행이 전부 라벨이고, 그 행 칸이 머리 행까지 내려오는 세로 병합("기 간"·"근 무 처")이거나
+      // 묶음 가로 병합("담당업무" → "분야"·"내용")뿐이면 두 행이 한 머리 덩어리다. 세로 병합 칸도 열 머리로 보고, 위 행은 옆 칸
+      // 채우기에서 뺀다 — 종전엔 세로 병합 열을 못 채우고 "근무처" 값이 옆 묶음 머리 "담당업무" 칸에 들어갔다
+      const spanHeads = new Map<number, ScanCell[]>()
+      for (const h of headerRows) {
+        const above = table.rows[h - 1], at = table.rows[h][0]?.rowAddr
+        if (!above?.length || at === undefined) continue
+        const reaches = (c: ScanCell) => c.rowSpan > 1 && c.rowAddr !== undefined && c.rowAddr + c.rowSpan - 1 === at
+        if (!above.every(c => isLabelCell(cellLabelText(c)) && (reaches(c) || c.colSpan > 1)) || !above.some(reaches)) continue
+        spanHeads.set(h, above.filter(reaches))
+        skipRows.add(h - 1)
+      }
 
       // 전략 1: 인접 라벨-값 셀
-      for (let rowIdx = skipHeaderRow ? 1 : 0; rowIdx < table.rows.length; rowIdx++) {
+      for (let rowIdx = 0; rowIdx < table.rows.length; rowIdx++) {
+        if (skipRows.has(rowIdx)) continue
         const cells = table.rows[rowIdx]
-        for (let colIdx = 0; colIdx < cells.length - 1; colIdx++) {
+        for (let colIdx = 0; colIdx < cells.length; colIdx++) {
           const labelText = cellLabelText(cells[colIdx])
           if (!isLabelCell(labelText)) continue
-
-          const valueCell = cells[colIdx + 1]
-          if (isKeywordLabel(cellLabelText(valueCell))) continue
 
           const normalizedCellLabel = normalizeLabel(labelText)
           if (!normalizedCellLabel) continue
           if (blockedLabels?.has(normalizedCellLabel)) continue
           const matchKey = findMatchingKey(normalizedCellLabel, cursor)
           if (matchKey === undefined) continue
+
+          const valueCell = cells[colIdx + 1] as ScanCell | undefined
+          const valueText = valueCell ? cellLabelText(valueCell) : ""
+          // 하위 라벨 칸("성 명")은 값 자리가 아니다 — 종전엔 "성명" 키를 함께 줄 때만 남의 라벨로 봐(isForeignLabel) 배열 값이 밀렸다 (#145)
+          const afterCell = cells[colIdx + 2] as ScanCell | undefined
+          if (valueCell && isSubLabelBeside(cells[colIdx].rowSpan, valueText, afterCell && cellLabelText(afterCell))) continue
+          if (!valueCell || isForeignLabel(valueText)) {
+            fillInLabelCell(table, cells[colIdx], labelText, matchKey, rowIdx, colIdx)
+            continue
+          }
+          if (!laterOk(matchKey, valueText)) continue
 
           if (patternApplied.has(valueCell)) {
             // 전략 0이 이미 어노테이션을 채움 — 값을 앞에 삽입 (어노테이션 보존)
@@ -223,12 +296,14 @@ export async function fillHwpx(
             l.filledIdx.push(filled.length)
             l.matchKeys.push(matchKey)
             matchedLabels.add(matchKey)
+            markFirst(matchKey, valueText)
             filled.push({
               label: labelText.trim().replace(/[:：]\s*$/, ""),
               value: newValue,
               row: rowIdx,
               col: colIdx,
               key: matchKey,
+              target: targetOf(table, valueCell, rowIdx, colIdx + 1),
             })
           } else {
             const paras = valueCell.paragraphs
@@ -247,84 +322,93 @@ export async function fillHwpx(
               lk.ranges = []
             }
             matchedLabels.add(matchKey)
+            markFirst(matchKey, valueText)
             filled.push({
               label: labelText.trim().replace(/[:：]\s*$/, ""),
               value: newValue,
               row: rowIdx,
               col: colIdx,
               key: matchKey,
+              target: targetOf(table, valueCell, rowIdx, colIdx + 1),
             })
           }
         }
       }
 
-      // 전략 2: 헤더+데이터 행 (첫 행이 전부 라벨이면)
-      if (table.rows.length >= 2) {
-        const headerCells = table.rows[0]
-        const allLabels = headerCells.length > 0 && headerCells.every(cell => {
-          const t = cellLabelText(cell).trim()
-          return t.length > 0 && t.length <= 20 && isLabelCell(t)
-        })
-        if (allLabels) {
-          for (let rowIdx = 1; rowIdx < table.rows.length; rowIdx++) {
-            const dataCells = table.rows[rowIdx]
-            for (let colIdx = 0; colIdx < Math.min(headerCells.length, dataCells.length); colIdx++) {
-              const headerLabel = normalizeLabel(cellLabelText(headerCells[colIdx]))
-              if (blockedLabels?.has(headerLabel)) continue
-              const matchKey = findMatchingKey(headerLabel, cursor)
-              if (matchKey === undefined) continue
-              // 스칼라: 첫 데이터 행만(기존 동작). 배열: 행마다 다음 값 소진(명부형 표)
-              if (!cursor.isArray(matchKey) && matchedLabels.has(matchKey)) continue
+      // 전략 2: 열 머리 행 + 그 아래 데이터 행 (첫 행이 전부 라벨인 표 포함). 값 칸은 행 순번이 아니라 칸 좌표로 맞춘다.
+      // 왼쪽에 구역 라벨 rowSpan 칸이 있으면 데이터 행 칸이 하나 적어 순번 대응은 값이 한 칸씩 밀린다.
+      // 배열은 다음 머리 행 전까지 행마다, 스칼라는 첫 데이터 행만
+      const verticalRows = new Set(headerRows)
+      if (firstRowAllLabels) verticalRows.add(0)
+      for (const h of [...verticalRows].sort((a, b) => a - b)) {
+        const headerCells = [...(spanHeads.get(h) ?? []), ...table.rows[h]].sort((a, b) => (a.colAddr ?? 0) - (b.colAddr ?? 0))
+        /** 스칼라 키가 이미 첫 데이터 칸을 본 열: 그 칸이 줄 이름표("고등학교")라 못 썼어도 아래 행으로 내려가지 않는다 */
+        const scalarSeen = new Set<number>()
+        for (let rowIdx = h + 1; rowIdx < table.rows.length && !verticalRows.has(rowIdx); rowIdx++) {
+          const dataCells = table.rows[rowIdx]
+          for (let colIdx = 0; colIdx < headerCells.length; colIdx++) {
+            const dataCell = dataCells.find(c => c.colAddr === headerCells[colIdx].colAddr)
+            if (!dataCell) continue
+            const headerLabel = normalizeLabel(cellLabelText(headerCells[colIdx]))
+            if (!headerLabel || blockedLabels?.has(headerLabel)) continue
+            const matchKey = findMatchingKey(headerLabel, cursor)
+            if (matchKey === undefined) continue
+            // 스칼라: 첫 데이터 행만(기존 동작). 배열: 행마다 다음 값 소진(명부형 표)
+            if (!cursor.isArray(matchKey) && (matchedLabels.has(matchKey) || scalarSeen.has(colIdx))) continue
+            if (!cursor.isArray(matchKey)) scalarSeen.add(colIdx)
+            if (isForeignLabel(cellLabelText(dataCell))) continue
 
-              const dataCell = dataCells[colIdx]
-              if (patternApplied.has(dataCell)) {
-                // 전략 0이 이미 인셀 패턴을 채움 — fullText로 폐기하지 않고 값을 앞에 삽입
-                // (전략 1의 patternApplied 분기와 동일 계약: filled 기록·소비값 보존)
-                const target = dataCell.paragraphs.find(p => p.tRanges.length > 0) ?? dataCell.paragraphs[0]
-                if (!target) continue
-                const l = led(target)
-                if (l.fullText !== undefined) continue
-                const newValue = cursor.consume(matchKey)
-                if (newValue === undefined) continue // 배열 값 소진
-                l.ranges.push({ start: 0, end: 0, replacement: newValue + " " })
-                l.filledIdx.push(filled.length)
-                l.matchKeys.push(matchKey)
-                matchedLabels.add(matchKey)
-                filled.push({
-                  label: cellLabelText(headerCells[colIdx]).trim(),
-                  value: newValue,
-                  row: rowIdx,
-                  col: colIdx,
-                  key: matchKey,
-                })
-                continue
-              }
-
+            if (patternApplied.has(dataCell)) {
+              // 전략 0이 이미 인셀 패턴을 채움: fullText로 폐기하지 않고 값을 앞에 삽입
+              // (전략 1의 patternApplied 분기와 동일 계약: filled 기록·소비값 보존)
+              const target = dataCell.paragraphs.find(p => p.tRanges.length > 0) ?? dataCell.paragraphs[0]
+              if (!target) continue
+              const l = led(target)
+              if (l.fullText !== undefined) continue
               const newValue = cursor.consume(matchKey)
               if (newValue === undefined) continue // 배열 값 소진
-
-              const paras = dataCell.paragraphs
-              if (paras.length === 0) continue
-              // 나중 쓰기 우선 (v3.0과 동일)
-              const l0 = led(paras[0])
-              l0.fullText = newValue
-              l0.ranges = []
-              l0.filledIdx.push(filled.length)
-              l0.matchKeys.push(matchKey)
-              for (let k = 1; k < paras.length; k++) {
-                const lk = led(paras[k])
-                lk.fullText = ""
-                lk.ranges = []
-              }
+              l.ranges.push({ start: 0, end: 0, replacement: newValue + " " })
+              l.filledIdx.push(filled.length)
+              l.matchKeys.push(matchKey)
               matchedLabels.add(matchKey)
+              markFirst(matchKey, cellLabelText(dataCell))
               filled.push({
                 label: cellLabelText(headerCells[colIdx]).trim(),
                 value: newValue,
                 row: rowIdx,
                 col: colIdx,
                 key: matchKey,
+                target: targetOf(table, dataCell, rowIdx, dataCells.indexOf(dataCell)),
               })
+              continue
             }
+
+            const newValue = cursor.consume(matchKey)
+            if (newValue === undefined) continue // 배열 값 소진
+
+            const paras = dataCell.paragraphs
+            if (paras.length === 0) continue
+            // 나중 쓰기 우선 (v3.0과 동일)
+            const l0 = led(paras[0])
+            l0.fullText = newValue
+            l0.ranges = []
+            l0.filledIdx.push(filled.length)
+            l0.matchKeys.push(matchKey)
+            for (let k = 1; k < paras.length; k++) {
+              const lk = led(paras[k])
+              lk.fullText = ""
+              lk.ranges = []
+            }
+            matchedLabels.add(matchKey)
+            markFirst(matchKey, cellLabelText(dataCell))
+            filled.push({
+              label: cellLabelText(headerCells[colIdx]).trim(),
+              value: newValue,
+              row: rowIdx,
+              col: colIdx,
+              key: matchKey,
+              target: targetOf(table, dataCell, rowIdx, dataCells.indexOf(dataCell)),
+            })
           }
         }
       }
@@ -334,7 +418,17 @@ export async function fillHwpx(
     // 세그먼트 단위 분해 — 한 문단 다중 라벨("성명:  작성일자: ") 지원.
     // 좌표는 전부 원본 도메인이라 문단당 여러 range를 안전하게 누적할 수 있다
     // (겹침은 원장 변환 단계에서 앞선 전략 우선으로 제거).
-    for (const para of [...scan.bodyParagraphs, ...scan.excludedParagraphs]) {
+    // 한 칸짜리 표(서약서·확인서 상자)의 칸 문단도 본문처럼 읽는다 — "업 체 명 :"·"대 표 자 : (인)" 줄이 표 밖이면 채워지고
+    // 상자 안이면 못 채웠다 (#146). 여러 칸 표는 라벨 칸("성명:")이 제 칸에 덧쓰지 않게 전략 1·2 에만 맡긴다.
+    // 배열 값이 문서 순서로 소진되게 본문 문단 사이에 제자리로 끼운다
+    const boxOf = new Map<ScanParagraph, ScanTable>()
+    for (const t of allTables) {
+      if (t.rows.length !== 1 || t.rows[0].length !== 1 || t.rows[0][0].tables.length > 0) continue
+      for (const p of t.rows[0][0].paragraphs) if (!p.inTextbox) boxOf.set(p, t)
+    }
+    const boxParagraphs = [...boxOf.keys()]
+    const inlineParagraphs = [...scan.bodyParagraphs, ...boxParagraphs].sort((a, b) => a.start - b.start)
+    for (const para of [...inlineParagraphs, ...scan.excludedParagraphs]) {
       const existing = ledger.get(para)
       if (existing?.fullText !== undefined) continue
       const text = matchText(para)
@@ -347,9 +441,11 @@ export async function fillHwpx(
         const matched = matches[i]
         if (matched === undefined) continue
         const matchKey = matched.key
+        const ve = clampSegmentEnd(text, seg, segments[i + 1], matches[i + 1]?.viaExt ?? false)
+        if (!laterOk(matchKey, text.slice(seg.valueStart, ve))) continue
         const newValue = cursor.consume(matchKey)
         if (newValue === undefined) continue // 배열 값 소진
-        const ve = clampSegmentEnd(text, seg, segments[i + 1], matches[i + 1]?.viaExt ?? false)
+        markFirst(matchKey, text.slice(seg.valueStart, ve))
         // 빈 자리 삽입은 콜론·다음 라벨과 붙지 않게 공백 부착
         const replacement = seg.valueStart === ve
           ? padInsertion(text, seg.valueStart, newValue)
@@ -359,7 +455,8 @@ export async function fillHwpx(
         matchedLabels.add(matchKey)
         l.filledIdx.push(filled.length)
         l.matchKeys.push(matchKey)
-        filled.push({ label: matched.label.trim(), value: newValue, row: -1, col: -1, key: matchKey })
+        const box = boxOf.get(para)
+        filled.push({ label: matched.label.trim(), value: newValue, row: -1, col: -1, key: matchKey, ...(box ? { target: targetOf(box, box.rows[0][0], 0, 0) } : {}) })
       }
     }
 
@@ -414,10 +511,12 @@ export async function fillHwpx(
       splices.push(...paraSplices)
     }
 
-    if (splices.length > 0 || fieldModified.has(sectionPaths[si])) {
-      // 텍스트가 바뀐 섹션(누름틀 채움 포함)은 줄 레이아웃 캐시(linesegarray)를 전부
-      // 비워 한컴 변조 경고·구버전 줄배치 렌더를 막는다 (patchHwpx와 동일 — 뷰어가 열 때 재계산)
-      splices.push(...allLinesegRemovalSplices(xml))
+    const fieldAt = fieldModified.get(sectionPaths[si])
+    if (splices.length > 0 || fieldAt) {
+      // 글이 바뀐 문단(누름틀 채움 포함)의 줄 레이아웃 캐시(linesegarray)만 비운다: 어긋난 캐시는 한컴 변조
+      // 경고·옛 줄배치 렌더를 낳고, 손대지 않은 문단까지 지우면 자체 조판이 없는 뷰어가 쪽 전체를 다시 짠다 (patchHwpx와 동일)
+      const marks = (fieldAt ?? []).map(at => ({ start: at, end: at, replacement: "" }))
+      splices.push(...changedLinesegRemovalSplices(xml, [...splices, ...marks]))
       replacements.set(sectionPaths[si], encoder.encode(applySplices(xml, splices)))
     }
   }
@@ -438,4 +537,21 @@ export async function fillHwpx(
     unmatched,
     ...(warnings.length > 0 ? { warnings } : {}),
   }
+}
+
+/** 섹션의 표: 문서 순서 DFS (중첩표 + 머리말 등 ctrl 내부 고아 표 포함) */
+function collectAllTables(scan: SectionScan): ScanTable[] {
+  const out: ScanTable[] = []
+  const walk = (tables: ScanTable[], depth: number): void => {
+    if (depth > 16) return
+    for (const t of tables) {
+      out.push(t)
+      for (const row of t.rows) {
+        for (const cell of row) walk(cell.tables, depth + 1)
+      }
+    }
+  }
+  walk(scan.tables, 0)
+  walk(scan.orphanTables, 0)
+  return out
 }

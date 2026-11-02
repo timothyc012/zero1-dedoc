@@ -19,7 +19,7 @@ import { parseHwpxDocument } from "../hwpx/parser.js"
 import { detectFormat } from "../detect.js"
 import type { IRBlock, IRTable, PatchOptions, PatchResult, PatchSkip, DiffResult } from "../types.js"
 import {
-  scanSectionXml, buildParagraphSplices, applySplices, allLinesegRemovalSplices,
+  scanSectionXml, buildParagraphSplices, applySplices, changedLinesegRemovalSplices,
   type SectionScan, type ScanTable, type SpliceEdit,
 } from "./source-map.js"
 import { patchZipEntries } from "./zip-patch.js"
@@ -29,7 +29,8 @@ import {
   type ParaMapping,
 } from "./patcher.js"
 import { applyCellEdit, stripCellTokens, extractCellTokens } from "./table-patch.js"
-import { splitMarkdownUnits, normForMatch, sanitizeText, summarize, AUTONUM_PREFIX_RE } from "./markdown-units.js"
+import { splitMarkdownUnits, normForMatch, sanitizeText, summarize, stripHeadMarker } from "./markdown-units.js"
+import { readZipEntry } from "../hwpx/parser-shared.js"
 
 // ─── 공개 타입 ───────────────────────────────────────
 
@@ -93,7 +94,7 @@ async function buildState(bytes: Uint8Array): Promise<SessionState> {
   // 확장자와 속이 다른 문서(.hwpx 이름의 HWP 5.x 등)는 "손상된 HWPX" 로 오보하지 말고 포맷을 밝힌다 (patchHwpx 0단계 참조)
   const format = detectFormat(new Uint8Array(bytes.subarray(0, 512)).buffer)
   if (format !== "hwpx") throw new Error(`HWPX 세션은 HWPX 문서만 엽니다 (감지된 포맷: ${format}) — HWP 5.x 는 patchHwp 로 패치하세요`)
-  const parsed = await parseHwpxDocument(u8ToArrayBuffer(bytes))
+  const parsed = await parseHwpxDocument(u8ToArrayBuffer(bytes), { layoutTables: "keep" })
   const zip = await JSZip.loadAsync(bytes)
   const sectionPaths = await resolveSectionEntryNames(zip)
   if (sectionPaths.length === 0) {
@@ -101,11 +102,11 @@ async function buildState(bytes: Uint8Array): Promise<SessionState> {
   }
   const scans: SectionScan[] = []
   for (let i = 0; i < sectionPaths.length; i++) {
-    const xml = await zip.file(sectionPaths[i])!.async("text")
+    const xml = await readZipEntry(zip.file(sectionPaths[i])!, "text")
     scans.push(scanSectionXml(xml, i))
   }
   const paraMap = resolveParagraphMappings(parsed.blocks, scans)
-  const scanTables = scans.flatMap(s => s.tables.filter(t => t.rows.length > 0))
+  const scanTables = scans.flatMap(s => s.tables.filter(t => t.rows.length > 0 && !t.channel))
   const tableOrdinals = buildTableOrdinals(parsed.blocks)
   const fragmentBlocks = new Set<number>()
   const unitBlocks = new Set<number>()
@@ -345,9 +346,8 @@ export class HwpxSession {
     try {
       for (let s = 0; s < st.scans.length; s++) {
         if (sectionSplices[s].length === 0) continue
-        // 텍스트가 바뀐 섹션은 줄 레이아웃 캐시(linesegarray)를 전부 비워 한컴 변조
-        // 경고·구버전 줄배치 렌더를 막는다 (patchHwpx와 동일 — 뷰어가 열 때 재계산)
-        sectionSplices[s].push(...allLinesegRemovalSplices(st.scans[s].xml))
+        // 글이 바뀐 문단의 줄 레이아웃 캐시(linesegarray)만 비운다 (patchHwpx와 동일: changedLinesegRemovalSplices)
+        sectionSplices[s].push(...changedLinesegRemovalSplices(st.scans[s].xml, sectionSplices[s]))
         replacements.set(st.sectionPaths[s], encoder.encode(applySplices(st.scans[s].xml, sectionSplices[s])))
       }
     } catch (err) {
@@ -426,16 +426,11 @@ export class HwpxSession {
       if (r.missing.length) skipped.push({ reason: "각주 참조 부호 삭제는 미지원 — 각주 유지, 본문만 적용", before: r.missing.join(" ") })
     }
 
-    // 자동번호 접두 — XML에 없는 텍스트이므로 떼고 기록 (patcher와 동일 규칙)
+    // 자동번호·글머리표 접두 — XML에 없는 텍스트이므로 떼고 기록 (patcher와 동일 규칙)
     if (mapping.prefixStripped) {
-      const origPrefix = block.text!.split(" ", 1)[0]
-      const sp = newPlain.indexOf(" ")
-      const newFirst = sp > 0 ? newPlain.slice(0, sp) : newPlain
-      if (newFirst === origPrefix || AUTONUM_PREFIX_RE.test(newFirst)) {
-        newPlain = sp > 0 ? newPlain.slice(sp + 1) : ""
-      } else {
-        skipped.push({ reason: "자동번호 접두 식별 실패 — 번호 포함 텍스트로 적용 (뷰어에서 중복 표시 가능)", after: summarize(newPlain) })
-      }
+      const head = stripHeadMarker(block.text!, newPlain)
+      newPlain = head.text
+      if (head.note) skipped.push({ reason: head.note, after: summarize(newPlain), partial: true })
     }
 
     // 빈 문자열 비우기 — 재파싱 시 블록이 사라져 핸들이 영구 소실되고,

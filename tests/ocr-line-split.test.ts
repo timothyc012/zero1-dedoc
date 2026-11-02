@@ -12,7 +12,7 @@
  */
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { bracketFeatures, bracketShape, circledAt, edgeTrim, gapGlyphs, inkStats, ringBullet, serifOne, starRun, leaderRuns, leadingBullet, leadingTriangle, quoteHead, romanStems, splitRowBands, tallInkCount } from "../src/ocr/line-split.js"
+import { arrowGlyph, bracketFeatures, bracketShape, circledAt, edgeTrim, gapGlyphs, inkStats, ringBullet, serifOne, slantedPair, starRun, leaderRuns, leadingBullet, leadingTriangle, quoteHead, romanStems, splitRowBands, tallInkCount } from "../src/ocr/line-split.js"
 
 function canvas(w: number, h: number, bg = 255): Uint8Array {
   return new Uint8Array(w * h).fill(bg)
@@ -218,6 +218,12 @@ describe("bracketFeatures·bracketShape — 사전 밖 괄호 「」【】", () 
     assert.ok(f.taper >= 0.16 && f.cw < f.ch * 0.28, `taper=${f.taper} cw=${f.cw} ch=${f.ch}`)
     assert.equal(bracketShape(f, false), "(")
   })
+  it("넓고 속 빈 꺾인 조각은 〔〕 — 실측 기록관리 지침 목차 〔 채움 0.37·폭 0.35배, 〕 0.43·0.35배(소괄호는 폭 0.22~0.25배)", () => {
+    const tort = { top: 1, bottom: 1, taper: 0.235, fill: 0.37, cw: 12, ch: 34, charH: 34 }
+    assert.equal(bracketShape(tort, false), "\u3014")
+    assert.equal(bracketShape({ ...tort, fill: 0.43 }, true), "\u3015")
+    assert.equal(bracketShape({ ...tort, cw: 8 }, false), "(")
+  })
   it("윗변 가로 획만 있는 글자 높이 절반의 조각은 「, 뒤집으면 」", () => {
     const { g, w, h } = setup(corner)
     assert.equal(bracketShape(bracketFeatures(g, w, h, inkStats(g), 14)!, false), "\u300c")
@@ -239,6 +245,45 @@ describe("leadingBullet — 사전 밖·작은 점으로 읽히거나 빠지는 
     }
   }
   const text = (g: Uint8Array, w: number) => rect(g, w, 60, 6, 110, 34) // 뒤 글자 (글자 높이 28)
+  it("왼끝이 곧은 오른쪽 삼각형은 ‣, 줄기 달린 화살표는 아니다", () => {
+    const w = 120, h = 40
+    const tri = canvas(w, h)
+    for (let y = 13; y < 28; y++) { const half = 7 - Math.abs(y - 20); rect(tri, w, 12, y, 12 + Math.max(1, Math.round(half * 1.7)), y + 1) }
+    text(tri, w)
+    assert.deepEqual(leadingBullet(tri, w, h, inkStats(tri), 18), { mark: "\u2023", covers: true })
+    const arrow = canvas(w, h)
+    rect(arrow, w, 8, 19, 30, 22) // 줄기
+    for (let y = 13; y < 28; y++) { const half = 7 - Math.abs(y - 20); rect(arrow, w, 30 - half, y, 32, y + 1) } // 머리
+    text(arrow, w)
+    assert.notEqual(leadingBullet(arrow, w, h, inkStats(arrow), 18)?.mark, "\u2023")
+  })
+  it("오른쪽·위 변이 두꺼운 그림자 네모는 ❐ — 자모 ㅁ 으로 읽은 자리(covers)도 표시한다, 네 변이 고르면 □", () => {
+    const w = 120, h = 40, g = canvas(w, h)
+    rect(g, w, 10, 9, 34, 15); rect(g, w, 10, 29, 34, 31); rect(g, w, 10, 9, 12, 31); rect(g, w, 28, 9, 34, 31) // 위 6px·오른쪽 6px, 아래·왼쪽 2px
+    text(g, w)
+    assert.deepEqual(leadingBullet(g, w, h, inkStats(g), 22), { mark: "\u2750", covers: true })
+    const low = canvas(w, h)
+    rect(low, w, 10, 9, 34, 11); rect(low, w, 10, 25, 34, 31); rect(low, w, 10, 9, 12, 31); rect(low, w, 28, 9, 34, 31) // 아래·오른쪽이 두꺼우면 ❏
+    text(low, w)
+    assert.equal(leadingBullet(low, w, h, inkStats(low), 22)?.mark, "\u274f")
+  })
+  it("기울기 보정 뒤 남은 기울기로 가운데 줄 외곽 끝이 비어도 ❐ (끝 2px 안 빈 칸은 건너뛰고 잰다)", () => {
+    const w = 120, h = 40, g = canvas(w, h)
+    rect(g, w, 10, 9, 34, 15); rect(g, w, 28, 9, 34, 31) // 위 6px·오른쪽 6px
+    rect(g, w, 10, 9, 12, 20); rect(g, w, 11, 20, 13, 31); rect(g, w, 11, 29, 34, 31) // 왼쪽 2px 가 아래 절반에서 1px 밀림, 아래 2px
+    text(g, w)
+    assert.equal(leadingBullet(g, w, h, inkStats(g), 22)?.mark, "\u2750")
+  })
+  it("속 찬 네모를 품은 네모는 ▣ — 인식에서 빠졌으면(첫 글자 자리가 뒤) covers 거짓", () => {
+    const w = 120, h = 40, g = canvas(w, h)
+    rect(g, w, 10, 9, 33, 11); rect(g, w, 10, 29, 33, 31); rect(g, w, 10, 9, 12, 31); rect(g, w, 31, 9, 33, 31) // 바깥 테두리 23×22
+    rect(g, w, 16, 14, 27, 26) // 가운데 속 찬 네모
+    text(g, w)
+    assert.deepEqual(leadingBullet(g, w, h, inkStats(g), 85), { mark: "\u25a3", covers: false })
+    const hollow = canvas(w, h)
+    rect(hollow, w, 10, 9, 33, 11); rect(hollow, w, 10, 29, 33, 31); rect(hollow, w, 10, 9, 12, 31); rect(hollow, w, 31, 9, 33, 31); text(hollow, w)
+    assert.equal(leadingBullet(hollow, w, h, inkStats(hollow), 85)?.mark, "\u25a1")
+  })
   it("안팎으로 겹친 두 고리는 ◎", () => {
     const w = 120, h = 40, g = canvas(w, h)
     disc(g, w, 22, 20, 12, 2); disc(g, w, 22, 20, 6, 2); text(g, w)
@@ -283,6 +328,15 @@ describe("romanStems — 로마 숫자 세로 획 수 (모델이 Ⅲ 을 II·I �
       assert.equal(romanStems(g, w, h, inkStats(g), -Infinity, 84), n)
     }
   })
+  it("앞 글자가 한글이면 그 모음 세로획(ㅏ)은 세지 않는다", () => {
+    const w = 110, h = 40, g = canvas(w, h)
+    rect(g, w, 2, 10, 12, 30) // 앞 한글 자음 덩어리 (중심 10)
+    rect(g, w, 18, 6, 21, 34); rect(g, w, 21, 18, 26, 21) // ㅏ 세로획 + 곁가지
+    rect(g, w, 50, 6, 53, 34) // Ⅰ
+    rect(g, w, 70, 6, 98, 34) // 뒤 한글
+    assert.equal(romanStems(g, w, h, inkStats(g), 10, 84, true), 1)
+    assert.equal(romanStems(g, w, h, inkStats(g), 10, 84), 2)
+  })
   it("굵은 획(한글 글자 덩어리)은 세로 획이 아니다 → null", () => {
     const w = 110, h = 40, g = canvas(w, h)
     rect(g, w, 10, 8, 34, 32); text(g, w)
@@ -304,6 +358,26 @@ describe("circledAt — 원문자 숫자 (모델이 고리를 버리고 숫자�
     rect(g, w, 90, 6, 92, 34); rect(g, w, 99, 10, 102, 30); rect(g, w, 109, 6, 111, 34) // ( 1 )
     rect(g, w, 120, 6, 138, 34) // 한글 글자 (글자 높이 28)
     assert.deepEqual(circledAt(g, w, h, inkStats(g), [20, 61, 100]), [true, false, false])
+  })
+  it("앞 붙임표가 고리 옆구리에 붙어도 원문자다(\"-①\")", () => {
+    const w = 80, h = 40, g = canvas(w, h)
+    ring(g, w, 50, 20, 13); rect(g, w, 49, 12, 52, 28) // ①
+    rect(g, w, 22, 19, 38, 22) // 고리 왼 변에 닿는 붙임표
+    rect(g, w, 2, 6, 18, 34) // 한글 글자 (글자 높이 28)
+    assert.deepEqual(circledAt(g, w, h, inkStats(g), [50]), [true])
+  })
+})
+
+describe("gapGlyphs — 쉼표에 맞닿은 날짜 끝 마침표", () => {
+  it("빈 열 없이 쉼표와 맞닿아도 x 가 겹치지 않는 아래쪽 점은 . 이다", () => {
+    const w = 120, h = 40
+    const g = canvas(w, h)
+    rect(g, w, 10, 6, 24, 34) // 숫자
+    rect(g, w, 26, 29, 30, 33) // 마침표
+    rect(g, w, 30, 34, 33, 39) // 쉼표 — 마침표 끝 열 바로 다음 열부터(빈 열 없음), 픽셀은 떨어짐
+    rect(g, w, 40, 6, 54, 34) // 숫자
+    const { glyphs } = gapGlyphs(g, w, h, inkStats(g))
+    assert.ok(glyphs.some(o => o.mark === "." && o.x0 === 26), JSON.stringify(glyphs))
   })
 })
 
@@ -366,6 +440,14 @@ describe("gapGlyphs — 두 글자 사이에서 빠진 기호 · ▲ 「 」 □
     const open = canvas(w, h); glyphs(open, w); rect(open, w, 55, 6, 58, 22); rect(open, w, 55, 6, 67, 9)
     assert.deepEqual(gapGlyphs(open, w, h, inkStats(open)).glyphs.map(x => x.mark), ["\u300c"])
   })
+  it("다음 글자와 빈 열 없이 맞닿은 「 도 잡고, x 가 겹치면 잡지 않는다", () => {
+    const w = 130, h = 40
+    // 「 끝 열(89) 바로 다음 열(90)에서 글자가 시작한다 — 「 는 위에, 글자는 아래쪽이 넓어 픽셀은 닿지 않는다
+    const abut = canvas(w, h); rect(abut, w, 10, 6, 38, 34); rect(abut, w, 90, 12, 118, 34); rect(abut, w, 78, 6, 81, 22); rect(abut, w, 78, 6, 90, 9)
+    assert.deepEqual(gapGlyphs(abut, w, h, inkStats(abut)).glyphs.map(x => x.mark), ["\u300c"])
+    const overlap = canvas(w, h); rect(overlap, w, 10, 6, 38, 34); rect(overlap, w, 86, 12, 118, 34); rect(overlap, w, 78, 6, 81, 22); rect(overlap, w, 78, 6, 90, 9)
+    assert.deepEqual(gapGlyphs(overlap, w, h, inkStats(overlap)).glyphs.map(x => x.mark), [])
+  })
   it("속 찬 삼각형은 ▲, 속 빈 정사각은 □", () => {
     const w = 130, h = 40
     const tri = canvas(w, h); glyphs(tri, w)
@@ -399,9 +481,29 @@ describe("ringBullet — 줄 머리 고리 ○ / ㅇ (모델이 같은 글리프
     const small = canvas(w, h); ring(small, w, 22, 20, 7, 3); text(small, w)
     assert.equal(ringBullet(small, w, h, inkStats(small), 22), "\u3147")
   })
+  it("그림자 진 고리는 가는 쪽이 번져 폭 8% 를 넘어도 두꺼운 쪽의 2/3 이하면 ○", () => {
+    const w = 120, h = 40, g = canvas(w, h)
+    ring(g, w, 22, 20, 16, 3) // 가는 쪽 3px (폭 33 의 9%)
+    for (let y = 4; y <= 36; y++) for (let x = 22; x <= 38; x++) { const d = Math.hypot(x - 22, y - 20); if (d <= 16 && d >= 11) g[y * w + x] = 0 } // 오른쪽 5px
+    rect(g, w, 60, 6, 110, 34)
+    assert.equal(ringBullet(g, w, h, inkStats(g), 22), "\u25cb")
+  })
   it("속 찬 원·고리 아닌 글자는 null", () => {
     const w = 120, h = 40, g = canvas(w, h); ring(g, w, 22, 20, 10, 10); text(g, w)
     assert.equal(ringBullet(g, w, h, inkStats(g), 22), null)
+  })
+})
+
+describe("slantedPair — II·I 로 읽은 평행 기호 ∥", () => {
+  const glyph = (g: Uint8Array, w: number, x: number) => rect(g, w, x, 6, x + 20, 34) // 앞뒤 글자
+  it("같은 쪽으로 기운 가는 두 획은 ∥, 곧은 세리프 Ⅱ 는 아니다", () => {
+    const w = 120, h = 40
+    const par = canvas(w, h); glyph(par, w, 5); glyph(par, w, 80)
+    for (let y = 14; y < 32; y++) { const x = 48 - Math.round((y - 14) * 0.3); rect(par, w, x, y, x + 2, y + 1); rect(par, w, x + 8, y, x + 10, y + 1) }
+    assert.equal(slantedPair(par, w, h, inkStats(par), 15, 90), true)
+    const roman = canvas(w, h); glyph(roman, w, 5); glyph(roman, w, 80)
+    rect(roman, w, 44, 8, 47, 32); rect(roman, w, 52, 8, 55, 32); rect(roman, w, 40, 8, 59, 10); rect(roman, w, 40, 30, 59, 32)
+    assert.equal(slantedPair(roman, w, h, inkStats(roman), 15, 90), false)
   })
 })
 
@@ -435,5 +537,106 @@ describe("gapGlyphs — 분수 칸 빗금 / 과 꼬리말 막대 -", () => {
     assert.deepEqual(gapGlyphs(g, w, h, inkStats(g)).glyphs.map(x => x.mark), ["/"])
     const d = canvas(w, h); rect(d, w, 10, 6, 28, 34); rect(d, w, 80, 6, 98, 34); rect(d, w, 45, 19, 57, 21)
     assert.deepEqual(gapGlyphs(d, w, h, inkStats(d)).glyphs.map(x => x.mark), ["-"])
+  })
+})
+
+describe("arrowGlyph — 홀로 선 화살표 모양", () => {
+  // 사전에 → 만 있어 ➔·▶·⇨ 가 모두 → 로 읽혔다(서식 흐름도·업무계획)
+  const W = 60, H = 40
+  /** 대(x0..x1, 굵기 t) + 오른쪽 열린 꺾쇠 머리(획 굵기 s) */
+  function arrow(t: number, s: number, hollow = false): Uint8Array {
+    const g = canvas(W, H)
+    const cy = 20, x0 = 6, x1 = 40
+    if (hollow) { rect(g, W, x0, cy - t, x1, cy - t + 2); rect(g, W, x0, cy + t - 2, x1, cy + t); rect(g, W, x0, cy - t, x0 + 2, cy + t) }
+    else rect(g, W, x0, cy - (t >> 1), x1 + 6, cy - (t >> 1) + t)
+    for (let k = 0; k <= 14; k++) { rect(g, W, 30 + k, cy - 14 + k, 30 + k + s, cy - 14 + k + 1); rect(g, W, 30 + k, cy + 14 - k, 30 + k + s, cy + 15 - k) }
+    return g
+  }
+  it("굵은 대 → ➔, 가는 대 → null", () => {
+    const heavy = arrow(8, 6), thin = arrow(2, 2)
+    assert.equal(arrowGlyph(heavy, W, H, inkStats(heavy)), "\u2794")
+    assert.equal(arrowGlyph(thin, W, H, inkStats(thin)), null)
+  })
+  it("테두리만 있는 대 → ⇨", () => {
+    const g = arrow(7, 2, true)
+    assert.equal(arrowGlyph(g, W, H, inkStats(g)), "\u21e8")
+  })
+  it("속 찬 삼각형 → ▶", () => {
+    const g = canvas(W, H)
+    for (let x = 10; x < 40; x++) { const half = Math.round(15 * (40 - x) / 30); rect(g, W, x, 20 - half, x + 1, 20 + half + 1) }
+    assert.equal(arrowGlyph(g, W, H, inkStats(g)), "\u25b6")
+  })
+})
+
+describe("gapGlyphs — 1px 길어진 작은 마침표와 작은 쉼표", () => {
+  // 글자 두 개(28px 높이) 뒤 바닥 쪽 3×4 조각 — 대칭이면 마침표, 아래 반쪽이 가늘고 치우치면 쉼표(넣지 않음)
+  const W = 90, H = 40
+  function line(dot: (g: Uint8Array) => void): Uint8Array {
+    const g = canvas(W, H)
+    for (const x0 of [5, 40]) { rect(g, W, x0, 6, x0 + 24, 8); rect(g, W, x0, 6, x0 + 2, 34); rect(g, W, x0 + 22, 6, x0 + 24, 34); rect(g, W, x0, 32, x0 + 24, 34) }
+    dot(g)
+    return g
+  }
+  it("3×4 대칭 점은 마침표", () => {
+    const g = line((g) => rect(g, W, 72, 29, 75, 33))
+    assert.equal(gapGlyphs(g, W, H, inkStats(g)).glyphs.filter((x) => x.mark === ".").length, 1)
+  })
+  it("아래로 가늘어지는 3×4 쉼표는 마침표가 아니다", () => {
+    const g = line((g) => { rect(g, W, 72, 29, 75, 31); rect(g, W, 73, 31, 75, 32); rect(g, W, 74, 32, 75, 33) })
+    assert.ok(!gapGlyphs(g, W, H, inkStats(g)).glyphs.some((x) => x.mark === "."))
+  })
+})
+
+describe("leadingBullet — 글자 높이만 한 □ 의 크기 상한(squareMax)", () => {
+  it("박스 안 기본 상한 0.92 는 글자만 한 □ 를 도형으로 보고 넘기고, 넓힌 상한 1.05 는 □ 로 본다", () => {
+    const w = 140, h = 50, g = canvas(w, h)
+    rect(g, w, 4, 4, 46, 5); rect(g, w, 4, 45, 46, 46); rect(g, w, 4, 4, 5, 46); rect(g, w, 45, 4, 46, 46)
+    for (const x0 of [80, 110]) { rect(g, w, x0, 8, x0 + 22, 10); rect(g, w, x0 + 10, 8, x0 + 12, 46) }
+    assert.equal(leadingBullet(g, w, h, inkStats(g), 80), null)
+    assert.deepEqual(leadingBullet(g, w, h, inkStats(g), 80, 1.05), { mark: "□", covers: false })
+  })
+})
+
+describe("gapGlyphs — 반각 홑낫표 ｢", () => {
+  it("띠 위끝에서 조금 내려앉은 ｢ 도 「 로 본다", () => {
+    // 글자 띠 y 10~33(높이 23) 두 자 사이, 위끝 y 14(띠의 17%)에서 시작하는 ｢ — 윗변 6px, 왼쪽 줄기 12px
+    const W = 90, H = 40, g = canvas(W, H)
+    for (const x0 of [5, 60]) { rect(g, W, x0, 10, x0 + 20, 12); rect(g, W, x0, 10, x0 + 2, 33); rect(g, W, x0 + 18, 10, x0 + 20, 33); rect(g, W, x0, 31, x0 + 20, 33) }
+    rect(g, W, 40, 14, 46, 16); rect(g, W, 40, 14, 42, 26)
+    assert.ok(gapGlyphs(g, W, H, inkStats(g)).glyphs.some((x) => x.mark === "「"))
+  })
+})
+
+describe("leadingBullet — 마름모 ◆ ◇ ◈", () => {
+  /** 마름모 — 중심 (cx, cy), 반지름 r, 두께 t (t ≥ r 이면 속 찬 마름모) */
+  function rhomb(g: Uint8Array, w: number, cx: number, cy: number, r: number, t: number) {
+    for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r; x <= cx + r; x++) {
+      const d = Math.abs(x - cx) + Math.abs(y - cy)
+      if (d <= r && d >= r - t) g[y * w + x] = 0
+    }
+  }
+  const W = 120, H = 40
+  const page = (draw: (g: Uint8Array) => void) => { const g = canvas(W, H); draw(g); rect(g, W, 60, 6, 110, 34); return g }
+  it("속 찬 ◆ · 속 빈 ◇ · 속 찬 마름모를 품은 ◈", () => {
+    const solid = page(g => rhomb(g, W, 20, 20, 11, 11))
+    assert.deepEqual(leadingBullet(solid, W, H, inkStats(solid), 50), { mark: "◆", covers: false })
+    const hollow = page(g => rhomb(g, W, 20, 20, 11, 2))
+    assert.equal(leadingBullet(hollow, W, H, inkStats(hollow), 50)?.mark, "◇")
+    const nested = page(g => { rhomb(g, W, 20, 20, 11, 2); rhomb(g, W, 20, 20, 4, 4) })
+    assert.equal(leadingBullet(nested, W, H, inkStats(nested), 50)?.mark, "◈")
+  })
+  it("원은 마름모가 아니다", () => {
+    const g = page(g => { for (let y = 9; y <= 31; y++) for (let x = 9; x <= 31; x++) if (Math.hypot(x - 20, y - 20) <= 11) g[y * W + x] = 0 })
+    assert.ok(!["◆", "◇", "◈"].includes(leadingBullet(g, W, H, inkStats(g), 50)?.mark ?? ""))
+  })
+})
+
+describe("leadingBullet — 큰 속 찬 네모 ■", () => {
+  it("글자 높이만 한 속 찬 정사각은 ■, 작은 것은 ▪", () => {
+    const W = 120, H = 40
+    const big = canvas(W, H); rect(big, W, 10, 9, 32, 31); rect(big, W, 60, 6, 110, 34)
+    assert.deepEqual(leadingBullet(big, W, H, inkStats(big), 50), { mark: "■", covers: false })
+    const small = canvas(W, H); rect(small, W, 14, 16, 24, 26); rect(small, W, 60, 6, 110, 34)
+    assert.equal(leadingBullet(small, W, H, inkStats(small), 50)?.mark, "▪")
   })
 })

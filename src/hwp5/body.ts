@@ -2,9 +2,9 @@
 
 import { tidyScriptTags, type ScriptKind } from "../script-tags.js"
 import {
-  extractEquationText, createParaTextState, appendParaText, LEADER_TAB_MARK, LITERAL_DOLLAR_MARK, TAG_PARA_HEADER, TAG_PARA_TEXT, TAG_CHAR_SHAPE,
+  extractEquationText, createParaTextState, appendParaText, LITERAL_DOLLAR_MARK, LITERAL_LT_MARK, resolveLiteralLt, TAG_PARA_HEADER, TAG_PARA_TEXT, TAG_CHAR_SHAPE,
   TAG_CTRL_HEADER, TAG_LIST_HEADER, TAG_TABLE, TAG_EQEDIT, TAG_SHAPE_COMPONENT, TAG_SHAPE_COMPONENT_CONTAINER,
-  TAG_SHAPE_COMPONENT_PICTURE, type HwpRecord, type HwpDocInfo, type IndexedControlResolver,
+  TAG_SHAPE_COMPONENT_PICTURE, TAG_MEMO_LIST, fileTimeText, extractText, type HwpRecord, type HwpDocInfo, type IndexedControlResolver, type ParaTextState,
 } from "./record.js"
 import { NumberingState, expandNumberingFormat, formatNumber, shapeFormatToNumFmt } from "./numbering.js"
 import { hwpEquationToLatex } from "./equation.js"
@@ -12,8 +12,11 @@ import { buildTable, flattenLayoutTables, markNonLayoutTable, MAX_COLS, MAX_ROWS
 import {
   INLINE_TABLE_MARK, blocksPlainText, buildAddressedTable, cellTextFromBlocks, emitParagraphBlocks,
 } from "./ir-assemble.js"
-import type { CellContext, IRBlock, IRTable, ParseOptions, ParseWarning, InlineStyle } from "../types.js"
+import type { CellContext, IRBlock, IRTable, IRSpan, MemoNote, ParseOptions, ParseWarning, InlineStyle } from "../types.js"
+import type { Edges } from "../table/layout-frames.js"
 import { sanitizeHref } from "../utils.js"
+import { takeTocLeaders } from "../toc-entry.js"
+import { composeText } from "../shared/pua.js"
 
 /** 중첩표/글상자 재귀 깊이 상한 — 표 "중첩 단계" 기준.
  *  실무 문서 중첩은 2~3단이라 8이면 충분하며, 바이너리 파싱 비용상
@@ -52,6 +55,13 @@ const CTRL_FORM = cid("form")   // 양식 개체
 const CTRL_OLE = cid("ole ")    // OLE 개체
 const FIELD_HLK = cid("%hlk")   // 필드: 하이퍼링크
 const FIELD_CLK = cid("%clk")   // 필드: 누름틀
+const FIELD_UNK = cid("%unk")   // 필드: 그 밖(메모 "MEMO/…" 명령)
+/**
+ * HWPX run-spans 가 강조를 내지 않는 문단의 컨트롤 — run 자식이 되는 개체(표·그리기·수식·양식·OLE·글자 겹침·덧말)와 글을 담은 ctrl:
+ * 찾아보기 표식·필드('%' 로 시작)는 열쇠·매개변수 글을 늘 담고, 각주·미주·머리말·꼬리말·숨은 설명은 안쪽 문단에 글이 있을 때만
+ */
+const NO_SPAN_CTRLS = new Set([cid("tbl "), cid("gso "), cid("eqed"), cid("form"), cid("ole "), cid("tcps"), cid("tdut"), cid("idxm")])
+const TEXT_CTRLS = new Set([cid("fn  "), cid("en  "), cid("head"), cid("foot"), cid("tcmt")])
 
 const KNOWN_CTRL_IDS = new Set([
   CTRL_TBL, CTRL_GSO, CTRL_EQED, CTRL_HEAD, CTRL_FOOT, CTRL_FN, CTRL_EN,
@@ -105,12 +115,16 @@ export interface Hwp5DocState {
   /** 자동 번호 종류(0=쪽,1=각주,2=미주,3=그림,4=표,5=수식)별 다음 번호 */
   autoCounters: Map<number, number>
   headerTexts: Set<string>
+  /** 목차 항목 글 — 표 칸에서 풀려 나온 문단도 제목 추정에서 뺀다 (#121, HWPX SectionShared.tocTexts 와 같은 구실) */
+  tocTexts: Set<string>
   headerBlocks: IRBlock[]
   footerBlocks: IRBlock[]
   /** 표 후행 빈 열(앵커 있는 입력란) 보존 — ParseOptions.keepTrailingEmptyCols (#47) */
   keepTrailingEmptyCols?: boolean
   /** 미기입 누름틀 안내문도 본문에 — ParseOptions.includeFieldPlaceholders (#92) */
   includeFieldPlaceholders?: boolean
+  /** 메모 (#180) — 붙은 글은 문단을 읽을 때, 메모 글은 구역 끝 메모 목록에서 채운다 */
+  memos: MemoNote[]
 }
 
 export function createHwp5DocState(): Hwp5DocState {
@@ -119,8 +133,10 @@ export function createHwp5DocState(): Hwp5DocState {
     outlineNumberingId: 0,
     autoCounters: new Map(),
     headerTexts: new Set(),
+    tocTexts: new Set(),
     headerBlocks: [],
     footerBlocks: [],
+    memos: [],
   }
 }
 
@@ -139,6 +155,8 @@ interface Hwp5Ctx {
   topOrdinal: number
   /** 표 CTRL_HEADER 레코드 인덱스 → sourceId (table-ids.ts 프리패스, 렌더 region 조인 키 #76) */
   tableIds?: Map<number, string>
+  /** 글상자 바로 안 문단 — HWPX drawText 문단처럼 강조 span 없이 평문 (글상자 안 표 칸은 칸 경로라 다시 끈다) */
+  plainText?: boolean
 }
 
 /** 섹션 레코드 → IRBlock[] (테스트에서 직접 사용 가능하도록 export) */
@@ -155,7 +173,35 @@ export function parseSection(
     docInfo, warnings, sectionNum, doc: doc ?? createHwp5DocState(), depth: 0,
     page: pageMap ? pageMap.base + 1 : sectionNum, pageMap, topOrdinal: 0, tableIds,
   }
-  return parseParagraphList(records, 0, records.length, ctx)
+  const memoStart = ctx.doc.memos.length
+  const blocks = parseParagraphList(records, 0, records.length, ctx)
+  if (ctx.doc.memos.length > memoStart) fillMemoTexts(records, ctx.doc.memos.slice(memoStart), ctx)
+  return blocks
+}
+
+/**
+ * 메모 글 — 구역 마지막 문단 밑의 메모 목록(MEMO_LIST 번호 → 크기 없는 LIST_HEADER → 문단들)에서 번호로 찾아 채운다 (#180,
+ * HWP→HWPX 변환기 sectionXml 과 같은 읽기)
+ */
+function fillMemoTexts(records: HwpRecord[], memos: MemoNote[], ctx: Hwp5Ctx): void {
+  const texts = new Map<number, string>()
+  for (let i = 0; i < records.length; i++) {
+    if (records[i].tagId !== TAG_MEMO_LIST || records[i].data.length < 4) continue
+    const num = records[i].data.readUInt32LE(0), level = records[i].level
+    let k = i + 1
+    if (records[k]?.tagId !== TAG_LIST_HEADER || records[k].level !== level) continue
+    // 메모 문단마다 PARA_TEXT 글만 (문단 머리 번호를 풀지 않는다: 본문 번호 카운터를 건드리지 않게)
+    const paras: string[] = []
+    for (k++; k < records.length && records[k].level >= level && records[k].tagId !== TAG_MEMO_LIST; k++) {
+      if (records[k].tagId !== TAG_PARA_HEADER || records[k].level !== level) continue
+      let t = ""
+      for (let e = k + 1; e < records.length && records[e].level > level; e++) if (records[e].tagId === TAG_PARA_TEXT) t += extractText(records[e].data)
+      t = t.replace(/[\u0000-\u0008\u000b-\u001f]/g, "").replace(/[ \t]+/g, " ").trim()
+      if (t) paras.push(t)
+    }
+    texts.set(num, paras.join("\n"))
+  }
+  for (const m of memos) if (m.number !== undefined && texts.has(m.number)) m.text = texts.get(m.number)!
 }
 
 /**
@@ -201,10 +247,16 @@ interface ParsedCtrl {
   afterBlocks?: IRBlock[]
   /** 각주/미주 내용 ("1) 내용" 형식) */
   footnote?: string
+  /** 각주/미주 본문 블록(머리 번호 포함, 그림 제외) — 주석 안 표를 IRBlock.footnoteBlocks 로 (#149) */
+  noteBlocks?: IRBlock[]
+  /** 주석 본문에 표가 있는가 */
+  noteHasTable?: boolean
   /** 하이퍼링크 URL (%hlk) */
   href?: string
   /** 미기입 누름틀(%clk, 속성 bit 15 = 0)의 안내문 — 본문 run 에 같은 글이 있으면 값이 아니다 */
   guide?: string
+  /** 메모('%unk' 필드 "MEMO/모양/번호/시각 하위/상위/작성자/") — 메모 글은 구역 끝 목록 (#180) */
+  memo?: Pick<MemoNote, "number" | "author" | "createdAt">
   /** resolver 중복 매칭 방지 */
   resolved?: boolean
 }
@@ -259,9 +311,11 @@ function parseParagraph(records: HwpRecord[], start: number, end: number, ctx: H
 
   // 텍스트 렌더링 — 확장 컨트롤 인덱스 ↔ CTRL_HEADER 순서 매핑
   const state = createParaTextState()
-  state.leaderMark = true
   state.dollarMark = true
+  state.tocLeaders = true
   state.scriptAt = scriptLookup(charShapeRuns, ctx.docInfo)
+  state.emphAt = emphasisLookup(charShapeRuns, ctx.docInfo)
+  let inlined = false
   const resolver: IndexedControlResolver = (idx, id) => {
     let ctrl = idx >= 0 && idx < ctrls.length ? ctrls[idx] : undefined
     if (!ctrl || (ctrl.idRaw !== id && ctrl.id !== id)) {
@@ -269,6 +323,7 @@ function parseParagraph(records: HwpRecord[], start: number, end: number, ctx: H
     }
     if (!ctrl) return null
     ctrl.resolved = true
+    if (ctrl.inlineText) inlined = true
     return ctrl.inlineText ?? null
   }
   for (const data of textRecords) {
@@ -278,18 +333,22 @@ function parseParagraph(records: HwpRecord[], start: number, end: number, ctx: H
   // FIELD_BEGIN/END 범위 — 시작 위치 내림차순으로 안전하게 치환. 하이퍼링크는 [anchor](url),
   // 미기입 누름틀의 안내문 run 은 지운다(한컴은 화면에만 흐리게 보이고 인쇄하지 않는다 — PDF 실측)
   let text = state.text
+  let fieldsApplied = false
+  const memoAnchors: Array<NonNullable<ParsedCtrl["memo"]> & { raw: string }> = []
   if (state.fieldRanges.length > 0) {
     const ranges = [...state.fieldRanges].sort((a, b) => b.start - a.start)
     const applied: Array<[number, number]> = []
     for (const r of ranges) {
       const ctrl = ctrls[r.ctrlIdx]
       if (!ctrl || r.end <= r.start) continue
+      // 메모 — 글은 그대로 두고 붙은 글만 적는다 (#180)
+      if (ctrl.memo) { memoAnchors.push({ ...ctrl.memo, raw: text.slice(r.start, r.end) }); continue }
       if (applied.some(([s, e]) => r.start < e && r.end > s)) continue
       const anchor = text.slice(r.start, r.end)
       if (ctrl.guide !== undefined) {
         if (ctx.doc.includeFieldPlaceholders) continue
-        const plain = anchor.replaceAll(LITERAL_DOLLAR_MARK, "$") // 안내문 원문과 맞댄다
-        if (plain === ctrl.guide || plain.trimEnd() === ctrl.guide) {
+        const plain = anchor.replaceAll(LITERAL_DOLLAR_MARK, "$").replaceAll(LITERAL_LT_MARK, "<") // 안내문 원문과 맞댄다
+        if (isClickHereGuideText(plain, ctrl.guide)) {
           text = text.slice(0, r.start) + text.slice(r.end)
           applied.push([r.start, r.end])
         }
@@ -298,18 +357,42 @@ function parseParagraph(records: HwpRecord[], start: number, end: number, ctx: H
       if (!ctrl.href) continue
       const href = sanitizeHref(ctrl.href)
       if (!href) continue
-      if (!anchor.trim() || anchor.includes(INLINE_TABLE_MARK) || anchor.includes(LEADER_TAB_MARK)) continue
+      if (!anchor.trim() || anchor.includes(INLINE_TABLE_MARK)) continue
       text = text.slice(0, r.start) + `[${anchor}](${href})` + text.slice(r.end)
       applied.push([r.start, r.end])
     }
+    fieldsApplied = applied.length > 0
   }
-  // 채움 탭 뒤(목차 쪽번호)는 버린다 — HWPX 파서의 리더 탭 절단 정책(bench leader-tab-cut)과 대칭
-  const leaderAt = text.indexOf(LEADER_TAB_MARK)
-  if (leaderAt >= 0) text = text.slice(0, leaderAt)
   // 리터럴 $ → \$ (필드 위치를 다 쓴 뒤라 이제 두 글자로 늘려도 된다, escapeLiteralDollar 규약)
   if (text.includes(LITERAL_DOLLAR_MARK)) text = text.replaceAll(LITERAL_DOLLAR_MARK, "\\$")
+  text = resolveLiteralLt(text)
   // 글자마다 여닫은 첨자 태그 정리 — HWPX section-walker 와 같은 꼴로
   text = tidyScriptTags(text)
+  // 목차 항목(채움 탭 + 쪽 번호 줄) 판정 — 채움 탭 표지는 여기서 보통 탭이 된다 (#121, HWPX 와 같은 규칙)
+  const toc = takeTocLeaders(text)
+  text = toc.text
+  // 인라인 강조 span — HWPX run-spans 와 같은 문단만: 개체·글 담은 컨트롤(각주 등)·강제 줄바꿈이 든 문단은 평문 경로(HWPX 는
+  // 그런 문단에서 강조를 내지 않는다), 링크·누름틀 안내문·목차 문단은 글 위치가 어긋나 평문 경로. 필드는 글을 문단에 두므로 막지 않는다
+  const holdsText = (c: ParsedCtrl): boolean => {
+    for (let k = c.childStart; k < c.childEnd; k++) {
+      if (records[k].tagId !== TAG_PARA_TEXT) continue
+      const st = createParaTextState()
+      appendParaText(st, records[k].data)
+      if (st.text.trim()) return true
+    }
+    return false
+  }
+  const noSpan = ctx.plainText || inlined || fieldsApplied || toc.tocEntry || text.includes("\n")
+    || ctrls.some(c => NO_SPAN_CTRLS.has(c.id) || (TEXT_CTRLS.has(c.id) && holdsText(c)))
+  const spans = !noSpan ? emphasisSpans(state, text) : undefined
+  if (memoAnchors.length) {
+    const plain = (t: string): string => resolveLiteralLt(t.replaceAll(LITERAL_DOLLAR_MARK, "$")).replace(/\\</g, "<").replace(/[ \t]+/g, " ").trim()
+    const paragraph = plain(text.replaceAll(INLINE_TABLE_MARK, ""))
+    for (const { raw, ...memo } of memoAnchors.reverse()) {
+      const anchor = plain(raw.replaceAll(INLINE_TABLE_MARK, ""))
+      ctx.doc.memos.push({ text: "", ...memo, anchor, paragraph, offset: Math.max(0, paragraph.indexOf(anchor)) })
+    }
+  }
 
   // 문단번호/글머리표/개요 처리 (DocInfo PARA_SHAPE headType)
   let headingLevel = 0
@@ -319,8 +402,8 @@ function parseParagraph(records: HwpRecord[], start: number, end: number, ctx: H
     : null
   if (ps && ps.headType > 0) {
     if (ps.headType === 1) {
-      // 개요 — paraLevel 0-6 → heading 1-6 (개요 7수준은 H6로 클램프)
-      headingLevel = Math.min(ps.paraLevel + 1, 6)
+      // 개요 — paraLevel 0-6 → heading 1-6 (개요 7수준은 H6로 클램프). 목차 항목은 개요 문단 모양을 빌려도 제목이 아니다
+      if (!toc.tocEntry) headingLevel = Math.min(ps.paraLevel + 1, 6)
     }
     if (ps.headType === 1 || ps.headType === 2) {
       // 개요/번호 → NUMBERING 카운터 전진 + ^N 치환
@@ -341,15 +424,22 @@ function parseParagraph(records: HwpRecord[], start: number, end: number, ctx: H
     }
   }
 
+  if (toc.tocEntry) for (const line of text.split("\n")) if (line.trim()) {
+    ctx.doc.tocTexts.add(line.trim())
+    if (headMarker) ctx.doc.tocTexts.add(`${headMarker} ${line.trim()}`)
+  }
   return emitParagraphBlocks({
     text,
     headMarker,
     headingLevel,
+    tocEntry: toc.tocEntry,
     style: ctx.docInfo && charShapeIds.length > 0 ? resolveCharStyle(charShapeIds, ctx.docInfo) : undefined,
     footnotes: ctrls.filter(c => c.footnote).map(c => c.footnote!),
+    footnoteBlocks: ctrls.some(c => c.noteHasTable) ? ctrls.flatMap(c => c.footnote ? c.noteBlocks ?? [] : []) : undefined,
     // 컨트롤 파생 블록 (표/이미지/글상자) — 컨트롤 순서대로
     objects: ctrls.filter(c => c.afterBlocks).map(c => ({ blocks: c.afterBlocks!, table: c.id === CTRL_TBL, inline: c.inlineText === INLINE_TABLE_MARK })),
     pageNumber: ctx.page,
+    spans,
   })
 }
 
@@ -416,14 +506,19 @@ function applyCtrlEffect(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hwp5Ctx): 
       ctx.warnings.push({ page: ctx.page, message: "스킵된 OLE 개체", code: "SKIPPED_OLE" })
       return
     }
-    // 숨은 설명/단 정의/쪽번호 위치/감추기/찾아보기/책갈피/글자겹침/덧말 — 본문 텍스트 없음 또는 의도적 스킵
+    // 글자 겹침 — ctrl id 뒤 글자 수(WORD)·겹친 글자(WCHAR[n])·테두리 종류(BYTE, 0 = 없음). 종전엔 건너뛰어 법령 서식 원 번호(⑯·⑰)가 빠졌다
+    case CTRL_TCPS: {
+      const d = ctrl.data, n = d.length >= 6 ? d.readUInt16LE(4) : 0
+      if (n > 0 && d.length >= 6 + 2 * n) ctrl.inlineText = composeText(d.toString("utf16le", 6, 6 + 2 * n), (d[6 + 2 * n] ?? 0) !== 0)
+      return
+    }
+    // 숨은 설명/단 정의/쪽번호 위치/감추기/찾아보기/책갈피/덧말 — 본문 텍스트 없음 또는 의도적 스킵
     case CTRL_TCMT:
     case CTRL_COLD:
     case CTRL_PGNP:
     case CTRL_PGHD:
     case CTRL_IDXM:
     case CTRL_BOKM:
-    case CTRL_TCPS:
     case CTRL_TDUT:
     case CTRL_FORM:
       return
@@ -476,13 +571,20 @@ function applyNoteEffect(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hwp5Ctx, a
   const formatted = formatNumber(num, shapeFormatToNumFmt(shape))
   const marker = before || after ? `${before}${formatted}${after}` : `${formatted})`
 
-  const content = blocksPlainText(parseListHeaderParagraphs(ctrl, records, ctx), " ")
+  const blocks = parseListHeaderParagraphs(ctrl, records, ctx)
+  const content = blocksPlainText(blocks, " ")
   if ((ctx.doc.autoCounters.get(autoType) ?? 1) <= num) {
     ctx.doc.autoCounters.set(autoType, num + 1)
   }
   ctrl.inlineText = marker
   // 각주 내용 첫머리의 atno가 이미 같은 마커를 생성했으면 중복 방지
   if (content) ctrl.footnote = content.startsWith(marker) ? content : `${marker} ${content}`
+  // 주석 본문 구조 — HWPX collectSubListContent 와 같은 모양(글·표, 그림 제외, 머리 번호는 footnote 와 같게) (#149)
+  if (content) {
+    const kept = blocks.filter(b => b.type !== "image")
+    ctrl.noteBlocks = content.startsWith(marker) ? kept : [{ type: "paragraph", text: marker, pageNumber: ctx.page }, ...kept]
+    ctrl.noteHasTable = kept.some(b => b.type === "table" && b.table)
+  }
 }
 
 /** 머리말('head')/꼬리말('foot') — 문서당 1회, 동일 텍스트 중복 제거 */
@@ -505,15 +607,36 @@ function applyFieldEffect(ctrl: ParsedCtrl): void {
       const url = hyperlinkUrlFromCommand(command)
       if (url) ctrl.href = url
     }
-  } else if (ctrl.id === FIELD_CLK && ctrl.data.length >= 8 && !(ctrl.data.readUInt32LE(4) & (1 << 15))) {
+  } else if (ctrl.id === FIELD_CLK) {
     // 누름틀 — 속성 bit 15(내용 수정됨)가 꺼진 미기입 필드는 한컴이 안내문(command Direction)을 본문 run 으로
     // 저장해 두고 화면에만 흐리게 그린다(인쇄·PDF 에 없음). 같은 글이면 값이 아니므로 parseParagraph 가 지운다
     // (rhwp clear_initial_field_texts 와 같은 이중 조건 — 수정됨 비트 + 안내문 일치)
-    const command = parseFieldCommand(ctrl.data)
-    const guide = command ? clickHereGuide(command) : undefined
+    const guide = unfilledClickHereGuide(ctrl.data)
     if (guide) ctrl.guide = guide
+  } else if (ctrl.id === FIELD_UNK) {
+    const command = parseFieldCommand(ctrl.data)
+    if (command?.startsWith("MEMO/")) {
+      const [, , num = "", low = "0", high = "0", author = ""] = command.split("/")
+      const memo: NonNullable<ParsedCtrl["memo"]> = {}
+      if (/^\d+$/.test(num)) memo.number = Number(num)
+      if (author) memo.author = author
+      if (Number(low) || Number(high)) memo.createdAt = fileTimeText(Number(low) >>> 0, Number(high) >>> 0)
+      ctrl.memo = memo
+    }
   }
   // 그 밖의 필드: anchor 텍스트는 PARA_TEXT에 있으므로 그대로 보존됨
+}
+
+/** 미기입 누름틀(%clk, 속성 bit 15 = 0)이면 그 안내문, 아니면 undefined — patch 소스맵도 이 규칙으로 안내문을 뺀다 */
+export function unfilledClickHereGuide(ctrlData: Buffer): string | undefined {
+  if (ctrlData.length < 8 || normalizeCtrlId(ctrlData.readUInt32LE(0)) !== FIELD_CLK || ctrlData.readUInt32LE(4) & (1 << 15)) return undefined
+  const command = parseFieldCommand(ctrlData)
+  return command ? clickHereGuide(command) : undefined
+}
+
+/** 누름틀 값 자리 글이 안내문 그대로인가 (끝 공백 차이는 같다고 본다) */
+export function isClickHereGuideText(text: string, guide: string): boolean {
+  return text === guide || text.trimEnd() === guide
 }
 
 /** 누름틀 command 의 안내문 — `Direction:wstring:<N>:` 뒤 N자 (UTF-16) */
@@ -558,6 +681,8 @@ function hyperlinkUrlFromCommand(command: string): string | null {
 interface Hwp5Cell extends CellContext {
   blocks?: IRBlock[]
   isHeader?: boolean
+  /** 칸의 보이는 변 (LIST_HEADER borderFillId u16@32 → DocInfo BORDER_FILL) */
+  edges?: Edges
   /** 칸 높이가 A4 용지보다 크다 — 여러 쪽에 걸친 칸 */
   pageSpanning?: boolean
 }
@@ -598,13 +723,16 @@ function parseTableControl(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hwp5Ctx)
   }
   if (tableIdx < 0) return null
 
-  // 캡션: TABLE 레코드 이전의 LIST_HEADER
+  // 캡션: TABLE 레코드 이전의 LIST_HEADER — 문단 리스트 머리 8바이트 뒤 캡션 속성의 낮은 두 비트가 방향(0 왼쪽·1 오른쪽·2 위·3 아래,
+  // 같은 문서 HWPX 의 hp:caption side 와 일치)
   let caption: string | undefined
+  let captionBelow = false
   for (let i = childStart; i < tableIdx; i++) {
     if (records[i].tagId === TAG_LIST_HEADER) {
       const capBlocks = parseParagraphList(records, i + 1, tableIdx, { ...ctx, depth: ctx.depth + 1 })
       const capText = blocksPlainText(capBlocks, " ")
       if (capText) caption = capText
+      captionBelow = records[i].data.length >= 12 && (records[i].data.readUInt32LE(8) & 3) === 3
       break
     }
   }
@@ -637,6 +765,7 @@ function parseTableControl(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hwp5Ctx)
     const table = buildAddressedTable(cells, rows, cols, ctx.doc.keepTrailingEmptyCols)
     if (!table) return null
     if (caption) table.caption = caption
+    if (caption && captionBelow) table.captionBelow = true
     if (sourceId) table.sourceId = sourceId
     keepUnlessPageSpanning(table, cells)
     return table
@@ -647,6 +776,7 @@ function parseTableControl(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hwp5Ctx)
   const cellRows = arrangeCells(rows, cols, cells)
   const table = buildTable(cellRows, { keepAnchoredEmptyCols: ctx.doc.keepTrailingEmptyCols })
   if (caption && table.rows > 0) table.caption = caption
+  if (caption && captionBelow && table.rows > 0) table.captionBelow = true
   if (sourceId && table.rows > 0) table.sourceId = sourceId
   keepUnlessPageSpanning(table, cells)
   return table.rows > 0 ? table : null
@@ -677,7 +807,7 @@ function parseCell(records: HwpRecord[], lhIdx: number, end: number, ctx: Hwp5Ct
   }
 
   const blocks = ctx.depth < MAX_NEST_DEPTH
-    ? parseParagraphList(records, lhIdx + 1, end, { ...ctx, depth: ctx.depth + 1 })
+    ? parseParagraphList(records, lhIdx + 1, end, { ...ctx, depth: ctx.depth + 1, plainText: false })
     : []
 
   // 하위 호환 텍스트: 문단 평탄화 + 이미지 sentinel + 중첩표 평문 (각주는 문단 글에 접힌다)
@@ -686,6 +816,15 @@ function parseCell(records: HwpRecord[], lhIdx: number, end: number, ctx: Hwp5Ct
   if (hasStructure && blocks.length > 0) cell.blocks = blocks
   if (isHeader) cell.isHeader = true
   if (rec.data.length >= 24 && rec.data.readUInt32LE(20) > A4_HEIGHT) cell.pageSpanning = true
+  if (rec.data.length >= 34) {
+    const borderFillId = rec.data.readUInt16LE(32)
+    const definitions = ctx.docInfo?.borderEdges
+    // 1-based 목록이 확인되면 0은 선 없음이다. 정의가 없는 파일은 미상으로 유지한다.
+    const edges = borderFillId === 0 && definitions?.length
+      ? { t: false, b: false, l: false, r: false }
+      : definitions?.[borderFillId - 1]
+    if (edges) cell.edges = edges
+  }
   return cell
 }
 
@@ -765,7 +904,7 @@ function parseGsoControl(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hwp5Ctx): 
   }
 
   if (textListIdx >= 0) {
-    blocks.push(...parseParagraphList(records, textListIdx + 1, childEnd, { ...ctx, depth: ctx.depth + 1 }))
+    blocks.push(...parseParagraphList(records, textListIdx + 1, childEnd, { ...ctx, depth: ctx.depth + 1, plainText: true }))
   }
 
   return blocks
@@ -812,6 +951,58 @@ function scriptLookup(runs: Array<[number, number]>, docInfo: HwpDocInfo | null)
     while (k + 1 < runs.length && runs[k + 1][0] <= pos) k++
     return k >= 0 ? kindOf(runs[k][1]) : null
   }
+}
+
+const EMPH_BOLD = 1, EMPH_ITALIC = 2, EMPH_STRIKE = 4, EMPH_UNDERLINE = 8
+
+/**
+ * 글자 위치 → 강조 키(굵게·기울임·취소선·밑줄 비트). 판정은 HWPX 글자 모양(styles.ts)과 같다 — 굵게 bit 1·기울임 bit 0,
+ * 취소선은 모양까지(hasRealStrike), 밑줄은 글자 아래만(hasRealUnderline). 강조 글자 모양이 없으면 undefined
+ */
+function emphasisLookup(runs: Array<[number, number]>, docInfo: HwpDocInfo | null): ((pos: number) => number) | undefined {
+  if (!docInfo || !runs.length) return undefined
+  const keyOf = (id: number): number => {
+    const f = docInfo.charShapes[id]?.attrFlags ?? 0
+    return (f & 0x02 ? EMPH_BOLD : 0) | (f & 0x01 ? EMPH_ITALIC : 0) | (hasRealStrike(f) ? EMPH_STRIKE : 0) | (hasRealUnderline(f) ? EMPH_UNDERLINE : 0)
+  }
+  if (!runs.some(([, id]) => keyOf(id))) return undefined
+  let k = -1 // 글자 위치는 늘어나는 순서로 묻는다 — 커서를 앞으로만(되돌아가면 처음부터)
+  return (pos) => {
+    if (k >= 0 && runs[k][0] > pos) k = -1
+    while (k + 1 < runs.length && runs[k + 1][0] <= pos) k++
+    return k >= 0 ? keyOf(runs[k][1]) : 0
+  }
+}
+
+/**
+ * 강조 키가 바뀐 자리(emphRuns)로 문단 글을 span 으로 나눈다 — 문단 글과 같은 정리(리터럴 표지·첨자 태그)를 span 마다 하고,
+ * 이은 글이 문단 글과 같을 때만(HWPX run-spans 무결성 가드와 같다). 강조 span 이 없거나 첨자 태그가 span 경계에 걸리면 undefined
+ */
+function emphasisSpans(state: ParaTextState, text: string): IRSpan[] | undefined {
+  const runs = state.emphRuns
+  if (!runs?.some(([, key]) => key)) return undefined
+  const spans: Array<IRSpan & { key: number }> = []
+  for (let r = 0; r < runs.length; r++) {
+    const end = r + 1 < runs.length ? runs[r + 1][0] : state.text.length
+    const raw = state.text.slice(r === 0 ? 0 : runs[r][0], end) // 첫 키 앞 글(제어 문자 자리)은 첫 span 에
+    const t = tidyScriptTags(resolveLiteralLt(raw.replaceAll(LITERAL_DOLLAR_MARK, "\\$")))
+    if (!t) continue
+    const key = runs[r][1], last = spans[spans.length - 1]
+    if (last && last.key === key) { last.text += t; continue }
+    spans.push({ text: t, key })
+  }
+  const flat = (s: string): string => s.replace(/[ \t]+/g, " ").trim()
+  if (flat(spans.map(s => s.text).join("")) !== flat(text)) return undefined
+  const tagsPaired = (s: string): boolean => ["sup", "sub"].every(t => (s.split(`<${t}>`).length) === (s.split(`</${t}>`).length))
+  if (!spans.every(s => tagsPaired(s.text))) return undefined
+  return spans.map(({ text: t, key }) => {
+    const span: IRSpan = { text: t }
+    if (key & EMPH_BOLD) span.bold = true
+    if (key & EMPH_ITALIC) span.italic = true
+    if (key & EMPH_STRIKE) span.strike = true
+    if (key & EMPH_UNDERLINE) span.underline = true
+    return span
+  })
 }
 
 /** CHAR_SHAPE ID 배열에서 대표 스타일 결정 (최빈값) */

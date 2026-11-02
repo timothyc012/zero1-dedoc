@@ -12,6 +12,7 @@
 
 import JSZip from "jszip"
 import { DOMParser } from "@xmldom/xmldom"
+import { readZipEntry } from "./hwpx/parser-shared.js"
 
 /** 검증에서 발견된 문제 하나 */
 export interface ValidateIssue {
@@ -67,7 +68,7 @@ export async function validateHwpx(buffer: ArrayBuffer | Uint8Array): Promise<Va
 
   const nameset = new Set(names)
   if (nameset.has("mimetype")) {
-    const mt = (await zip.files["mimetype"].async("string")).trim()
+    const mt = (await readZipEntry(zip.files["mimetype"], "text")).trim()
     if (mt !== EXPECTED_MIMETYPE) {
       issues.push({ path: "mimetype", message: `내용이 '${mt}' — '${EXPECTED_MIMETYPE}'이어야 함` })
     }
@@ -80,7 +81,7 @@ export async function validateHwpx(buffer: ArrayBuffer | Uint8Array): Promise<Va
   // XML 웰폼드 — warn 수준은 무시, error/fatalError만 문제로 취급
   for (const name of names) {
     if (!XML_SUFFIXES.some(s => name.endsWith(s))) continue
-    const text = await zip.files[name].async("string")
+    const text = await readZipEntry(zip.files[name], "text")
     let firstError: string | null = null
     try {
       new DOMParser({
@@ -99,7 +100,7 @@ export async function validateHwpx(buffer: ArrayBuffer | Uint8Array): Promise<Va
 
   // secCnt ↔ 실제 섹션 파일 수
   if (nameset.has("Contents/header.xml")) {
-    const header = await zip.files["Contents/header.xml"].async("string")
+    const header = await readZipEntry(zip.files["Contents/header.xml"], "text")
     const m = SECCNT_RE.exec(header)
     if (m) {
       const declared = Number(m[1])
@@ -117,7 +118,7 @@ export async function validateHwpx(buffer: ArrayBuffer | Uint8Array): Promise<Va
   // 표준(OCF)이지만, kordoc 생성기는 루트 기준 full path("Contents/section0.xml")로 쓴다. 두 관례 모두 유효로
   // 인정한다(한컴 원본은 상대경로 — 안 그러면 정상 파일에 오탐).
   if (nameset.has("Contents/content.hpf")) {
-    const hpf = await zip.files["Contents/content.hpf"].async("string")
+    const hpf = await readZipEntry(zip.files["Contents/content.hpf"], "text")
     for (const m of hpf.matchAll(OPF_HREF_RE)) {
       const href = m[1]
       if (!nameset.has(href) && !nameset.has(`Contents/${href}`)) {

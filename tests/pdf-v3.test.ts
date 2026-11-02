@@ -24,6 +24,7 @@ import {
 import { detectClusterTables, type ClusterItem } from "../src/pdf/cluster-detector.js"
 import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
 import type { IRBlock, IRCell, IRTable } from "../src/types.js"
+import { blocksToMarkdown } from "../src/table/builder.js"
 
 // ─── 헬퍼 ──────────────────────────────────────────────
 
@@ -326,6 +327,25 @@ describe("detectTableCaptions", () => {
     ]
     detectTableCaptions(blocks)
     assert.equal(blocks.length, 2)
+  })
+
+  it("쪽에서 표 아래에 놓인 캡션은 마크다운에서 표 뒤에 낸다 — 표 위 캡션은 종전대로 표 앞", () => {
+    const below: IRBlock[] = [
+      tableBlock([["a", "b"], ["c", "d"]], 1, { x: 50, y: 100, width: 400, height: 200 }),
+      captionPara("Table 1. Top 10 ports", 1, 80),
+    ]
+    detectTableCaptions(below)
+    assert.equal(below[0].table!.captionBelow, true)
+    const md = blocksToMarkdown(below)
+    assert.ok(md.indexOf("Table 1. Top 10 ports") > md.indexOf("| c | d |"), md)
+    const above: IRBlock[] = [
+      captionPara("표 1. 부서별 예산 현황", 1, 310),
+      tableBlock([["부서", "예산"], ["A과", "100"]], 1, { x: 50, y: 100, width: 400, height: 200 }),
+    ]
+    detectTableCaptions(above)
+    assert.equal(above[0].table!.captionBelow, undefined)
+    const mdAbove = blocksToMarkdown(above)
+    assert.ok(mdAbove.indexOf("표 1. 부서별 예산 현황") < mdAbove.indexOf("| A과 | 100 |"), mdAbove)
   })
 })
 

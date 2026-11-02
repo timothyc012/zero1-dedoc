@@ -1,0 +1,158 @@
+{
+  "version": "4.18.5",
+  "baselineVersion": "4.18.4",
+  "baselineCommit": "47dff0dce083560bb880af7f4458965255987f55",
+  "sourceCommit": "61c9660b0b8c21d11479704e1b62ea3555b32bc1",
+  "referenceCriteriaChanged": false,
+  "original": {
+    "url": "https://www.kha.or.kr/kha_home/notice_list.do?articleNo=47408&attachNo=426369&mode=download",
+    "contentDigest": "f10be4c227de0de939826ca5033d9b3d9efc9a8c06e6155a21c6cffece6d52ac",
+    "pages": 140,
+    "modes": [
+      {
+        "name": "native",
+        "options": {
+          "ocr": false,
+          "formulaOcr": false
+        },
+        "wholeDocument": true,
+        "pages": 140,
+        "characters": 79260
+      },
+      {
+        "name": "default",
+        "options": {},
+        "wholeDocument": true,
+        "pages": 140,
+        "characters": 83314
+      }
+    ]
+  },
+  "relations": [
+    {
+      "name": "fees",
+      "correct": 12,
+      "total": 12,
+      "notesOutside": true
+    },
+    {
+      "name": "equipment",
+      "correct": 27,
+      "total": 27,
+      "special": 17,
+      "general": 10
+    },
+    {
+      "name": "medicine",
+      "correct": 18,
+      "total": 18,
+      "special": 11,
+      "general": 7
+    },
+    {
+      "name": "commonInternalDevices",
+      "correct": 10,
+      "total": 10,
+      "basis": "5 item/quantity facts shared by ordinary and special ambulance categories"
+    }
+  ],
+  "penalties": {
+    "firstPageRelations": {
+      "correct": 9,
+      "total": 9
+    },
+    "allTables": 24,
+    "allRelations": {
+      "correct": 78,
+      "total": 78
+    },
+    "detachedHeaders": {
+      "restored": 22,
+      "total": 22
+    }
+  },
+  "wholeDocumentConservation": {
+    "literalBaselineIdentical": false,
+    "intentionalChangedPage": 49,
+    "rawLiteralMismatchPreserved": true,
+    "otherPagesExact": 139,
+    "page49": {
+      "beforeBlocks": 25,
+      "afterBlocks": 20,
+      "beforeChars": 478,
+      "afterChars": 478,
+      "characterFrequencyPreserved": true,
+      "tableGeometryContentsSpansAndBboxPreserved": true,
+      "warningListsRestored": 2,
+      "medicalFirstLineListPreserved": true
+    },
+    "compressedPageRunsIdentical": true,
+    "charactersAdded": 0,
+    "charactersRemoved": 0,
+    "semanticValidationPassed": true,
+    "independentTargetedRepairApproved": true,
+    "independentNewBlockingFinding": false,
+    "completeDocumentSemanticAccuracyClaimed": false,
+    "irComparisonNormalization": "Only document-instance g_dNN_ prefixes in fontName are normalized; remaining IR type/text/bbox/table/order must match.",
+    "characterCountScope": "Recursive text Unicode codepoints after formatting/whitespace normalization; excludes image bytes. Character-frequency equality does not establish reading-order equality.",
+    "semanticApprovalScope": "Targeted physical page49 two warning sentences and medical-institution first-line list; not complete page49 or whole-document semantic accuracy."
+  },
+  "frames": {
+    "sourceWindows": 102,
+    "sourceWindowTypes": "one-cell boxes, badges and nested wrappers; not 102 complete flowcharts",
+    "nativeNonemptyWindows": 102,
+    "defaultNonemptyWindows": 99,
+    "defaultEmptyWindows": 3,
+    "defaultEmptyWindowPages": [
+      91,
+      117,
+      119
+    ],
+    "allWindowCharacterFrequenciesPreserved": true,
+    "nestedPage44CellsExact": 38,
+    "annexTitlesPreserved": 16,
+    "falseAnnexTitleTables": 0
+  },
+  "residuals": [
+    "The medical-institution continuation remains a separately classified heading, and its closing parenthesis remains detached; both existed before this repair.",
+    "The definition sentence still has an inherited heading classification and detached hyphen.",
+    "The sidebar numeralⅦ still appears at an imperfect position among body blocks.",
+    "Do not claim complete page49 or flowchart semantic accuracy.",
+    "PDF55 third penalty table retains its full-width caption/legal-note rows; target relations survive.",
+    "PDF68 outer 3x1 frame retains prose and a nested 2x4 table.",
+    "Some flowchart label positions remain imperfect."
+  ],
+  "visual": {
+    "sourcePDFRenderedAndInspected": true,
+    "liveHancomExecuted": false,
+    "reason": "Hancom Office HWP unavailable on this host",
+    "referenceBaselineChanged": false
+  },
+  "verification": {
+    "revision": 9,
+    "sourceFiles": 564,
+    "tests": {
+      "total": 3191,
+      "passed": 3186,
+      "failed": 0,
+      "skipped": 5
+    },
+    "externalOdlDocumentsPerMode": 200,
+    "externalOdlModes": 3,
+    "odlReferenceFilesUnchanged": 425
+  },
+  "requestedTableTopics": {
+    "groups": 5,
+    "correctRelations": 76,
+    "totalRelations": 76,
+    "basis": "12 fee + 27 equipment + 18 medicine + 10 common-device + 9 first-page penalty relations. Five requested topics, not five physical tables or all-page semantic accuracy.",
+    "penaltyScope": "First-page 9 relations span three physical penalty tables and are already included in the extended 78; do not sum them twice."
+  },
+  "evidence": {
+    "raw": "/tmp/kordoc-bug-audit-20261002/original-4185-whole-r9/report.json",
+    "semantic": "/tmp/kordoc-bug-audit-20261002/original-4185-whole-r9/semantic49-report.json",
+    "independent": "/tmp/kordoc-bug-audit-20261002/original-4185-r9-independent-semantic-review.json",
+    "draftReview": "/tmp/kordoc-bug-audit-20261002/original-audit-4185-draft-review.json",
+    "targetedSourcePNG": "/tmp/kordoc-bug-audit-20261002/column-followup-original49.png"
+  }
+}

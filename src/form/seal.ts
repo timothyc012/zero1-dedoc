@@ -28,6 +28,7 @@ import {
 } from "../roundtrip/source-map.js"
 import { patchZipEntries } from "../roundtrip/zip-patch.js"
 import { parseRenderStyles } from "../render/head-styles.js"
+import { readZipEntry } from "../hwpx/parser-shared.js"
 
 const HU_PER_MM = 7200 / 25.4
 const mm2hu = (mm: number): number => Math.round(mm * HU_PER_MM)
@@ -107,7 +108,7 @@ function measureMm(text: string, emMm: number): number {
 }
 
 /** 문단이 속한 셀·표 (앵커 문단 → 셀 폭·좌측 오프셋·정렬 이동 계산용) */
-interface ParaSite {
+export interface ParaSite {
   para: ScanParagraph
   cell?: ScanCell
   table?: ScanTable
@@ -118,7 +119,7 @@ interface ParaSite {
 }
 
 /** 섹션의 본문+셀+글상자 문단을 문서 순서로 평탄화 (머리말·각주 등 excluded 제외) */
-function collectSites(scan: SectionScan): ParaSite[] {
+export function collectSites(scan: SectionScan): ParaSite[] {
   const sites: ParaSite[] = []
   for (const p of scan.bodyParagraphs) sites.push({ para: p })
   const walkTables = (tables: ScanTable[], depth: number, outer: Array<{ cell: ScanCell; table: ScanTable }>): void => {
@@ -305,12 +306,12 @@ export async function placeSealHwpx(hwpxBuffer: ArrayBuffer, ops: SealOp[]): Pro
 
   // 스타일 (charPr 높이 = 1/100pt, 문단 정렬)
   const headerPath = Object.keys(zip.files).find(name => /(^|\/)header\.xml$/i.test(name))
-  const styles = headerPath ? parseRenderStyles(await zip.file(headerPath)!.async("text")) : null
+  const styles = headerPath ? parseRenderStyles(await readZipEntry(zip.file(headerPath)!, "text")) : null
 
   const sectionXmls: string[] = []
   const scans: SectionScan[] = []
   for (let si = 0; si < sectionPaths.length; si++) {
-    const xml = await zip.file(sectionPaths[si])!.async("text")
+    const xml = await readZipEntry(zip.file(sectionPaths[si])!, "text")
     sectionXmls.push(xml)
     scans.push(scanSectionXml(xml, si))
   }
@@ -320,7 +321,7 @@ export async function placeSealHwpx(hwpxBuffer: ArrayBuffer, ops: SealOp[]): Pro
   const usedIds = new Set<string>()
   let manifestXml = ""
   if (manifestPath) {
-    manifestXml = await zip.file(manifestPath)!.async("text")
+    manifestXml = await readZipEntry(zip.file(manifestPath)!, "text")
     for (const m of manifestXml.matchAll(/<opf:item\b[^>]*\bid="([^"]+)"/g)) usedIds.add(m[1])
   }
   const usedImageNums = new Set<number>()

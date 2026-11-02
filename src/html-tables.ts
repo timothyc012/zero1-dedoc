@@ -5,11 +5,14 @@
  */
 
 const TABLE_TAG = /(<\/?(?:table|tr|th|td)\b[^>]*>)/i
+/** kordoc 이 칸에 넣는 그림 태그의 정확한 꼴(print/renderer SAFE_RAW_TAG 와 같다) — 문서 글의 `\<img onerror=…>` 는 여기 안 걸려 이스케이프된다 */
+const KORDOC_IMG = String.raw`<img src="(?:images\/(?:[^"'<>\/\s]+\/)?)?image_\d+\.(?:png|jpe?g|gif|webp|bmp)" alt="image">`
+const KEEP_TAG = new RegExp(String.raw`((?<!\\)<br>|(?<!\\)<\/?(?:u|sup|sub)>|(?<!\\)${KORDOC_IMG})`, "i")
 
 /** 파이프 칸 글 → HTML 칸 글: Markdown 이스케이프를 풀고 &·<·> 를 이스케이프하되 kordoc 이 칸에 넣는 태그는 둔다 */
 function pipeCellToHtml(cell: string): string {
   return cell
-    .split(/(<br>|<\/?(?:u|sup|sub)>|<img\b[^>]*>)/)
+    .split(KEEP_TAG)
     .map((part, i) => i % 2 ? part : part
       .replace(/\\([\\`*_{}[\]()#+\-.!|~<>$])/g, "$1")
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"))

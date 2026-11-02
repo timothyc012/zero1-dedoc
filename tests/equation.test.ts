@@ -47,3 +47,17 @@ describe("hwpEquationToLatex", () => {
     )
   })
 })
+
+describe("한컴 수식 소문자 기호 명령 (#148)", () => {
+  it("소문자 therefore·because 도 대문자와 같은 LaTeX 기호로 바꾼다", async () => {
+    const { hmlToLatex } = await import("../src/hwpx/equation.js")
+    assert.equal(hmlToLatex("therefore x=1"), hmlToLatex("THEREFORE x=1"))
+    assert.ok(hmlToLatex("therefore x=1").includes("\\therefore"))
+    assert.ok(hmlToLatex("because x=1").includes("\\because"))
+  })
+  it("생성 쪽 정준 토큰은 그대로 대문자(THEREFORE·BECAUSE)", async () => {
+    const { latexLikeToEqEdit } = await import("../src/hwpx/equation-generate.js")
+    assert.ok(latexLikeToEqEdit("\\therefore x").includes("THEREFORE"))
+    assert.ok(latexLikeToEqEdit("\\because x").includes("BECAUSE"))
+  })
+})

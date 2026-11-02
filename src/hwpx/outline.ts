@@ -86,7 +86,9 @@ export function legalMarkerDepth(marker: string): number {
 /** 선두 명시 부호 해석 — {kind, depth, marker, rest}. keep = ❶⇒↳ 등 글리프 보존 부호(keepMarkers 옵션일 때만) */
 export function parseLeadingMarker(text: string, keepMarkers = false): { kind: "box" | "legal" | "ref" | "keep" | null; depth: number; marker: string; rest: string } {
   // 굵게가 부호를 감싼 줄("**ㅇ 전문가 자문회의** (4회)") — 부호를 굵게 밖으로 꺼낸다(항목 굵기는 스킴이 정한다)
-  const t = text.replace(/^[\s　]+/, "").replace(/^\*\*([□■ㅇ○◦●❍◎▸※-])\s*(?=\S)/u, "$1 **")
+  const t = text.replace(/^[\s　]+/, "")
+    .replace(/^(\*\*|__)([□■ㅇ○◦●❍◎▸※-])\1(?=\s|$)/u, "$2")
+    .replace(/^(\*\*|__)([□■ㅇ○◦●❍◎▸※-])\s*(?=\S)/u, "$2 $1")
   const ref = REF_RE.exec(t)
   if (ref) return { kind: "ref", depth: 0, marker: ref[1], rest: t.slice(ref[0].length).trim() }
   if (keepMarkers) {
@@ -166,6 +168,8 @@ export function buildOutline(blocks: MdBlock[], opts: OutlineOptions): Outline {
    * ("ㅇ (먹거리) …" 문단 뒤 "- 신선란 …" → -(2단계)). 명시 부호·문단·헤딩이 나오면 리셋. 값 -1 = 미확정
    */
   let listBase = -1
+  /** 부호 항목 아래 목록의 첫 항목 들여쓰기 — 원고가 "ㅇ …" 아래 목록을 들여 써도("    - 세부") 단계는 listBase 부터 센다 */
+  let listIndent = 0
   let lastExplicitDepth = -1
   const pushItem = (depth: number, text: string, legalMarker?: string, fromHeading = false, marker?: string, explicit = true) => {
     nodes.push({ kind: "item", depth, text, ...(legalMarker ? { legalMarker } : {}), ...(fromHeading ? { fromHeading: true } : {}), ...(marker ? { marker } : {}) })
@@ -216,11 +220,13 @@ export function buildOutline(blocks: MdBlock[], opts: OutlineOptions): Outline {
         if (lm.kind === "keep") { pushItem(lm.depth, lm.rest, undefined, false, lm.marker); break }
         if (lm.kind === "legal" && opts.gaejosik) { pushItem(Math.max(lastItemDepth, 0), lm.rest, lm.marker); break }
         let base = headingDepth >= 0 ? headingDepth + 1 : 0
+        let indent = b.indent ?? 0
         if (opts.headingFrames || opts.listUnderMarker) {
-          if (listBase < 0) listBase = lastExplicitDepth + 1
+          if (listBase < 0) { listBase = lastExplicitDepth + 1; listIndent = lastExplicitDepth >= 0 ? indent : 0 }
           base = listBase
+          indent = Math.max(0, indent - listIndent)
         }
-        pushItem(Math.min(base + (b.indent ?? 0), 7), lm.kind === "legal" ? lm.rest : text, undefined, false, undefined, false)
+        pushItem(Math.min(base + indent, 7), lm.kind === "legal" ? lm.rest : text, undefined, false, undefined, false)
         break
       }
       case "paragraph": {

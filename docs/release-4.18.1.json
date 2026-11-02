@@ -1,0 +1,677 @@
+{
+  "version": "4.18.1",
+  "status": "published-and-verified",
+  "date": "2026-10-01",
+  "sourceCommit": "be7f50c004e74c5c06d3018aaee00085cdc244d4",
+  "tableFixCommit": "5aeafcb593ef94dbc7a910da7edcd93f4bd2f352",
+  "referenceCriteriaChanged": true,
+  "crossScoring": "docs/hwpx-empty-fields-2026-10-01/cross-score.json",
+  "originalEvidence": "docs/hwpx-empty-fields-2026-10-01/output-proof.json",
+  "guiPixelEqualityVerified": false,
+  "tests": {
+    "tests": 2922,
+    "suites": 830,
+    "pass": 2917,
+    "fail": 0,
+    "skipped": 5,
+    "skips": "Linux-only lifecycle/ownership cases on Darwin"
+  },
+  "freshVerification": {
+    "focusedTests": 182,
+    "boundaryAndEquationChecks": 18,
+    "originalDocuments": 4,
+    "originalTablesExact": 66,
+    "restoredEmptyFields": 14,
+    "equationTables": 2,
+    "additionalHwp5EdgeChecks": 8,
+    "additionalHwp5ReviewSHA256": "80ed6415c883ed97d2ccdf65aca3e7647d83c0131d00e654d27ed9d1e8f307be",
+    "additionalHwp5Review": "docs/hwpx-empty-fields-2026-10-01/hwp5-noop-review.json"
+  },
+  "normalPublication": {
+    "command": "npm publish --access public",
+    "log": "/tmp/kordoc-publish-4.18.1-20261001.log",
+    "scriptsSkipped": false,
+    "exitCode": 0,
+    "logSHA256": "eafa07271da84112aee41acc8bfadea53e1b245ce8ca3aa380a5cf467e4f5fb8",
+    "allStagesPassed": [
+      "meta",
+      "notices",
+      "typecheck",
+      "test",
+      "build",
+      "pages",
+      "score",
+      "roundtrip",
+      "pdf-table",
+      "pdf-text",
+      "annex",
+      "formats",
+      "fuzz",
+      "reflow",
+      "redact",
+      "ocr"
+    ]
+  },
+  "previousAttempt": {
+    "stage": "test",
+    "published": false,
+    "tests": 2919,
+    "pass": 2913,
+    "fail": 1,
+    "skipped": 5,
+    "logSHA256": "2f2fbe6158b19b4a91a55cbeb5ec23dcc3684587ebcc8064e1f16d32bbe5689b",
+    "recoveredByCommit": "be7f50c004e74c5c06d3018aaee00085cdc244d4"
+  },
+  "sourceMirror": {
+    "run": 36837081552,
+    "conclusion": "success",
+    "gitlabMain": "be7f50c004e74c5c06d3018aaee00085cdc244d4"
+  },
+  "sourceCI": {
+    "run": 36837080034,
+    "conclusion": "success",
+    "nodes": [
+      20,
+      22,
+      24
+    ]
+  },
+  "packageBuild": {
+    "files": 136,
+    "indexSHA256": "09b52f9cece9e9a1696deef120491190dff2c671c9ecc1e505728b4b9fec2eb9"
+  },
+  "gates": {
+    "population": {
+      "value": "hwpx 2286/pdf 1911/hwp쌍 1120",
+      "threshold": "≥ 2286/1911/1120",
+      "pass": true
+    },
+    "hwpx": {
+      "docs": 2286,
+      "tableCount": 9865,
+      "exactCount": 9865,
+      "gates": {
+        "recallMicro": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "recallDoc": {
+          "value": 1,
+          "threshold": 1,
+          "failDocs": 0,
+          "pass": true
+        },
+        "missRun": {
+          "failDocs": 0,
+          "threshold": "<20자",
+          "pass": true
+        },
+        "phantom": {
+          "value": 0,
+          "threshold": 0,
+          "pass": true
+        },
+        "blacklist": {
+          "failDocs": 0,
+          "pass": true
+        },
+        "tableExact": {
+          "value": 1,
+          "threshold": 0.9963,
+          "pass": true
+        },
+        "cellF1": {
+          "value": 1,
+          "threshold": 0.9976,
+          "pass": true
+        },
+        "contentNED": {
+          "value": 0.999953,
+          "threshold": 0.9995,
+          "pass": true
+        },
+        "cellExact": {
+          "value": 0.999982,
+          "threshold": 0.9995,
+          "pass": true
+        },
+        "orderAvg": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "orderDoc": {
+          "failDocs": 0,
+          "threshold": 1,
+          "pass": true
+        },
+        "eqPresence": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "fnPresence": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "headerPolicy": {
+          "violations": 0,
+          "pass": true
+        }
+      }
+    },
+    "pdf": {
+      "docs": 1911,
+      "scored": 1729,
+      "gates": {
+        "coverage": {
+          "value": 0.99774,
+          "threshold": 0.9976,
+          "failDocs": 91,
+          "pass": true
+        }
+      }
+    },
+    "hwp5": {
+      "pairs": 1120,
+      "ok": 1120,
+      "avgCrossNED": 0,
+      "avgHwpxToHwp": 1,
+      "tables": {
+        "ref": 4258,
+        "exact": 4258
+      },
+      "gates": {
+        "pairSimilarity": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "pairTableExact": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "pairCellF1": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "pairCellExact": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "pairContentNED": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "pairCoverage": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "pairErrors": {
+          "value": 0,
+          "threshold": 0,
+          "pass": true
+        }
+      },
+      "pass": true
+    },
+    "nonHwpxRawChanges": {
+      "pdfChanges": 0,
+      "hwp5PairedTableChanges": [
+        {
+          "file": "licbyl/17337363_주민투표관리규칙_인영신고서.hwp",
+          "before": 1,
+          "after": 2,
+          "exact": 2
+        },
+        {
+          "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwp",
+          "before": 46,
+          "after": 59,
+          "exact": 59
+        }
+      ],
+      "hwp5UnpairedMarkdownChanges": [
+        {
+          "file": "hwp5/inserting_image_cell.hwp",
+          "before": 0,
+          "after": 92
+        },
+        {
+          "file": "hwp5/removing-row.hwp",
+          "before": 0,
+          "after": 73
+        },
+        {
+          "file": "hwp5/setting-celltext-by-field.hwp",
+          "before": 0,
+          "after": 148
+        },
+        {
+          "file": "rhwp/basic/Textmail.hwp",
+          "before": 252,
+          "after": 289
+        },
+        {
+          "file": "rhwp/basic/request.hwp",
+          "before": 1027,
+          "after": 1101
+        },
+        {
+          "file": "rhwp/issue-986-receipt.hwp",
+          "before": 6912,
+          "after": 6949
+        },
+        {
+          "file": "rhwp/issue6300/trade_report_forced_break_object.hwp",
+          "before": 93452,
+          "after": 93563
+        },
+        {
+          "file": "rhwp/kps-ai.hwp",
+          "before": 81479,
+          "after": 81516
+        },
+        {
+          "file": "rhwp/pr-1674.hwp",
+          "before": 42752,
+          "after": 42798
+        },
+        {
+          "file": "rhwp/tac-verify/scenario-a-after.hwp",
+          "before": 23,
+          "after": 61
+        },
+        {
+          "file": "rhwp/tac-verify/scenario-a-before.hwp",
+          "before": 23,
+          "after": 61
+        },
+        {
+          "file": "rhwp/tac-verify/scenario-b-after.hwp",
+          "before": 23,
+          "after": 61
+        },
+        {
+          "file": "rhwp/tac-verify/scenario-b-before.hwp",
+          "before": 23,
+          "after": 61
+        },
+        {
+          "file": "rhwp/tac-verify/scenario-c-after.hwp",
+          "before": 23,
+          "after": 99
+        },
+        {
+          "file": "rhwp/tac-verify/scenario-c-before.hwp",
+          "before": 23,
+          "after": 99
+        },
+        {
+          "file": "rhwp/task2322/19439117_gokseong_voucher_form.hwp",
+          "before": 3686,
+          "after": 3709
+        },
+        {
+          "file": "rhwp/task2322/20862337_cheongyang_voucher_form.hwp",
+          "before": 3631,
+          "after": 3654
+        }
+      ],
+      "raw": "hwpx-empty-fields-2026-10-01/non-hwpx-score-comparison.json"
+    },
+    "roundtrip": {
+      "fwdCovMicro": 1,
+      "bwdCovMicro": 1,
+      "tables": {
+        "ref": 68,
+        "exact": 68,
+        "cellTotal": 1897,
+        "cellExact": 1897,
+        "cellExactRate": 1
+      }
+    },
+    "pdfTable": {
+      "pass": true,
+      "summary": {
+        "pairs": 708,
+        "refTables": 2331,
+        "reordered": 5,
+        "matchedRate": 0.998284,
+        "exactRate": 0.979408,
+        "cellF1": 0.990863,
+        "cellExactRate": 0.985981,
+        "contentNED": 0.982072,
+        "parseErrors": 0,
+        "nested": {
+          "pairs": 29,
+          "refTables": 101,
+          "reordered": 0,
+          "matchedRate": 1,
+          "exactRate": 0.930693,
+          "cellF1": 0.99802,
+          "cellExactRate": 0.981723,
+          "contentNED": 0.990894
+        }
+      },
+      "rawNonclockChanges": 0
+    },
+    "pdfText": {
+      "pass": true,
+      "summary": {
+        "pairs": 744,
+        "refChars": 2857775,
+        "recall": 0.99829,
+        "precision": 0.9958,
+        "order": 0.99145,
+        "spaceF1": 0.98809,
+        "parseErrors": 0,
+        "excluded": 22
+      },
+      "rawNonclockChanges": 0
+    },
+    "annex": {
+      "pass": true,
+      "summary": {
+        "hwp": {
+          "docs": 272,
+          "recall": 1,
+          "phantom": 0.00001,
+          "order": 1,
+          "tables": 346,
+          "tableExactCount": 346,
+          "tableExact": 1,
+          "cellF1": 1,
+          "eqRef": 11,
+          "eqHit": 11
+        },
+        "pdf": {
+          "docs": 272,
+          "recall": 0.99965,
+          "phantom": 0.00053,
+          "order": 1,
+          "tables": 346,
+          "tableExactCount": 336,
+          "tableExact": 0.9711,
+          "cellF1": 0.99564,
+          "eqRef": 11,
+          "eqHit": 7
+        }
+      }
+    },
+    "formats": {
+      "pass": true,
+      "files": 88,
+      "gates": {
+        "parseErrors": {
+          "value": 0,
+          "threshold": 0,
+          "pass": true
+        },
+        "docxRecall": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "xlsxStrRecall": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "hmlRecall": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "xlsxNumRecall": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "xlsStrRecall": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "xlsNumRecall": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "bigStrRecall": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "bigNumRecall": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "population": {
+          "value": "docx 36/xlsx 28/xls 15/hml 9/큰 시트 8",
+          "threshold": "≥ 4/6/7/5/4 · 정답지 없음 0",
+          "pass": true
+        }
+      },
+      "xlsxNumRecall": 1
+    },
+    "fuzz": {
+      "pass": true,
+      "runs": 23700,
+      "gates": {
+        "crash": {
+          "value": 0,
+          "threshold": 0,
+          "pass": true
+        },
+        "hang": {
+          "value": 0,
+          "threshold": 0,
+          "pass": true
+        },
+        "noCode": {
+          "value": 0,
+          "threshold": 0,
+          "pass": true
+        },
+        "slow": {
+          "value": 0,
+          "threshold": 0,
+          "pass": true
+        },
+        "genInvalid": {
+          "value": 0,
+          "threshold": 0,
+          "pass": true
+        }
+      },
+      "incidents": []
+    },
+    "reflow": {
+      "cases": 59,
+      "pass": true
+    },
+    "redact": {
+      "pass": true
+    },
+    "ocr": {
+      "pass": true,
+      "summary": {
+        "generatedAt": "2026-10-01T09:14:23.125Z",
+        "docs": 53,
+        "skipped": 3,
+        "pages": 102,
+        "skippedPages": [
+          {
+            "doc": "eval-perf-2024.pdf",
+            "page": 5,
+            "inlineGlyphImages": 10,
+            "reason": "텍스트층이 글줄 안 글자를 그림으로 찍음(정답 불완전)"
+          },
+          {
+            "doc": "eval-perf-2024.pdf",
+            "page": 4,
+            "inlineGlyphImages": 9,
+            "reason": "텍스트층이 글줄 안 글자를 그림으로 찍음(정답 불완전)"
+          },
+          {
+            "doc": "nanet-seoul-minutes.pdf",
+            "page": 1,
+            "glyphCoverage": 0.088,
+            "reason": "래스터에 텍스트층 글자가 그려지지 않음(글꼴 미렌더)"
+          },
+          {
+            "doc": "nanet-seoul-minutes.pdf",
+            "page": 2,
+            "glyphCoverage": 0.071,
+            "reason": "래스터에 텍스트층 글자가 그려지지 않음(글꼴 미렌더)"
+          }
+        ],
+        "cerMicro": 0.05188,
+        "cerMedian": 0.0216,
+        "charRecallMicro": 0.99001,
+        "charPrecisionMicro": 0.99355,
+        "charF1": 0.99178,
+        "hangulRecallMicro": 0.99363,
+        "cerMicroStrict": 0.09589,
+        "cerMedianStrict": 0.0719,
+        "secPerPage": 0.97,
+        "tables": {
+          "refTables": 67,
+          "matched": 52,
+          "exact": 22,
+          "matchedRate": 0.7761,
+          "exactRate": 0.3284,
+          "cellF1Mean": 0.5465,
+          "skippedRefTables": 37
+        },
+        "note": "정답=같은 PDF의 클린 텍스트층, 입력=216dpi 렌더 강제 OCR — 실스캔 노이즈/스큐 미반영(상한치). cer=v2 fair 정규화, cerStrict=v1"
+      },
+      "gates": {
+        "cerMicro": {
+          "value": 0.05188,
+          "threshold": "≤ 0.1",
+          "pass": true
+        },
+        "charRecall": {
+          "value": 0.99001,
+          "threshold": "≥ 0.988",
+          "pass": true
+        },
+        "charPrecision": {
+          "value": 0.99355,
+          "threshold": "≥ 0.9915",
+          "pass": true
+        },
+        "hangulRecall": {
+          "value": 0.99363,
+          "threshold": "≥ 0.992",
+          "pass": true
+        },
+        "tableMatched": {
+          "value": 0.7761,
+          "threshold": "≥ 0.76",
+          "pass": true
+        },
+        "tableCellF1": {
+          "value": 0.5465,
+          "threshold": "≥ 0.535",
+          "pass": true
+        },
+        "population": {
+          "value": "53/102",
+          "threshold": "≥ 53/102",
+          "pass": true
+        },
+        "environment": {
+          "value": 0,
+          "threshold": "0 (OCR 미적용 문서)",
+          "pass": true
+        }
+      }
+    }
+  },
+  "finalScoreReportSHA256": "b2ce4cca172d86a4f1f0a16747205dd9135905885bac8c5b34245cd5a206587e",
+  "publicPackage": {
+    "registry": "https://registry.npmjs.org/kordoc",
+    "version": "4.18.1",
+    "latest": "4.18.1",
+    "tarball": "https://registry.npmjs.org/kordoc/-/kordoc-4.18.1.tgz",
+    "shasum": "ae5adcf9f602a854ab01417781baa8196b316aec",
+    "integrity": "sha512-fxlbFP8LTTTx/qjTB2GJGQSZkV04Fs9oj2L3/Pu6qZl/P/ESxfgLOL7FPe9rwGJ0i1rSp2RboMDLVzzXpiR8nA==",
+    "verification": {
+      "version": "4.18.1",
+      "tarball": "kordoc-4.18.1.tgz",
+      "tarballSHA256": "b30820b113bf1ec988c6470f79645fa1a7a7647993146c3008abfd84e0d3b534",
+      "indexSHA256": "09b52f9cece9e9a1696deef120491190dff2c671c9ecc1e505728b4b9fec2eb9",
+      "cliSHA256": "bcf24c34a8cbfcfabc50e30dbf5a62eb3b5c54b8c6bdcfdc46a12734a820c243",
+      "cjsSHA256": "21c1297cd1e96edfe135b225a0e030da823797070c9158814a10e8fc442408d0",
+      "results": [
+        {
+          "mode": "ESM",
+          "success": true
+        },
+        {
+          "mode": "CJS",
+          "success": true
+        }
+      ],
+      "originalChecks": [
+        {
+          "file": "licbyl/17337363_주민투표관리규칙_인영신고서.hwpx",
+          "tables": 2,
+          "emptyOneByOneFields": 1,
+          "restoredEmptyFields": 1,
+          "markdownHtml": true
+        },
+        {
+          "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+          "tables": 59,
+          "emptyOneByOneFields": 17,
+          "restoredEmptyFields": 13,
+          "markdownHtml": true
+        }
+      ],
+      "distFilesExact": 136,
+      "dependencySource": "Validated lockfile dependencies; npm exec verifies CLI with independently installed public package",
+      "unpacked": "/tmp/kordoc-public-4.18.1-20261001/unpacked/package"
+    },
+    "independentCLI": {
+      "command": "npm exec --yes --package=kordoc@4.18.1 -- kordoc --version",
+      "cwd": "/tmp/kordoc-public-4.18.1-20261001",
+      "exitCode": 0,
+      "output": "4.18.1"
+    }
+  },
+  "githubRelease": {
+    "url": "https://github.com/chrisryugj/kordoc/releases/tag/v4.18.1",
+    "isDraft": false,
+    "isPrerelease": false,
+    "publishedAt": "2026-10-01T09:26:40Z",
+    "asset": {
+      "id": 602890245,
+      "url": "https://github.com/chrisryugj/kordoc/releases/download/v4.18.1/kordoc-4.18.1.tgz",
+      "bytes": 5646338,
+      "SHA256": "b30820b113bf1ec988c6470f79645fa1a7a7647993146c3008abfd84e0d3b534",
+      "npmLocalAndDownloadedGithubBytesExact": true
+    }
+  },
+  "tag": {
+    "name": "v4.18.1",
+    "object": "6065a8a7da0bb6319243eb4eb03813807dacfa9f",
+    "peeledSource": "be7f50c004e74c5c06d3018aaee00085cdc244d4",
+    "annotated": true,
+    "githubAndGitlabExact": true,
+    "gitlabRemote": "https://gitlab.aigov.go.kr/chrisryugj/kordoc.git",
+    "mirrorRun": 36842739669,
+    "mirrorConclusion": "success"
+  }
+}

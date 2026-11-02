@@ -9,6 +9,7 @@ import {
   escapeXml, escapeTextXml,
 } from "./gen-ids.js"
 import { sanitizeHref } from "../utils.js"
+import { generateEquationXml, latexLikeToEqEdit } from "./equation-generate.js"
 
 // ─── 인라인 문서 컨텍스트 — 하이퍼링크·각주 (v4.5.0) ──
 //
@@ -20,6 +21,8 @@ import { sanitizeHref } from "../utils.js"
 const HYPERLINK_FIELDID = 627600491
 const FIELD_ID_BASE = 1_800_000_000
 const FOOTNOTE_INST_BASE = 1_850_000_000
+/** 인라인 수식 equation id — 블록 수식(2_000_000_001 + 블록 순번)과 겹치지 않는 대역 */
+const INLINE_EQ_ID_BASE = 1_900_000_000
 
 interface InlineDocCtx {
   footnotes: Map<string, string>
@@ -27,13 +30,16 @@ interface InlineDocCtx {
   noteSeq: number
   /** 각주 본문 렌더 중 — 중첩 각주 마커는 리터럴 유지 (자기참조 재귀 차단) */
   inNote: boolean
+  /** 인라인 `$…$` → treatAsChar 수식 (opt-in, #150) — 꺼지면 종전처럼 글자 */
+  inlineMath: boolean
+  mathSeq: number
 }
 
 let inlineDoc: InlineDocCtx | null = null
 
-/** 문서 단위 인라인 채널 시작 — 각주 정의 주입 + 필드/각주 카운터 리셋 */
-export function beginInlineDoc(footnotes: Map<string, string>): void {
-  inlineDoc = { footnotes, fieldSeq: 0, noteSeq: 0, inNote: false }
+/** 문서 단위 인라인 채널 시작 — 각주 정의 주입 + 필드/각주/수식 카운터 리셋 */
+export function beginInlineDoc(footnotes: Map<string, string>, inlineMath = false): void {
+  inlineDoc = { footnotes, fieldSeq: 0, noteSeq: 0, inNote: false, inlineMath, mathSeq: 0 }
 }
 
 export function endInlineDoc(): void {
@@ -329,7 +335,16 @@ interface InlineSpan {
   href?: string
   /** 각주 본문 — 이 위치에 footNote 개체 방출 (text는 빈 문자열) */
   note?: string
+  /** 인라인 수식 — text 는 `$` 를 벗긴 LaTeX 원문, 이 위치에 equation 개체 방출 */
+  math?: boolean
 }
+
+// 인라인 수식 `$…$` (Pandoc tex_math_dollars 규칙) — 여는 $ 뒤·닫는 $ 앞은 공백 아님, 닫는 $ 뒤는 숫자 아님,
+// $$ 는 어느 쪽에도 붙지 않는다. 이스케이프 \$ 는 이미 센티널로 가려져 여닫이가 못 된다. 인라인 코드·링크 대상 `](…)` 이
+// 먼저 서면 그대로 둔다(URL 안 $a$ 보호 — 앵커 글의 수식은 `]` 앞이라 그대로 잡힌다).
+const INLINE_MATH_REGEX = /`[^`]+`|\]\([^)]*\)|(?<!\$)\$(?![\s$])([^$\n]*?[^\s$])\$(?![\d$])/g
+/** 수식 센티널 \x00mN\x00 — 앞 이스케이프 센티널(\x00N\x00)의 닫는 \x00 에 'mN' 글이 이어진 꼴은 제외 */
+const MATH_SENTINEL = /(?<!\x00\d+)\x00m(\d+)\x00/
 
 export function parseInlineMarkdown(text: string): InlineSpan[] {
   // 마크다운 백슬래시 이스케이프(\* \~ \| \< \$ 등 — kordoc 파서 escapeGfm·escapeLiteralDollar 출력 포함)를
@@ -340,6 +355,15 @@ export function parseInlineMarkdown(text: string): InlineSpan[] {
     literals.push(c)
     return `\x00${literals.length - 1}\x00`  // 인덱스 내장 — 전처리가 일부 구간을 버려도 정렬 유지
   })
+  // 인라인 수식(opt-in) — 강조·링크 정규식보다 먼저 센티널로 떼어 낸다(수식 안 _·*·[ 보호). 강조 플래그는 span 분할로 물려받는다
+  const maths: string[] = []
+  if (inlineDoc?.inlineMath) {
+    text = text.replace(INLINE_MATH_REGEX, (m, src?: string) => {
+      if (src === undefined) return m
+      maths.push(src)
+      return `\x00m${maths.length - 1}\x00`
+    })
+  }
   // 전처리: 이미지 → alt 텍스트 (블록 단위 이미지는 gen-section이 pic으로 방출)
   text = text.replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
   // 전처리: ~~취소선~~ → 텍스트만
@@ -380,13 +404,17 @@ export function parseInlineMarkdown(text: string): InlineSpan[] {
     spans = emphasisSpans(text)
     if (spans.length === 0) spans.push({ text, bold: false, italic: false, code: false })
   }
-  // 센티널 → 리터럴 복원. 인라인 코드 안은 CommonMark처럼 이스케이프 처리가
+  if (maths.length > 0) {
+    spans = spans.flatMap(span => !MATH_SENTINEL.test(span.text) ? [span] : span.text.split(MATH_SENTINEL).flatMap((part, k): InlineSpan[] =>
+      k % 2 ? [{ ...span, text: maths[+part], math: true }] : part ? [{ ...span, text: part }] : []))
+  }
+  // 센티널 → 리터럴 복원. 인라인 코드·수식 안은 CommonMark처럼 이스케이프 처리가
   // 없으므로 백슬래시까지 원문 그대로 되살린다.
   for (const span of spans) {
     if (!span.text.includes("\x00")) continue
     span.text = span.text.replace(/\x00(\d+)\x00/g, (_, i) => {
       const c = literals[+i] ?? ""
-      return span.code ? "\\" + c : c
+      return span.code || span.math ? "\\" + c : c
     })
   }
   return spans
@@ -400,7 +428,9 @@ export function parseInlineMarkdown(text: string): InlineSpan[] {
 // 여는 _ 는 앞이 공백/구두점/문두 + 뒤가 비공백, 닫는 _ 는 앞이 비공백 + 뒤가
 // 공백/구두점/문미일 때만. (?<!_)/(?!_)는 _ run을 원자로 취급(_init_ 부분매칭 방지),
 // \x00 은 이스케이프 센티널(마스킹된 구두점)이라 경계로 인정.
-const INLINE_REGEX = /(`[^`]+`|\*{3}(?:[^*]|\*(?!\*\*))+\*{3}|\*{2}(?:[^*]|\*(?!\*))+\*{2}|\*(?:[^*]|\*{2}(?:[^*]|\*(?!\*))+\*{2})+\*|(?<![^\s\p{P}\p{S}\x00])(?<!_)_{2}(?=\S)[^_]+(?<=\S)_{2}(?!_)(?![^\s\p{P}\p{S}\x00])|(?<![^\s\p{P}\p{S}\x00])(?<!_)_(?=\S)[^_]+(?<=\S)_(?!_)(?![^\s\p{P}\p{S}\x00]))/gu
+// 별 강조도 CommonMark 처럼 여는 별 뒤·닫는 별 앞이 비공백일 때만 — 한 줄의 각주 표시 "4대* 도입, 단가** 적용"이
+// 기울임 짝으로 묶여 별이 지워지고 사이 글이 기울었다.
+const INLINE_REGEX = /(`[^`]+`|\*{3}(?=\S)(?:[^*]|\*(?!\*\*))+(?<=\S)\*{3}|\*{2}(?=\S)(?:[^*]|\*(?!\*))+(?<=\S)\*{2}|\*(?=\S)(?:[^*]|\*{2}(?:[^*]|\*(?!\*))+\*{2})+(?<=\S)\*|(?<![^\s\p{P}\p{S}\x00])(?<!_)_{2}(?=\S)[^_]+(?<=\S)_{2}(?!_)(?![^\s\p{P}\p{S}\x00])|(?<![^\s\p{P}\p{S}\x00])(?<!_)_(?=\S)[^_]+(?<=\S)_(?!_)(?![^\s\p{P}\p{S}\x00]))/gu
 
 /**
  * 강조(`code` ** * __ _) 토크나이즈 — 마스킹된 세그먼트 텍스트 전용.
@@ -517,6 +547,11 @@ export function generateRuns(text: string, defaultCharPr: number = CHAR_NORMAL, 
       }
     }
     const charId = span.code || span.bold || span.italic ? spanToCharPrId(span) : defaultCharPr
+    if (span.math) {
+      // 블록 수식과 같은 개체(treatAsChar) — 글 흐름 안 글자처럼 놓인다
+      out.push(`<hp:run charPrIDRef="${mapped(charId)}">${generateEquationXml(latexLikeToEqEdit(span.text), 0, INLINE_EQ_ID_BASE + ++inlineDoc!.mathSeq)}</hp:run>`)
+      continue
+    }
     out.push(`<hp:run charPrIDRef="${mapped(charId)}"><hp:t>${escapeTextXml(span.text)}</hp:t></hp:run>`)
   }
   closeField()

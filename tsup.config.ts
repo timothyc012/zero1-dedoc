@@ -10,7 +10,7 @@ const OPTIONAL_EXTERNAL = [
   "pdfjs-dist",
   "puppeteer-core",
   "onnxruntime-node",
-  "@huggingface/transformers",
+  "@huggingface/tokenizers",
   "@hyzyla/pdfium",
   "sharp",
 ]

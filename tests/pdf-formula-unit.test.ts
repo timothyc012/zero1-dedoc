@@ -8,6 +8,7 @@ import { strict as assert } from "node:assert"
 
 import {
   postProcessLatex,
+  stripUnpairedLeftRight,
   stripTrailingWhitespace,
   collapseSpaces,
   stripEmptyGroups,
@@ -61,6 +62,28 @@ describe("formula postprocess", () => {
   })
 })
 
+describe("capFormulaRegions — 쪽당 수식 영역 상한", () => {
+  it("넘으면 별행 수식부터 남기고 원래 순서를 지킨다", async () => {
+    const { capFormulaRegions } = await import("../src/pdf/formula/pipeline.js")
+    const rs = [...Array(6)].map((_, i) => ({ id: i, kind: i === 5 ? "display" : "inline" }))
+    assert.deepEqual(capFormulaRegions(rs, 3).map(r => r.id), [0, 1, 5])
+    assert.equal(capFormulaRegions(rs, 10).length, 6)
+  })
+})
+
+describe("stripUnpairedLeftRight (Pix2Text fix_latex)", () => {
+  it("짝 없는 \\left·\\right 는 떼고 구분자만 남긴다", () => {
+    assert.equal(stripUnpairedLeftRight("\\left( a + b"), "( a + b")
+    assert.equal(stripUnpairedLeftRight("a + b \\right)"), "a + b )")
+    assert.equal(stripUnpairedLeftRight("\\left[ \\left( x \\right) y"), "[ \\left( x \\right) y")
+  })
+  it("짝이 맞으면 그대로, \\leftarrow·\\rightarrow 는 다른 명령", () => {
+    const ok = "\\left( \\frac{a}{b} \\right) \\leftarrow \\rightarrow"
+    assert.equal(stripUnpairedLeftRight(ok), ok)
+    assert.equal(postProcessLatex("\\left( x+y"), "(x+y")
+  })
+})
+
 describe("fixLatexSpacing", () => {
   it("\\cmd 뒤 영문자 분리", () => {
     assert.equal(fixLatexSpacing("\\cdotd"), "\\cdot d")
@@ -82,6 +105,12 @@ describe("fixLatexSpacing", () => {
   it("일반 텍스트는 변경 없음", () => {
     assert.equal(fixLatexSpacing("x + y = z"), "x + y = z")
     assert.equal(fixLatexSpacing("d_{k}=d_{v}=64"), "d_{k}=d_{v}=64")
+  })
+
+  it("목록에 없는 정식 명령은 쪼개지 않는다 — 아는 명령 접두가 있어도 (arXiv 수식 정답 대조)", () => {
+    for (const cmd of ["\\lesssim", "\\gtrsim", "\\leqslant", "\\geqslant", "\\subsetneq", "\\llbracket", "\\rrbracket", "\\Bigl(", "\\Bigr)", "\\biggl[", "\\pmod {2}", "\\bmod p", "\\sigmaalgebra"]) {
+      assert.equal(fixLatexSpacing(cmd), cmd)
+    }
   })
 })
 

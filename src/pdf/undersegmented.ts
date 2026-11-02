@@ -82,6 +82,32 @@ function groupItemsToVisualLines(items: TextItem[]): TextItem[][] {
   return lines
 }
 
+/** 줄 맞춘 하위 행 판정 — 글 든 열 수 하한 · 줄 수 하한 · 같은 줄로 볼 높이 차(글자 크기 배수) */
+const MIN_ALIGNED_COLUMNS = 3
+const MIN_ALIGNED_LINES = 3
+const ALIGNED_LINE_TOL = 0.5 // 줄 높이 가운데값 배수 — OCR 숫자 상자 높이가 7~18 로 흔들린다
+
+/**
+ * 가로선 없이 쌓은 하위 행 — 글 든 열이 셋 이상이고 모두 같은 줄 수(셋 이상)이며 k 번째 줄끼리 높이가 맞으면 한 행에 뭉친 하위 행들이다
+ * (예산표 "예산지출(a) / ⋅일반회계 / ⋅특별회계" 와 금액 열마다 세 줄, OCR 은 래스터 괘선만 보아 한 행으로 묶었다). 긴 글이 한 칸에서
+ * 꺾인 행은 다른 열 줄 수·높이가 맞지 않아 걸리지 않는다
+ */
+function alignedSubRows(itemsByCol: TextItem[][]): string[][] | null {
+  const byCol = itemsByCol.map(groupItemsToVisualLines)
+  const cols = byCol.filter(lines => lines.length)
+  if (cols.length < MIN_ALIGNED_COLUMNS) return null
+  const k = cols[0].length
+  if (k < MIN_ALIGNED_LINES || cols.some(lines => lines.length !== k)) return null
+  const cy = (line: TextItem[]) => line.reduce((s, it) => s + itemCenterY(it), 0) / line.length
+  for (let i = 0; i < k; i++) {
+    const ys = cols.map(lines => cy(lines[i]))
+    const hs = cols.map(lines => itemHeight(lines[i][0])).sort((a, b) => a - b), h = hs[hs.length >> 1]
+    if (Math.max(...ys) - Math.min(...ys) > h * ALIGNED_LINE_TOL) return null
+  }
+  // 줄 상자가 줄 간격보다 커(OCR) 띠 묶기는 겹친 줄을 한 띠로 합친다 — 맞춘 k 번째 줄끼리 바로 행으로
+  return Array.from({ length: k }, (_, i) => byCol.map(lines => lines.length ? cellTextToString(lines[i]) : ""))
+}
+
 /**
  * 과소분할 표 재구성. 조건(행≤5 + 열≥3 + dense 컬럼 2개+)을 만족하고
  * row band 재유도가 품질을 개선할 때만 새 셀 행렬을 반환, 아니면 null.
@@ -89,16 +115,20 @@ function groupItemsToVisualLines(items: TextItem[]): TextItem[][] {
  * @param originalCells 기존 셀 행렬 (품질 비교용)
  * @param colXs 그리드 열 경계
  * @param items 표 영역 내 텍스트 아이템
+ * @param maxRows 다룰 격자 행 수 상한 (기본 5 — OCR 숫자 표는 묶음마다 격자 행이 있어 더 받는다)
+ * @param kept 행 3개 이상 표에서 펼치지 않고 그대로 둔 행 — 새 행 번호 → 원래 행 번호 (호출측이 그 행의 칸 합침을 잇는다)
  */
 export function normalizeUndersegmentedTable(
   originalCells: { text: string }[][],
   colXs: number[],
   items: TextItem[],
   rowYs?: number[],
+  kept?: Map<number, number>,
+  maxRows = MAX_UNDERSEGMENTED_ROWS,
 ): string[][] | null {
   const numRows = originalCells.length
   const numCols = colXs.length - 1
-  if (numRows > MAX_UNDERSEGMENTED_ROWS || numCols < MIN_UNDERSEGMENTED_COLUMNS) return null
+  if (numRows > maxRows || numCols < MIN_UNDERSEGMENTED_COLUMNS) return null
   if (items.length === 0) return null
   if (numRows >= 3) {
     if (rowYs?.length !== numRows + 1) return null
@@ -106,11 +136,11 @@ export function normalizeUndersegmentedTable(
     let expanded = 0
     for (let r = 0; r < numRows; r++) {
       const row = originalCells[r].map(cell => cell.text)
-      if (r === 0 || (numRows === 3 && r === 1)) { rebuilt.push(row); continue }
+      if (r === 0 || (numRows === 3 && r === 1)) { kept?.set(rebuilt.length, r); rebuilt.push(row); continue }
       const rowItems = items.filter(item => itemCenterY(item) <= rowYs[r] + 1 && itemCenterY(item) >= rowYs[r + 1] - 1)
       const body = normalizeUndersegmentedTable([originalCells[r]], colXs, rowItems)
       if (body) { rebuilt.push(...body); expanded++ }
-      else rebuilt.push(row)
+      else { kept?.set(rebuilt.length, r); rebuilt.push(row) }
     }
     return expanded ? rebuilt : null
   }
@@ -125,7 +155,7 @@ export function normalizeUndersegmentedTable(
   for (const colItems of itemsByCol) {
     if (groupItemsToVisualLines(colItems).length >= MIN_UNDERSEGMENTED_TEXT_LINES) denseColumns++
   }
-  if (denseColumns < 2) return null
+  if (denseColumns < 2) return numRows === 1 ? alignedSubRows(itemsByCol) : null
 
   // 2) 전체 줄에서 row band 유도 — centerY 근접(epsilon) 또는 수직 겹침이면 같은 band
   const allLines = groupItemsToVisualLines(items.filter(i => i.text.trim()))

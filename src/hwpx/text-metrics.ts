@@ -17,7 +17,7 @@
  * 이 테이블로 근사한다(오차 수 % 이내 — 공문서 본문은 어차피 함초롬바탕 관행).
  */
 
-import { fontAdvanceEm1000, hasFontMetrics } from "./font-metrics.js"
+import { HANCOM_FALLBACK_W, fontWidthFn, hasFontMetrics, isHalfwidthForm } from "./font-metrics.js"
 
 /** ASCII 0x20~0x7E advance (em×1000). 0x20은 useFontSpace=1일 때의 글꼴값(300) */
 const ASCII_W = [
@@ -36,6 +36,9 @@ const SYM_W: Record<number, number> = {
   0x2013: 625, 0x2014: 875, 0x2015: 875, 0x2018: 320, 0x2019: 320, 0x201c: 480, 0x201d: 480,
   0x2020: 558, 0x2021: 438, 0x2025: 640, 0x2026: 960, 0x2030: 988, 0x2032: 335, 0x2033: 474,
   0x203b: 770, 0x20ac: 656, 0x261c: 1012, 0x261e: 1012,
+  0x274d: 970, // ❍ 2단계 부호(일부 중앙부처) — 미실측, ○ 와 같은 전각으로 둔다
+  // 한컴 PDF 임베드 HCRBatang /W 실측 — 종전 기본값 550 으로 떨어지던 기호
+  0x2bc: 164, 0x2022: 399, 0x2023: 369, 0x2024: 289, 0x2027: 289,
 }
 
 /** 코드포인트의 advance(em×1000). 미상 문자는 CJK권 970 / 라틴권 550 폴백 */
@@ -43,6 +46,7 @@ export function charWidthEm1000(cp: number): number {
   if (cp >= 0x20 && cp <= 0x7e) return ASCII_W[cp - 0x20]
   const sym = SYM_W[cp]
   if (sym !== undefined) return sym
+  if (isHalfwidthForm(cp)) return 500 // 반각 형태 ｢ ｣ ･
   if (cp >= 0xac00 && cp <= 0xd7a3) return 970 // 한글 음절 (전수 균일 확인)
   if (cp >= 0x1100 && cp <= 0x11ff) return 970 // 옛한글 자모
   if (cp >= 0x3131 && cp <= 0x318e) return 970 // 호환 자모 (ㆍ 포함)
@@ -55,7 +59,15 @@ export function charWidthEm1000(cp: number): number {
   if (cp >= 0x25a0 && cp <= 0x26ff) return 970 // 도형 □○◆★
   if (cp >= 0x3200 && cp <= 0x33ff) return 970 // 괄호한글 ㉮·단위 ㎡㎏
   if (cp >= 0xff01 && cp <= 0xff60) return 970 // 전각형 ！～
+  // 기술 기호 ⌜⌟·상자 선 ━│┌·딩뱃 ❶➊➀ 는 전각(한컴 PDF HCRBatang 실측 970), 한컴 사용자 기호(보충 사용 영역)는 반각 몫 485
+  if ((cp >= 0x2300 && cp <= 0x23ff) || (cp >= 0x2500 && cp <= 0x259f) || (cp >= 0x2700 && cp <= 0x27bf)) return 970
+  if (cp >= 0xf0000) return 485
   return cp >= 0x2e80 ? 970 : 550
+}
+
+/** 폭 없는 문자 — 폭 없는 공백·연결자(U+200B~200D·2060·FEFF)와 결합 부호(U+0300~036F). 어느 글꼴로 재든 0(한컴 PDF 실측 0) */
+function isZeroWidthCp(cp: number): boolean {
+  return (cp >= 0x200b && cp <= 0x200d) || cp === 0x2060 || cp === 0xfeff || (cp >= 0x300 && cp <= 0x36f)
 }
 
 /** HWP 공백 폭(em×1000) — useFontSpace=0(기본): 반각 고정 500 / =1: 글꼴값 300 */
@@ -64,12 +76,13 @@ export const SPACE_EM_FONT = 300
 
 /**
  * 폭 테이블 클래스 — 'hcr'(함초롬 실측, 기본) / 'fixedPitch'(고정폭 글꼴:
- * ASCII 0.5em·그 외 1.0em). 굴림체·돋움체·바탕체·궁서체('체' 접미 = 고정폭)가
+ * ASCII 0.5em·그 외 1.0em). 굴림체·돋움체·바탕체·궁서체('체' 접미 = 고정폭)와 옛 HFT 기본 글꼴 명조·고딕이
  * 대상 — 전자결재 변환기 산출물의 지배 본문 글꼴. 한글이 HCR(0.97em)보다 3%
  * 넓어 함초롬 테이블로 재면 줄당 1~2자 과대적재로 wrap 지점이 어긋난다
- * (bench/verify-linebreak.mjs seoul 코퍼스 실측: fixedPitch 테이블로 74/75 일치).
+ * (bench/verify-linebreak.mjs seoul 코퍼스 실측: fixedPitch 테이블로 74/75 일치. 한컴 저장본 HFT 명조 문단 1,782개 중 1,776개·고딕 89개 중 83개 일치).
  */
-export type FaceClass = "hcr" | "fixedPitch" | "gothic" | `font:${string}`
+const FIXED_PITCH_FACES = /^(굴림체|돋움체|바탕체|궁서체|명조|고딕)$/
+export type FaceClass = "hcr" | "fixedPitch" | "gothic" | "cjk" | `font:${string}`
 
 /**
  * HWP 글꼴명 → 폭 테이블 클래스. 미상/미지정은 hcr (기존 동작 불변).
@@ -78,21 +91,55 @@ export type FaceClass = "hcr" | "fixedPitch" | "gothic" | `font:${string}`
  */
 export function faceClassOf(face: string | null | undefined): FaceClass {
   if (face && hasFontMetrics(face)) return `font:${face.trim()}`
-  return face && /^(굴림체|돋움체|바탕체|궁서체)$/.test(face.trim()) ? "fixedPitch" : "hcr"
+  return face && FIXED_PITCH_FACES.test(face.trim()) ? "fixedPitch" : "hcr"
+}
+
+/**
+ * 진하게(bold) 글자의 폭 더하기(em×1000) — 굵은 글꼴이 따로 없는 옛 HFT 글꼴(한양·휴먼 계열(휴먼명조 제외)·명조·고딕·필기)은
+ * 한컴이 획을 두껍게 그리며 글자마다 폭을 50 넓힌다(한글 2022 줄 나눔: 고딕·명조·한양신명조·휴먼명조, 크기 600~1700·자간 −9~+5·장평 90~100
+ * 같은 글자 반복 문단 323개가 모두 50 에서만 맞는다 — 46 이면 55개가 한 글자씩 더 든다),
+ * 굵은 글꼴이 있는 바탕·맑은 고딕·함초롬·휴먼명조 등은 더하면 나빠진다. 휴먼명조도 글꼴 항목이 HFT(fontface font type="HFT")면 굵은 글꼴이
+ * 없어 넓힌다(TTF 휴먼명조와 HFT 휴먼명조를 함께 쓰는 문서 27개: 휴먼명조 문단 줄 시작 일치 88.9% → 91.5%).
+ * HFT 항목의 #세나루·강낭콩(HWP 3 문서 영문·제목 글꼴)·HCI Tulip·신명 태고딕도 넓힌다(두 줄 이상 문단 +16·+2·+4).
+ * 휴먼 계열(휴먼고딕 등)도 휴먼명조처럼 HFT 항목일 때만 넓힌다 — TTF 휴먼고딕은 굵은 글꼴이 있다(보도자료 휴먼고딕 TTF 진하게 문단 +6)
+ * 한양 계열도 HFT 항목일 때만 — TTF 한양해서(HYhaeseo)는 넓히지 않는다(한글 2022 재조판: 시험지 굵은 한양해서 줄)
+ */
+export function syntheticBoldEm(face: string | null | undefined, hft = false): number {
+  if (!face) return 0
+  const f = face.trim()
+  return /^(명조|고딕|필기)$/.test(f) || (hft && (/^(한양|휴먼)/.test(f) || /^(#세나루|강낭콩|HCI Tulip|신명 태고딕)$/.test(f))) ? 50 : 0
+}
+
+/** 한컴 글꼴의 영문 이름 → 한글 이름(같은 글꼴). 한컴 PDF 에 같은 이름으로 박히고 폭도 같다(Haansoft Batang 괄호 0.5em = 한컴바탕) */
+const REFLOW_FACE_ALIAS: Record<string, string> = {
+  "Haansoft Batang": "한컴바탕", "Haansoft Dotum": "한컴돋움", "HCR Batang": "함초롬바탕", "HCR Dotum": "함초롬돋움",
+}
+
+/**
+ * reflow(조판 캐시 없는 문단) 폭 클래스 — 실측 폭표·고정폭은 faceClassOf 와 같고, 폭표 없는 한글 글꼴은 'cjk'(한글 1em).
+ * 함초롬만 함초롬 폭으로 둔다. 한컴 저장본 두 줄 이상 문단 22,577개 대조: 줄 시작 전부 일치 39.4% → 49.8%(이 클래스만)
+ */
+export function faceClassForReflow(face: string | null | undefined): FaceClass {
+  face = face && (REFLOW_FACE_ALIAS[face.trim()] ?? face)
+  const c = faceClassOf(face)
+  if (c !== "hcr" || !face || /^함초롬/.test(face.trim())) return c
+  return "cjk"
 }
 
 /**
  * 생성(v5) 전용 폭 클래스 — 렌더(reflow)는 faceClassOf 그대로(게이트 baseline 불변).
  * 실측 폭표(font-metrics.ts)가 있는 글꼴은 그 표(`font:이름`), 없으면 근사 클래스 — 굵은 고딕 계열은
  * 'gothic'으로 넉넉히 재어 표 열폭·□ 한 줄 맞춤이 실렌더에서 꺾이지 않게 한다.
+ * 폭표 없는 그 밖의 글꼴(바탕·한양신명조 …)도 'gothic'(한글 1em) — 함초롬 계열만 한글 0.97em 이고 실측한 다른 한글 글꼴 7종은
+ * 전부 1em 이라, 함초롬 폭으로 재면 □ 한 줄 맞춤이 실렌더에서 넘친다(기관 서식 국세청 □ 바탕 14pt, 조판 예측기와 같은 가정).
  */
 export function faceClassForGen(face: string | null | undefined): FaceClass {
   if (!face) return "hcr"
   const f = face.trim()
   if (hasFontMetrics(f)) return `font:${f}`
-  if (/^(굴림체|돋움체|바탕체|궁서체)$/.test(f)) return "fixedPitch"
-  if (/^(한컴돋움|맑은 고딕|HY견고딕|HY헤드라인M|HY중고딕|한양중고딕|나눔고딕|나눔스퀘어|돋움|굴림)$/.test(f)) return "gothic"
-  return "hcr"
+  if (FIXED_PITCH_FACES.test(f)) return "fixedPitch"
+  if (/^함초롬/.test(f)) return "hcr"
+  return "gothic"
 }
 
 /**
@@ -110,18 +157,45 @@ function gothicWidthEm1000(cp: number): number {
   return 500
 }
 
-/** 고정폭 글꼴 advance(em×1000) — ASCII 반각 500, 그 외 전각 1000 */
-function fixedPitchWidthEm1000(cp: number): number {
-  return cp < 0x80 ? 500 : 1000
+/** 폭표 없는 한글 글꼴 advance(em×1000) — 자모·한글·한자·전각 기호(U+1100 이후)는 1em, 그 아래(ASCII·라틴)는 함초롬 폭.
+ *  실측 한글 글꼴(바탕·돋움·한양신명조·HY신명조·한컴바탕 …)의 음절 폭은 1em 이고 함초롬 계열만 0.97em 이다 */
+function cjkWidthEm1000(cp: number): number {
+  return isHalfwidthForm(cp) ? 500 : cp >= 0x1100 ? 1000 : charWidthEm1000(cp)
 }
 
+/** 고정폭 글꼴 advance(em×1000) — ASCII 반각 500, 그 외 전각 1000 */
+function fixedPitchWidthEm1000(cp: number): number {
+  return cp < 0x80 || isHalfwidthForm(cp) ? 500 : 1000
+}
+
+/** 보충 사용자 영역에서 전각으로 조판되는 한컴 기호 — U+F0000~F02FB·U+F035F~F03F4(글머리 동그라미 숫자·가운데점 등), 그 밖은 반각 */
+const isPuaFull = (cp: number): boolean => cp <= 0xf02fb || (cp >= 0xf035f && cp <= 0xf03f4)
+
 /** 폭 클래스 → advance 함수. `font:이름` 은 실측 폭표(없는 글꼴명이면 gothic 근사) */
-function widthFnOf(faceClass: FaceClass | undefined): (cp: number) => number {
+function widthFnOf(faceClass: FaceClass | undefined, fallback = true): (cp: number) => number {
+  const base = baseWidthFnOf(faceClass, fallback)
+  // 한컴 사용자 기호(보충 사용 영역 U+F0000~, HWP3 기호 글자)는 어느 글꼴로 재든 반각 0.5em — 폭표 글꼴은 이 글자가 없어 1em 으로 잡혔다
+  // (한컴 PDF: 한양신명조 머리말 기호 85자 뒤 그림 x = 왼 여백 + 85 × 0.503em)
+  // 단 U+F0000~F02FB·U+F035F~F03F4 는 전각 1em(한컴 PDF: "󰊵 인력 양성" 기호 폭 14.94pt / 15pt 글자, 맑은 고딕 12pt 글머리
+  // 가운데점 U+F02EF 11.64pt. 글머리 동그라미 숫자 7자만 1em 으로 재면 두 줄+ 문단 +10·렌더 글 위치 +0.8%p, U+F02FC 부터는 반각이 맞다)
+  // 딩뱃 원문자 ❶~➓(U+2776~2793)는 함초롬 글꼴(970)·한컴바탕에만 있다 — 다른 글꼴은 한컴바탕으로 대체돼 1em
+  // (한컴 PDF: 한컴 윤고딕 230 문단의 ➌ 이 Haansoft Batang 15pt 로 15.0pt)
+  const hcr = faceClass === "hcr" || faceClass === "font:함초롬돋움" || faceClass === "font:함초롬바탕"
+  // 기호 사설 영역의 U+F0A0(워드 기호 글꼴의 묶음 빈칸)은 그 글꼴의 빈칸 폭 — 한컴 PDF: 함초롬바탕 14pt 자간 −8 칸 글 안의 U+F0A0 이
+  // U+00A0 로 3.96pt(= 0.3em 빈칸 388 + 격자). 1em 으로 재면 한 줄 칸 글이 두 줄로 꺾였다
+  const f = (cp: number): number => (cp >= 0xf0000 ? (isPuaFull(cp) ? 1000 : 500) : cp === 0xf0a0 ? base(0x20) : !hcr && cp >= 0x2776 && cp <= 0x2793 ? 1000 : base(cp))
+  // 실측 폭표 없는 reflow 근사 클래스(고정폭·한글 1em)도 글꼴에 없는 글자는 한컴바탕 대체 폭 — 함초롬(hcr)은 그 글자를 가진다
+  if (fallback && (faceClass === "fixedPitch" || faceClass === "cjk")) return cp => (isZeroWidthCp(cp) ? 0 : HANCOM_FALLBACK_W[cp] ?? f(cp))
+  return cp => (isZeroWidthCp(cp) ? 0 : f(cp))
+}
+
+function baseWidthFnOf(faceClass: FaceClass | undefined, fallback = true): (cp: number) => number {
   if (faceClass === "fixedPitch") return fixedPitchWidthEm1000
-  if (faceClass === "gothic") return gothicWidthEm1000
+  if (faceClass === "gothic") return cp => (isHalfwidthForm(cp) ? 500 : gothicWidthEm1000(cp))
+  if (faceClass === "cjk") return cjkWidthEm1000
   if (faceClass?.startsWith("font:")) {
     const face = faceClass.slice(5)
-    return (cp) => fontAdvanceEm1000(face, cp) ?? gothicWidthEm1000(cp)
+    return fontWidthFn(face, fallback) ?? gothicWidthEm1000
   }
   return charWidthEm1000
 }
@@ -156,10 +230,47 @@ export function measureTextWidth(
   let em = 0
   for (const ch of text) {
     const cp = ch.codePointAt(0)!
-    const w = isSpaceCp(cp) ? spaceEm : widthEm(cp)
+    // 고정폭 빈칸(U+2005)은 1/4em — hancomCharWidth 와 같다(한컴 PDF: "【"+고정폭 빈칸 10.5pt, 15pt 글자)
+    const w = cp === 0x2005 ? 250 : isSpaceCp(cp) ? spaceEm : widthEm(cp)
     em += w * (1 + spacing / 100)
   }
   return (em / 1000) * height * (ratioPct / 100)
+}
+
+/** MulDiv — 반올림(0 에서 멀어지는 쪽) */
+export function mulDiv(a: number, b: number, c: number): number {
+  const e = a * b
+  return Math.trunc(e < 0 ? (e - c / 2) / c : (e + c / 2) / c)
+}
+
+/**
+ * 한컴 조판의 글자 폭(HWPUNIT) — 글자마다 4 단위로 양자화한다(한컴 저장본 줄 나눔과 맞는 산식).
+ * 글자: 장평 100 이면 4·MulDiv(폭, ⌊크기/4⌋, 1000), 아니면 4·⌊폭·⌊크기/4⌋·장평/(100·1000)⌋.
+ * 공백(useFontSpace 0): 4·⌊크기/8⌋ (장평 ≠ 100 이면 4·MulDiv(⌊크기/8⌋, 장평, 100)). 자간: + 4·MulDiv(⌊폭/4⌋, 자간, 100)
+ */
+export function hancomCharWidth(ch: string, height: number, ratioPct: number, spacingPct: number, faceClass?: FaceClass, emAdd = 0, fallback = true): number {
+  // emAdd: 글자 폭(em×1000)에 더하는 몫 — 합성 굵기(syntheticBoldEm). 공백에는 붙지 않는다
+  const cp = ch.codePointAt(0)!
+  let w: number
+  if (cp === 0x2005) {
+    // 고정폭 빈칸(hp:fwSpace → U+2005) — 1/4em, 어절 경계이며 줄 끝에 걸칠 수 있다. 장평·자간은 공백처럼 받는다
+    // (코퍼스 fwSpace 문단 816개: 공백 0.5em 으로 재면 두 줄+ 67.5%, 1/4em 89.6% — 0.2~0.25em 이 평탄한 꼭대기)
+    const s = Math.trunc(height / 16)
+    w = 4 * (ratioPct === 100 ? s : mulDiv(s, ratioPct, 100))
+  } else if (isSpaceCp(cp)) {
+    const s = Math.trunc(height / 8)
+    w = 4 * (ratioPct === 100 ? s : mulDiv(s, ratioPct, 100))
+  } else return hancomEmWidth(widthFnOf(faceClass, fallback)(cp) + emAdd, height, ratioPct, spacingPct)
+  if (spacingPct) w += 4 * mulDiv(Math.trunc(w / 4), spacingPct, 100)
+  return w
+}
+
+/** 폭(em×1000)이 정해진 글자의 한컴 조판 폭 — hancomCharWidth 의 글자 산식 */
+export function hancomEmWidth(em: number, height: number, ratioPct: number, spacingPct: number): number {
+  const q = Math.trunc(height / 4)
+  let w = ratioPct === 100 ? 4 * mulDiv(em, q, 1000) : 4 * Math.trunc(em * q * ratioPct / 100000)
+  if (spacingPct) w += 4 * mulDiv(Math.trunc(w / 4), spacingPct, 100)
+  return w
 }
 
 // ─── 줄바꿈 시뮬레이션 (한컴 조판 모델 — 실측 linesegarray 98% 일치 검증) ───
@@ -178,11 +289,61 @@ const FORBID_START = new Set([..."!%),.:;?]}¢°′″℃〉》」』】〕!%),.
 /** 줄끝 금지(끝금칙) 문자 — 한컴 기본 */
 const FORBID_END = new Set([..."$([{£¥〈《「『【〔$([{₩"])
 
+/** 한컴 기본 금칙 집합(한컴 기본값) — 줄머리 금지 */
+const HANCOM_FORBID_START = new Set([..."!%),.:;>?]^`}~°·〉》」』】〕〗〙〛・！％），．：；＞？］＾｀｝～･ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶ、。〃々ー゛゜ゝゞヽヾ’”․‥…‰‱′″‴‵‶‷℃℉"])
+/** 한컴 기본 금칙 집합 — 줄끝 금지(통화 기호 U+20A0~20AC 포함) */
+const HANCOM_FORBID_END = new Set([..."(<[\\{§‘“〈《「『【〔〖〘〚＄（＜［＼｛￠￡￥￦$¢£¤¥৲৳฿", ...Array.from({ length: 13 }, (_, i) => String.fromCharCode(0x20a0 + i))])
+
 export type WrapMode = "keep" | "charAll"
+
+const isWrapSpace = (ch: string | undefined): boolean => ch === " " || ch === "\u2005"
+
+interface PreparedWrap { units: string[]; advances: number[]; steps: number[] }
+
+/** 한 문단의 장평·자간 후보 사이에서 문자 해독과 글꼴 폭표 조회만 재사용한다. */
+export function prepareWrap(text: string, mode: WrapMode, opts?: MeasureOptions): PreparedWrap {
+  const widthEm = widthFnOf(opts?.faceClass), spaceEm = opts?.spaceEm ?? SPACE_EM_FIXED
+  const advances: number[] = [], steps: number[] = []
+  let i = 0
+  for (const ch of text) {
+    const cp = ch.codePointAt(0)!
+    advances[i] = cp === 0x2005 ? 250 : isSpaceCp(cp) ? spaceEm : widthEm(cp)
+    steps[i] = ch.length
+    i += ch.length
+  }
+  return { units: splitWrapUnits(text, mode), advances, steps }
+}
+
+function splitWrapUnits(text: string, mode: WrapMode, latinBreak = false): string[] {
+  // 영문 단어 끊기(breakLatinWord="BREAK_WORD" — 영문은 이름 그대로): 영문 글자도 한 글자씩 끊는다
+  // 글자 단위에서 폭 없는 컨트롤(U+2060 — 하이퍼링크 필드 시작 등)은 뒤 글자와 한 단위 — 한컴은 그 컨트롤을 다음 줄 머리에 둔다
+  // (한컴 저장 lineseg: 각주 끝 " " 뒤 하이퍼링크 URL 의 줄 시작이 필드 시작 컨트롤 자리. 두 줄 이상 문단 +32)
+  if (latinBreak) return text.match(mode === "keep" ? /[ \u2005]+|[\x21-\x7e]|[^ \u2005\x21-\x7e]+/gu : /[ \u2005]+|[^ \u2005](?:\u00a0[^ \u2005\u00a0]?)*/gu) ?? []
+  // 글자 단위에서도 영문(ASCII 와 한컴 언어 분류 '영문' — U+00A1~024F, ‘’“” 등 U+2018~201F)이 이어지면 한 단어다
+  // (한글 2022 줄 나눔: "’’’…"·"···…" 문단은 긴 단어로 쪼개져 금칙 없이 줄마다 들어가는 만큼 든다. 두 줄 이상 문단 +13, 2022 재조판 +14)
+  // 낱말 머리의 필드 끝(U+FDD0)은 따로 — 앞 줄 끝에 붙고 뒤 낱말만 다음 줄로 간다(누름틀 끝 + 줄보다 넓은 표)
+  return text.match(mode === "keep" ? /[ \u2005]+|\ufdd0+(?=[^ \u2005\ufdd0])|[^ \u2005]+/gu : /[ \u2005]+|\u2060*(?:[\x21-\x7e\u00a1-\u024f\u2018-\u201f]+|[^ \u2005])(?:\u00a0(?:[\x21-\x7e\u00a1-\u024f\u2018-\u201f]+|[^ \u2005\u00a0])?)*/gu) ?? []
+}
 
 export interface WrapOptions extends MeasureOptions {
   /** UTF-16 단위별 실폭(HWPUNIT) — 주면 height·장평·폭 클래스 대신 쓴다(여러 run 문단, 탭 전진폭) */
   widths?: number[]
+  /** 같은 text·mode·글꼴·공백 폭으로 준비한 원 폭 — 한 문단 압축 후보에만 재사용 */
+  prepared?: PreparedWrap
+  /** 공백 최소값(paraPr condense, %) — 줄 가용폭에 그 줄 공백 폭 합 × condense% 를 더한다 */
+  condensePct?: number
+  /** 금칙 집합 — 'hancom' 이면 한컴 기본 집합(reflow), 아니면 생성기 실측 집합 */
+  kinsoku?: "hancom"
+  /** 오른쪽 탭 자리 — 그 뒤 글은 한컴이 탭 자리에 맞춰 놓으므로 넘침 판정에서 마지막 글자 자간을 빼지 않는다 */
+  rightTabs?: Set<number>
+  /** 한글 2024 이전 판 저장 문서 — 금칙 규칙이 다르다(영문 단어 안 쪼개기엔 금칙 없음, 줄머리 금지 글자는 최대 둘까지 함께 내림) */
+  before2024?: boolean
+  /** widths 중 자간 몫(UTF-16 단위별) — 한컴은 넘침 판정에 마지막 글자의 자간을 넣지 않는다(판정 뒤 x 에 더한다) */
+  spacings?: number[]
+  /** 줄 번호(0부터)별 가용 폭 — 주면 firstWidth·contWidth 대신 쓴다(떠 있는 개체 둘레로 줄이 좁아질 때) */
+  lineWidth?: (line: number) => number
+  /** 영문 단어도 글자 단위로 끊는다(breakLatinWord="BREAK_WORD") */
+  latinBreak?: boolean
 }
 
 export interface WrapResult {
@@ -215,20 +376,61 @@ export function simulateWrap(
   mode: WrapMode = "keep",
   opts?: WrapOptions,
 ): WrapResult {
+  // 강제 줄바꿈(\n — hp:lineBreak): 그 뒤는 새 줄이다. 조각마다 따로 채우고 \n(폭 0)은 앞 줄 끝에 남긴다
+  if (!opts?.prepared && text.includes("\n")) {
+    const starts: number[] = []
+    let off = 0, lastLineWidth = 0
+    for (;;) {
+      const end = text.indexOf("\n", off), stop = end < 0 ? text.length : end, li = starts.length
+      const lw = opts?.lineWidth
+      const sub = simulateWrap(text.slice(off, stop), li === 0 ? firstWidth : contWidth, contWidth, height, ratioPct, mode, {
+        ...opts,
+        widths: opts?.widths?.slice(off, stop),
+        spacings: opts?.spacings?.slice(off, stop),
+        lineWidth: lw ? (i: number) => lw(li + i) : undefined,
+      })
+      for (const st of sub.starts) starts.push(off + st)
+      lastLineWidth = sub.lastLineWidth
+      if (end < 0) break
+      off = end + 1
+    }
+    return { lines: starts.length, starts, lastLineWidth }
+  }
   const EPS = 0.5
   const spaceEm = opts?.spaceEm ?? SPACE_EM_FIXED
   const spacing = opts?.spacingPct ?? 0
-  const widthEm = widthFnOf(opts?.faceClass)
+  const prepared = opts?.prepared
+  const widthEm = prepared ? null : widthFnOf(opts?.faceClass)
   const k = (height * ratioPct) / 100 / 1000
   const unitW = opts?.widths
+  const forbidStart = opts?.kinsoku === "hancom" ? HANCOM_FORBID_START : FORBID_START
+  const forbidEnd = opts?.kinsoku === "hancom" ? HANCOM_FORBID_END : FORBID_END
+  const condense = opts?.condensePct ?? 0
+  /** 한컴 조판 모드(reflow) — 한컴 금칙 집합과 공백에서 줄 끝내기 규칙 */
+  const hancom = opts?.kinsoku === "hancom"
+  const spAt = opts?.spacings
+  /** [from, to) 마지막 글자의 자간 몫 — 넘침 판정에서 뺀다 */
+  const lastSp = (from: number, to: number): number => {
+    if (!spAt || to <= from) return 0
+    // 그 줄에서 오른쪽 탭을 지난 글은 한컴이 탭 자리에 맞춰 놓는다 — 마지막 글자 자간을 빼지 않는다(한글 2022: 차례 "…한계⇥ 2" 가 줄 폭에 꼭 맞아 한 줄)
+    if (opts?.rightTabs?.size) for (const t of opts.rightTabs) if (t >= lineStart() && t < to) return 0
+    let i = to - 1
+    if (i > from && /[\uDC00-\uDFFF]/.test(text[i])) i--
+    return spAt[i] ?? 0
+  }
   /** i 위치(UTF-16) 글자 ch 의 폭 — widths 가 있으면 그 값(서로게이트 쌍은 두 칸 합) */
   const charWAt = (i: number, ch: string): number => {
     if (unitW) return (unitW[i] ?? 0) + (ch.length === 2 ? unitW[i + 1] ?? 0 : 0)
+    if (prepared) return prepared.advances[i] * (1 + spacing / 100) * k
     const cp = ch.codePointAt(0)!
-    return (isSpaceCp(cp) ? spaceEm : widthEm(cp)) * (1 + spacing / 100) * k
+    return (cp === 0x2005 ? 250 : isSpaceCp(cp) ? spaceEm : widthEm!(cp)) * (1 + spacing / 100) * k
   }
   const rangeW = (from: number, to: number): number => {
     let w = 0
+    if (prepared && !unitW) {
+      for (let i = from; i < to; i += prepared.steps[i]) w += prepared.advances[i] * (1 + spacing / 100) * k
+      return w
+    }
     for (let i = from; i < to;) {
       const ch = String.fromCodePoint(text.codePointAt(i)!)
       w += charWAt(i, ch)
@@ -240,55 +442,127 @@ export function simulateWrap(
   // u 플래그 필수 — 없으면 astral 문자(𝐀·이모지 등)가 서로게이트 반쪽 2개로 쪼개져 폭이 2배로 계산된다.
   // 글자 단위에서도 ASCII 연속열("1.):", "LLM),")은 한 단어 — breakLatinWord=KEEP_WORD(한글 2024 실렌더 PDF 대조).
   // 묶음 빈칸(U+00A0)은 어느 모드에서도 끊지 않는다 — 글자 단위에선 앞뒤 단위를 하나로 묶는다
-  const units = text.match(mode === "keep" ? / +|[^ ]+/gu : / +|(?:[\x21-\x7e]+|[^ ])(?:\u00a0(?:[\x21-\x7e]+|[^ \u00a0])?)*/gu) ?? []
+  const units = prepared?.units ?? splitWrapUnits(text, mode, opts?.latinBreak)
 
   const starts = [0]
   let lineW = 0
-  let avail = firstWidth
+  const lineWidth = opts?.lineWidth
+  let avail = lineWidth ? lineWidth(0) : firstWidth
   let pos = 0
+  /** 지금 줄의 공백 폭 합 — 공백 최소값(condense)만큼 공백이 줄어 가용폭이 늘어난다. 자간을 빼기 전 공백 폭으로 잰다
+   *  (한컴 저장 lineseg: 자간 −3% 공백 572(자간 전 588)인 공백 최소값 50% 문단이 588 로 재야 42자 — 두 줄 이상 문단 줄 시작 24,143 → 24,209) */
+  let spaceW = 0
+  /** 이 줄에 공백 아닌 글자가 나왔는가 — 한컴은 줄 첫머리 공백을 공백 최소값 합에 넣지 않는다 */
+  let realSeen = false
+  /** 한컴: 공백에 닿았을 때 이미 줄 폭에 닿아 이 줄이 끝남 — 다음 낱말은 공백 최소값으로 남는 폭이 있어도 다음 줄로 */
+  let lineEnded = false
+  /** 이 줄에 놓인 공백 아닌 단위 수 — 한컴은 폭 0 컨트롤도 줄의 내용으로 쳐서, 그 뒤에서 넘치는 단위는 다음 줄로 보낸다 */
+  let placed = 0
+  const empty = (): boolean => lineW === 0 && (!hancom || placed === 0)
+  const cap = (): number => avail + (condense > 0 ? Math.trunc(spaceW * condense / 100) : 0) + EPS
   const lineStart = (): number => starts[starts.length - 1]
 
-  /** 유닛(시작 unitPos, 폭 w)이 안 들어갈 때 줄바꿈 + 금칙 보정 */
-  const breakBefore = (unitPos: number, w: number): void => {
+  /** 유닛(시작 unitPos, 폭 w)이 안 들어갈 때 줄바꿈 + 금칙 보정. split = 초장 유닛을 글자로 쪼개는 중 */
+  const breakBefore = (unitPos: number, w: number, split = false): void => {
     let bp = unitPos
     const u = text[unitPos]
+    const prevStart = (end: number): number => end - (end >= 2 && /[\uDC00-\uDFFF]/.test(text[end - 1]) && /[\uD800-\uDBFF]/.test(text[end - 2]) ? 2 : 1)
     // 시작금칙: 줄머리 금지 문자면 직전 글자 1개를 함께 내린다 (밀어내기)
-    if (u !== undefined && FORBID_START.has(u) && bp - 1 > lineStart() && text[bp - 1] !== " ") bp--
-    // 끝금칙: 남는 줄 끝이 여는 괄호류면 그 글자(들)도 함께 내린다
-    while (bp - 1 > lineStart() && FORBID_END.has(text[bp - 1])) bp--
+    // 줄에 안 드는 단어(영문 단어·어절)를 글자로 쪼갤 때는 줄머리 금칙을 보지 않는다(칸 글 "(92.5%" + ")" 는 ")" 가 줄머리, 2024 저장본 "(94.6" + "%)").
+    // 2024 이전 판은 줄끝 금칙도 보지 않고(어절 단위 칸 "인구(" + "명)"), 내린 글자도 줄머리 금지면 한 글자 더(최대 둘) 내린다(한글 2022: "가×41」」가…" → 둘째 줄이 "」」" 앞 글자부터)
+    const old = opts?.before2024
+    const splitIn = opts?.kinsoku === "hancom" && split && u !== undefined && !isWrapSpace(u) && !isWrapSpace(text[bp - 1])
+    const inWord = old && splitIn
+    if (!splitIn && u !== undefined && forbidStart.has(u) && prevStart(bp) > lineStart() && !isWrapSpace(text[bp - 1])) {
+      bp = prevStart(bp)
+      if (old && forbidStart.has(text[bp]) && prevStart(bp) > lineStart() && !isWrapSpace(text[bp - 1])) bp = prevStart(bp)
+    }
+    // 끝금칙: 남는 줄 끝이 여는 괄호류면 그 글자(들)도 함께 내린다 — 줄이 통째로 여는 괄호류뿐이면 내리지 않는다
+    // (한글 2022: "((((…"·"‘‘‘‘…" 문단은 줄마다 들어가는 만큼 채운다. 줄 첫 글자는 남겨 한 글자씩 나르던 것)
+    while (!inWord && bp - 1 >= lineStart() && forbidEnd.has(text[bp - 1])) bp--
     if (bp <= lineStart()) bp = unitPos
     starts.push(bp)
-    avail = contWidth
+    avail = lineWidth ? lineWidth(starts.length - 1) : contWidth
+    spaceW = 0
+    realSeen = w > 0
+    lineEnded = false
+    placed = unitPos > bp ? 1 : 0
+    for (let i = bp; i < unitPos; i++) {
+      if (!isWrapSpace(text[i])) realSeen = true
+      else if (text[i] === " " && condense > 0 && (realSeen || !hancom)) spaceW += rangeW(i, i + 1) - (spAt?.[i] ?? 0)
+    }
     lineW = rangeW(bp, unitPos) + w
+  }
+  /** 금칙 보정 없이 at 에서 새 줄 — 한컴이 공백에서 줄을 끝낼 때(금칙은 낱말이 넘칠 때만 본다) */
+  const breakAt = (at: number, leadW: number): void => {
+    starts.push(at)
+    avail = lineWidth ? lineWidth(starts.length - 1) : contWidth
+    spaceW = 0
+    realSeen = false
+    lineEnded = false
+    placed = 0
+    lineW = leadW
   }
 
   for (const u of units) {
-    if (u[0] === " ") {
-      lineW += rangeW(pos, pos + u.length) // 줄 끝 공백은 hang
+    if (isWrapSpace(u[0])) {
+      if (hancom) {
+        // 한컴: 공백마다 x 가 이미 줄 폭(공백 최소값 전)에 닿았으면 이 줄은 끝난다. 그 공백 덩어리는 앞 두 칸까지만
+        // 이 줄에 남고 셋째 칸부터 다음 줄로 간다(굴림체 "같이  |    알려"). 닿지 않은 공백은 줄 끝에 걸린다(hang)
+        let k = 0
+        for (; k < u.length; k++) {
+          if (!lineEnded && lineW >= avail) lineEnded = true
+          // 고정폭 빈칸은 이미 끝난 줄에 더 걸지 않고 다음 줄 머리로 보낸다.
+          if (lineEnded && (k >= 2 || u[k] === "\u2005") && pos + k > lineStart()) break
+          if (!lineEnded) {
+            const sw = rangeW(pos + k, pos + k + 1)
+            lineW += sw
+            if (realSeen && u[k] === " ") spaceW += sw - (spAt?.[pos + k] ?? 0)
+          }
+        }
+        if (k < u.length) breakAt(pos + k, rangeW(pos + k, pos + u.length))
+        pos += u.length
+        continue
+      }
+      const sw = rangeW(pos, pos + u.length)
+      lineW += sw // 줄 끝 공백은 hang
+      for (let k = 0; k < u.length; k++) if (u[k] === " ") spaceW += rangeW(pos + k, pos + k + 1)
       pos += u.length
       continue
     }
+    // 필드 끝 컨트롤(reflow 가 비문자 U+FDD0 으로 넣는다)은 줄이 넘쳤어도 그 줄 끝에 붙는다
+    // (한컴 저장본: 누름틀 시작 + 줄보다 넓은 표 + 누름틀 끝 = 두 줄. 떠 있는 개체 앵커 같은 다른 폭 0 컨트롤은 다음 줄로 간다)
+    if (u === "\ufdd0") { placed++; pos += u.length; continue }
+    // 전각 빈칸(U+3000)이 넘치면 공백처럼 줄 끝에 건다(한컴 저장본: 칸 글 "100.0　"·"공사종류　" 가 한 줄)
+    if (u === "\u3000" && !empty() && lineW + rangeW(pos, pos + 1) - lastSp(pos, pos + 1) > cap()) { lineW += rangeW(pos, pos + 1); placed++; pos += u.length; continue }
+    if (lineEnded) breakAt(pos, 0)
     const w = rangeW(pos, pos + u.length)
-    if (lineW + w <= avail + EPS) {
+    if (lineW + w - lastSp(pos, pos + u.length) <= cap()) {
       lineW += w
+      realSeen = true
+      placed++
       pos += u.length
       continue
     }
-    if (lineW === 0 || w > contWidth + EPS) {
+    if (empty() || w > (lineWidth ? lineWidth(starts.length) : contWidth) + EPS) {
       // 빈 줄이거나 다음 줄에도 안 들어가는 초장 유닛 — 글자 단위 강제 분해. 어절 단위에서는 한컴이 먼저 다음 줄로
       // 넘긴 뒤 쪼갠다(코퍼스 어절 단위 문단 400개: 넘긴 뒤 347·제자리 340 일치, 갈리는 13건은 넘긴 뒤가 맞음)
-      if (mode === "keep" && lineW > 0) breakBefore(pos, 0)
+      // 글자 단위 줄의 영문 단어(영문은 단어 유지)도 같다 — 한컴 저장본: 각주 번호 뒤 긴 URL 은 다음 줄부터 쪼갠다
+      if ((mode === "keep" || /^\u2060*[\x21-\x7e\u00a1-\u024f\u2018-\u201f]{2,}/.test(u)) && !empty()) breakBefore(pos, 0)
       let sub = 0
       for (const ch of u) {
         const c = charWAt(pos + sub, ch)
-        if (lineW + c > avail + EPS && lineW > 0) breakBefore(pos + sub, 0)
+        if (lineW + c - lastSp(pos + sub, pos + sub + ch.length) > cap() && !empty() && ch !== "\u3000" && ch !== "\ufdd0") breakBefore(pos + sub, 0, true)
         lineW += c
+        realSeen = true
+        placed++
         sub += ch.length
       }
       pos += u.length
       continue
     }
     breakBefore(pos, w)
+    placed++
     pos += u.length
   }
   return { lines: starts.length, starts, lastLineWidth: lineW }

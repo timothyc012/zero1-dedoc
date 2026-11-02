@@ -18,7 +18,7 @@ describe("same-column tables separated by a caption",()=>{
   })
 
   it("keeps independently ruled tables apart when a caption sits in their gap",()=>{
-    const grids=buildTableGrids(horizontals,verticals,[
+    const grids=buildTableGrids(horizontals,verticals,true,[
       {text:"Übersicht 4",x:160,y:149,w:38,h:8},
     ])
     assert.deepEqual(grids.map(grid=>[grid.rowYs.length-1,grid.colXs.length-1]).sort((a,b)=>a[0]-b[0]),[[2,4],[2,4]])

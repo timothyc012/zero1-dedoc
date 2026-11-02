@@ -3,29 +3,103 @@ name: Mirror to GitLab
 # 정부 GitLab(gitlab.aigov.go.kr)은 push 마다 보안스캔(Gitleaks·Semgrep·OSV·Trivy)을
 # 돌리고 하나라도 걸리면 push 전체를 거부한다. 옛 태그는 옛 lockfile 을 가리켜
 # 다시 통과할 수 없으므로 이벤트가 가리키는 ref 하나만 민다.
+# 서버 장애(접속 불가·스캔 중 게이트웨이 504)로 못 민 ref 는 2시간마다 따라잡기(catchup)가 채운다 —
+# main 과 최근 릴리스 태그 5개 중 GitLab 에 없는 것만.
 on:
   push:
     branches: [main]
     tags: ['**']
+  schedule:
+    - cron: '17 */2 * * *'
   workflow_dispatch:
+    inputs:
+      mirror_ref:
+        description: '동기화할 전체 ref (비우면 실행 ref)'
+        required: false
+        type: string
+      expected_tag_object:
+        description: '복구 시 현재 GitLab 객체 SHA — 태그·브랜치를 그 값일 때만 덮는다 (비우면 일반 push)'
+        required: false
+        type: string
+      runner:
+        description: '실행 러너 — GitLab 이 해외 IP(GitHub 호스트 러너)를 막을 때 국내 셀프호스트 러너(kordoc-mirror-kr)로'
+        required: false
+        type: choice
+        options: [ubuntu-latest, kordoc-mirror-kr]
+        default: ubuntu-latest
 
 concurrency:
-  group: mirror-gitlab-${{ github.ref }}
+  group: mirror-gitlab-${{ inputs.mirror_ref || github.ref }}
   cancel-in-progress: false
 
 jobs:
   mirror:
-    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+    # 수동 실행에서만 러너를 고른다 — push 이벤트는 늘 GitHub 호스트 러너
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+          # 기본 checkout은 annotated tag를 GITHUB_SHA(대상 커밋)로 덮을 수 있다.
+          ref: ${{ inputs.mirror_ref || github.ref }}
 
-      - name: Push ${{ github.ref }} to gitlab.aigov.go.kr
+      - name: Push ${{ inputs.mirror_ref || github.ref }} to gitlab.aigov.go.kr
         env:
           GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
           REPO: ${{ github.event.repository.name }}
-          REF: ${{ github.ref }}
+          REF: ${{ inputs.mirror_ref || github.ref }}
+          EXPECTED_TAG_OBJECT: ${{ inputs.expected_tag_object }}
         run: |
-          git push "https://oauth2:${GITLAB_TOKEN}@gitlab.aigov.go.kr/chrisryugj/${REPO}.git" \
-            "${GITHUB_SHA}:${REF}"
+          [[ "$REF" == refs/heads/* || "$REF" == refs/tags/* ]] || exit 1
+          git check-ref-format "$REF"
+          lease=()
+          if [[ -n "$EXPECTED_TAG_OBJECT" ]]; then
+            [[ "$EXPECTED_TAG_OBJECT" =~ ^[0-9a-f]{40}$ ]] || exit 1
+            lease=("--force-with-lease=${REF}:${EXPECTED_TAG_OBJECT}")
+          fi
+          # GITHUB_SHA는 annotated tag의 대상 커밋이다. 원본 ref를 밀어 태그 객체·메시지도 보존한다.
+          # GitLab 이 잠깐 내려가면(502·503, 보안스캔 중 게이트웨이 504) push 가 통째로 실패해 그 ref 만 빠진 채
+          # 남는다(v4.22.14 태그: 5분 뒤 504). 서버 오류일 때만 간격을 늘려 다시 민다 — 보안스캔 거부·보호 브랜치
+          # 거부(rejected)는 다시 밀어도 같으므로 바로 실패시킨다.
+          url="https://oauth2:${GITLAB_TOKEN}@gitlab.aigov.go.kr/chrisryugj/${REPO}.git"
+          # 끝내 서버 오류면 실패 대신 경고 — 따라잡기가 서버 회복 뒤 채운다(장애마다 실패 메일이 쌓이지 않게)
+          for attempt in 1 2 3 4; do
+            if git push "${lease[@]}" "$url" "${REF}:${REF}" 2>push.log; then cat push.log; exit 0; fi
+            sed "s#oauth2:[^@]*@#oauth2:***@#" push.log
+            grep -Eq 'error: (50[234])|returned error: 50[234]|remote end hung up|Could not resolve host|Failed to connect|timed out' push.log || exit 1
+            if [[ $attempt == 4 ]]; then echo "::warning::GitLab 서버 오류로 ${REF} 미러 보류 — 2시간마다 도는 따라잡기가 다시 민다"; exit 0; fi
+            sleep $((attempt * 120))
+          done
+
+  catchup:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Push refs missing on gitlab.aigov.go.kr
+        env:
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+          REPO: ${{ github.event.repository.name }}
+        run: |
+          url="https://oauth2:${GITLAB_TOKEN}@gitlab.aigov.go.kr/chrisryugj/${REPO}.git"
+          if ! remote=$(git ls-remote "$url" refs/heads/main 'refs/tags/v*' 2>&1); then
+            echo "::warning::GitLab 접속 불가 — 다음 회차에 다시"; exit 0
+          fi
+          refs=()
+          [[ "$(awk '$2=="refs/heads/main"{print $1}' <<<"$remote")" == "$(git rev-parse HEAD)" ]] || refs+=(refs/heads/main)
+          for t in $(git tag --list 'v*' --sort=v:refname | tail -5); do
+            grep -q "refs/tags/${t}\$" <<<"$remote" || refs+=("refs/tags/${t}")
+          done
+          [[ ${#refs[@]} == 0 ]] && { echo "GitLab 과 같음"; exit 0; }
+          for r in "${refs[@]}"; do
+            echo "→ ${r}"
+            if git push "$url" "${r}:${r}" 2>push.log; then cat push.log; continue; fi
+            sed "s#oauth2:[^@]*@#oauth2:***@#" push.log
+            grep -Eq 'returned error: 50[234]|remote end hung up|Failed to connect|timed out' push.log || exit 1
+            echo "::warning::GitLab 서버 오류로 ${r} 보류 — 다음 회차에 다시"; exit 0
+          done

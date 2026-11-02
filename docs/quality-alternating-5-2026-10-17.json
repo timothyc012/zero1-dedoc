@@ -1,0 +1,238 @@
+{
+  "release": "4.22.5",
+  "measuredAtKST": "2026-10-17",
+  "baseCommit": "24ac1db",
+  "implementationCommit": "9a484de",
+  "unchangedGroundTruthScorerNormalizationPopulation": true,
+  "baseline": {
+    "layout": {
+      "original": {
+        "lineStarts": {
+          "matched": 25326,
+          "population": 25581
+        },
+        "lineCount": {
+          "matched": 311874,
+          "population": 311942
+        }
+      },
+      "separate2022": {
+        "lineStarts": {
+          "matched": 17048,
+          "population": 17173
+        },
+        "lineCount": {
+          "matched": 150389,
+          "population": 150410
+        }
+      }
+    },
+    "pdf": {
+      "table": {
+        "pairs": 708,
+        "refTables": 2331,
+        "reordered": 5,
+        "matchedRate": 0.998713,
+        "exactRate": 0.981553,
+        "cellF1": 0.991791,
+        "cellExactRate": 0.990311,
+        "contentNED": 0.987246,
+        "parseErrors": 0,
+        "nested": {
+          "pairs": 29,
+          "refTables": 101,
+          "reordered": 0,
+          "matchedRate": 1,
+          "exactRate": 1,
+          "cellF1": 1,
+          "cellExactRate": 1,
+          "contentNED": 1
+        }
+      },
+      "text": {
+        "pairs": 744,
+        "refChars": 2857682,
+        "recall": 0.99865,
+        "precision": 0.9967,
+        "order": 0.99242,
+        "spaceF1": 0.99025,
+        "parseErrors": 0,
+        "excluded": 22
+      },
+      "annex": {
+        "hwp": {
+          "docs": 272,
+          "recall": 1,
+          "phantom": 1e-05,
+          "order": 1,
+          "tables": 346,
+          "tableExactCount": 346,
+          "tableExact": 1,
+          "cellF1": 1,
+          "eqRef": 11,
+          "eqHit": 11
+        },
+        "pdf": {
+          "docs": 272,
+          "recall": 0.99976,
+          "phantom": 0.00045,
+          "order": 1,
+          "tables": 346,
+          "tableExactCount": 342,
+          "tableExact": 0.98844,
+          "cellF1": 0.99739,
+          "eqRef": 11,
+          "eqHit": 7
+        }
+      }
+    }
+  },
+  "final": {
+    "layout": {
+      "original": {
+        "lineStarts": {
+          "matched": 25328,
+          "population": 25581
+        },
+        "lineCount": {
+          "matched": 311874,
+          "population": 311942
+        }
+      },
+      "separate2022": {
+        "lineStarts": {
+          "matched": 17050,
+          "population": 17173
+        },
+        "lineCount": {
+          "matched": 150389,
+          "population": 150410
+        }
+      }
+    },
+    "pdf": {
+      "table": {
+        "pairs": 708,
+        "refTables": 2331,
+        "reordered": 5,
+        "matchedRate": 0.998713,
+        "exactRate": 0.981553,
+        "cellF1": 0.991791,
+        "cellExactRate": 0.990311,
+        "contentNED": 0.987246,
+        "parseErrors": 0,
+        "nested": {
+          "pairs": 29,
+          "refTables": 101,
+          "reordered": 0,
+          "matchedRate": 1,
+          "exactRate": 1,
+          "cellF1": 1,
+          "cellExactRate": 1,
+          "contentNED": 1
+        }
+      },
+      "text": {
+        "pairs": 744,
+        "refChars": 2857682,
+        "recall": 0.99866,
+        "precision": 0.9967,
+        "order": 0.99242,
+        "spaceF1": 0.99026,
+        "parseErrors": 0,
+        "excluded": 22
+      },
+      "annex": {
+        "hwp": {
+          "docs": 272,
+          "recall": 1,
+          "phantom": 1e-05,
+          "order": 1,
+          "tables": 346,
+          "tableExactCount": 346,
+          "tableExact": 1,
+          "cellF1": 1,
+          "eqRef": 11,
+          "eqHit": 11
+        },
+        "pdf": {
+          "docs": 272,
+          "recall": 0.99976,
+          "phantom": 0.00045,
+          "order": 1,
+          "tables": 346,
+          "tableExactCount": 342,
+          "tableExact": 0.98844,
+          "cellF1": 0.99778,
+          "eqRef": 11,
+          "eqHit": 7
+        }
+      }
+    }
+  },
+  "rounds": [
+    {
+      "round": 1,
+      "track": "layout",
+      "commit": "22afc5b",
+      "snapshot": "round1"
+    },
+    {
+      "round": 2,
+      "track": "pdf",
+      "commit": "d9cdb03",
+      "snapshot": "round2-v3"
+    },
+    {
+      "round": 3,
+      "track": "layout",
+      "commit": "ac3f496",
+      "snapshot": "round3-final"
+    },
+    {
+      "round": 4,
+      "track": "pdf",
+      "commit": "bbec46c",
+      "snapshot": "round4-final"
+    },
+    {
+      "round": 5,
+      "track": "layout",
+      "commit": "9a484de",
+      "snapshot": "round5"
+    }
+  ],
+  "limits": [
+    "Existing-corpus regression results, not an unseen holdout.",
+    "2022 resaves are a separate population, not independent originals.",
+    "Exact line starts, all-coordinate equality, table structure and cell content are distinct metrics.",
+    "Native per-field distance comparisons require aligned line counts."
+  ],
+  "verification": {
+    "tests": {
+      "total": 4173,
+      "passed": 4164,
+      "skipped": 9,
+      "failed": 0
+    },
+    "typecheck": true,
+    "build": true,
+    "trackedLayoutDown": 0,
+    "pdfTrackedDown": 0,
+    "externalODL": {
+      "documents": 200,
+      "modes": [
+        "default",
+        "best",
+        "fast",
+        "ocr"
+      ],
+      "rounds": [
+        2,
+        4
+      ],
+      "qualityScoresUnchanged": true
+    },
+    "automatedReleaseGates": "Executed by normal npm publish prepublishOnly; deployment proof is separate."
+  }
+}

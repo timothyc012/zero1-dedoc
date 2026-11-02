@@ -7,13 +7,13 @@ import JSZip from "jszip"
 import { inflateRawSync } from "zlib"
 import { KordocError, isPathTraversal, stripDtd, normalizeSectionHref, compareSectionPaths } from "../utils.js"
 import { blocksToMarkdown } from "../table/builder.js"
-import type { InternalParseResult, IRBlock, ParseWarning } from "../types.js"
-import { applyPageText, createSectionShared, createXmlParser, MAX_DECOMPRESS_SIZE, MAX_ZIP_ENTRIES } from "./parser-shared.js"
+import type { InternalParseResult, IRBlock, ParseOptions, ParseWarning } from "../types.js"
+import { applyPageText, createSectionShared, createXmlParser, MAX_DECOMPRESS_SIZE, MAX_ZIP_ENTRIES, readZipEntry } from "./parser-shared.js"
 import { parseSectionXml } from "./section-walker.js"
 
 // ─── 손상 ZIP 복구 (edu-facility-ai에서 포팅) ──────────
 
-export function extractFromBrokenZip(buffer: ArrayBuffer): InternalParseResult {
+export function extractFromBrokenZip(buffer: ArrayBuffer, options?: ParseOptions): InternalParseResult {
   const data = new Uint8Array(buffer)
   const view = new DataView(buffer)
   let pos = 0
@@ -86,7 +86,7 @@ export function extractFromBrokenZip(buffer: ArrayBuffer): InternalParseResult {
 
   if (blocks.length === 0) throw new KordocError("손상된 HWPX에서 섹션 데이터를 복구할 수 없습니다")
   applyPageText(blocks, shared)
-  const markdown = blocksToMarkdown(blocks)
+  const markdown = blocksToMarkdown(blocks, { tableFormat: options?.tableFormat })
   return { markdown, blocks, warnings: warnings.length > 0 ? warnings : undefined }
 }
 
@@ -100,7 +100,7 @@ export async function readKordocLayout(zip: JSZip): Promise<string | null> {
   const file = zip.file("Contents/content.hpf") ?? zip.file("content.hpf")
   if (!file) return null
   try {
-    const xml = await file.async("text")
+    const xml = await readZipEntry(file, "text")
     if (!/<opf:meta\b[^>]*name="generator"[^>]*content="kordoc"/.test(xml)) return null
     return xml.match(/<opf:meta\b[^>]*name="kordoc-layout"[^>]*content="([^"]*)"/)?.[1] ?? null
   } catch {
@@ -114,7 +114,7 @@ export async function resolveSectionPaths(zip: JSZip): Promise<string[]> {
     const mpLower = mp.toLowerCase()
     const file = zip.file(mp) || Object.values(zip.files).find(f => f.name.toLowerCase() === mpLower) || null
     if (!file) continue
-    const xml = await file.async("text")
+    const xml = await readZipEntry(file, "text")
     const paths = parseSectionPathsFromManifest(xml)
     if (paths.length > 0) return paths
   }
@@ -124,11 +124,14 @@ export async function resolveSectionPaths(zip: JSZip): Promise<string[]> {
   return sectionFiles.map(f => f.name).sort(compareSectionPaths)
 }
 
-function parseSectionPathsFromManifest(xml: string): string[] {
+export function parseSectionPathsFromManifest(xml: string): string[] {
   const parser = createXmlParser()
   const doc = parser.parseFromString(stripDtd(xml), "text/xml")
-  const items = doc.getElementsByTagName("opf:item")
-  const spine = doc.getElementsByTagName("opf:itemref")
+  const opf = "http://www.idpf.org/2007/opf/"
+  const namespacedItems = doc.getElementsByTagNameNS(opf, "item")
+  const namespacedSpine = doc.getElementsByTagNameNS(opf, "itemref")
+  const items = namespacedItems.length ? namespacedItems : doc.getElementsByTagName("opf:item")
+  const spine = namespacedSpine.length ? namespacedSpine : doc.getElementsByTagName("opf:itemref")
 
   const idToHref = new Map<string, string>()
   for (let i = 0; i < items.length; i++) {

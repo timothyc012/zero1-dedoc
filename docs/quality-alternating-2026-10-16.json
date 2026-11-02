@@ -1,0 +1,587 @@
+{
+  "release": "4.22.2",
+  "baseCommit": "85265b4",
+  "implementationCommit": "17a9c04",
+  "unchangedGroundTruthScorerPopulation": true,
+  "baseline": {
+    "layout": {
+      "ok": {
+        "population": 25581,
+        "matched": 25312
+      },
+      "lines": {
+        "population": 311942,
+        "matched": 311869
+      }
+    },
+    "pdf": {
+      "text": {
+        "pairs": 744,
+        "refChars": 2857682,
+        "recall": 0.99858,
+        "precision": 0.9967,
+        "order": 0.99238,
+        "spaceF1": 0.99019,
+        "parseErrors": 0,
+        "excluded": 22
+      },
+      "table": {
+        "pairs": 708,
+        "refTables": 2331,
+        "reordered": 5,
+        "matchedRate": 0.998284,
+        "exactRate": 0.980266,
+        "cellF1": 0.991406,
+        "cellExactRate": 0.9882,
+        "contentNED": 0.984727,
+        "parseErrors": 0,
+        "nested": {
+          "pairs": 29,
+          "refTables": 101,
+          "reordered": 0,
+          "matchedRate": 1,
+          "exactRate": 1,
+          "cellF1": 1,
+          "cellExactRate": 1,
+          "contentNED": 1
+        }
+      },
+      "annex": {
+        "hwp": {
+          "docs": 272,
+          "recall": 1,
+          "phantom": 1e-05,
+          "order": 1,
+          "tables": 346,
+          "tableExactCount": 346,
+          "tableExact": 1,
+          "cellF1": 1,
+          "eqRef": 11,
+          "eqHit": 11
+        },
+        "pdf": {
+          "docs": 272,
+          "recall": 0.99975,
+          "phantom": 0.00046,
+          "order": 1,
+          "tables": 346,
+          "tableExactCount": 342,
+          "tableExact": 0.98844,
+          "cellF1": 0.99697,
+          "eqRef": 11,
+          "eqHit": 7
+        }
+      }
+    }
+  },
+  "rounds": [
+    {
+      "round": 1,
+      "track": "layout",
+      "layoutSnapshot": "round1",
+      "pdfSuite": "alternating-20261016-r1",
+      "layout": {
+        "ok": {
+          "population": 25581,
+          "matched": 25312
+        },
+        "lines": {
+          "population": 311942,
+          "matched": 311869
+        }
+      },
+      "paragraphDelta": {
+        "population": 25581,
+        "up": 0,
+        "down": 0
+      },
+      "pdf": {
+        "text": {
+          "pairs": 744,
+          "refChars": 2857682,
+          "recall": 0.99858,
+          "precision": 0.9967,
+          "order": 0.99238,
+          "spaceF1": 0.99019,
+          "parseErrors": 0,
+          "excluded": 22
+        },
+        "table": {
+          "pairs": 708,
+          "refTables": 2331,
+          "reordered": 5,
+          "matchedRate": 0.998284,
+          "exactRate": 0.980266,
+          "cellF1": 0.991406,
+          "cellExactRate": 0.9882,
+          "contentNED": 0.984727,
+          "parseErrors": 0,
+          "nested": {
+            "pairs": 29,
+            "refTables": 101,
+            "reordered": 0,
+            "matchedRate": 1,
+            "exactRate": 1,
+            "cellF1": 1,
+            "cellExactRate": 1,
+            "contentNED": 1
+          }
+        },
+        "annex": {
+          "hwp": {
+            "docs": 272,
+            "recall": 1,
+            "phantom": 1e-05,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 346,
+            "tableExact": 1,
+            "cellF1": 1,
+            "eqRef": 11,
+            "eqHit": 11
+          },
+          "pdf": {
+            "docs": 272,
+            "recall": 0.99975,
+            "phantom": 0.00046,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 342,
+            "tableExact": 0.98844,
+            "cellF1": 0.99697,
+            "eqRef": 11,
+            "eqHit": 7
+          }
+        }
+      },
+      "exitCodes": {
+        "table": 0,
+        "annex": 0,
+        "text": 0
+      },
+      "manifestSHA256": "c4c20ef3c20bac347ca984a80e3a065095dc354c464b4321fec2fc94b55bd150"
+    },
+    {
+      "round": 2,
+      "track": "PDF",
+      "layoutSnapshot": "round2-v2",
+      "pdfSuite": "alternating-20261016-r2-v2",
+      "layout": {
+        "ok": {
+          "population": 25581,
+          "matched": 25312
+        },
+        "lines": {
+          "population": 311942,
+          "matched": 311869
+        }
+      },
+      "paragraphDelta": {
+        "population": 25581,
+        "up": 0,
+        "down": 0
+      },
+      "pdf": {
+        "text": {
+          "pairs": 744,
+          "refChars": 2857682,
+          "recall": 0.99858,
+          "precision": 0.9967,
+          "order": 0.99238,
+          "spaceF1": 0.99019,
+          "parseErrors": 0,
+          "excluded": 22
+        },
+        "table": {
+          "pairs": 708,
+          "refTables": 2331,
+          "reordered": 5,
+          "matchedRate": 0.998713,
+          "exactRate": 0.980695,
+          "cellF1": 0.991614,
+          "cellExactRate": 0.98821,
+          "contentNED": 0.984729,
+          "parseErrors": 0,
+          "nested": {
+            "pairs": 29,
+            "refTables": 101,
+            "reordered": 0,
+            "matchedRate": 1,
+            "exactRate": 1,
+            "cellF1": 1,
+            "cellExactRate": 1,
+            "contentNED": 1
+          }
+        },
+        "annex": {
+          "hwp": {
+            "docs": 272,
+            "recall": 1,
+            "phantom": 1e-05,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 346,
+            "tableExact": 1,
+            "cellF1": 1,
+            "eqRef": 11,
+            "eqHit": 11
+          },
+          "pdf": {
+            "docs": 272,
+            "recall": 0.99975,
+            "phantom": 0.00046,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 342,
+            "tableExact": 0.98844,
+            "cellF1": 0.99697,
+            "eqRef": 11,
+            "eqHit": 7
+          }
+        }
+      },
+      "exitCodes": {
+        "table": 0,
+        "annex": 0,
+        "text": 0,
+        "odl": 0,
+        "odlbest": 0,
+        "odlfast": 0,
+        "odlocr": 0
+      },
+      "manifestSHA256": "bb21a2be6bb8aa01434a7d69ac296ff8346edbcb1651e3abb379bcf9941ba9d5"
+    },
+    {
+      "round": 3,
+      "track": "layout",
+      "layoutSnapshot": "round3-v2",
+      "pdfSuite": "alternating-20261016-r3-v2",
+      "layout": {
+        "ok": {
+          "population": 25581,
+          "matched": 25313
+        },
+        "lines": {
+          "population": 311942,
+          "matched": 311870
+        }
+      },
+      "paragraphDelta": {
+        "population": 25581,
+        "up": 1,
+        "down": 0
+      },
+      "pdf": {
+        "text": {
+          "pairs": 744,
+          "refChars": 2857682,
+          "recall": 0.99858,
+          "precision": 0.9967,
+          "order": 0.99238,
+          "spaceF1": 0.99019,
+          "parseErrors": 0,
+          "excluded": 22
+        },
+        "table": {
+          "pairs": 708,
+          "refTables": 2331,
+          "reordered": 5,
+          "matchedRate": 0.998713,
+          "exactRate": 0.980695,
+          "cellF1": 0.991614,
+          "cellExactRate": 0.98821,
+          "contentNED": 0.984729,
+          "parseErrors": 0,
+          "nested": {
+            "pairs": 29,
+            "refTables": 101,
+            "reordered": 0,
+            "matchedRate": 1,
+            "exactRate": 1,
+            "cellF1": 1,
+            "cellExactRate": 1,
+            "contentNED": 1
+          }
+        },
+        "annex": {
+          "hwp": {
+            "docs": 272,
+            "recall": 1,
+            "phantom": 1e-05,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 346,
+            "tableExact": 1,
+            "cellF1": 1,
+            "eqRef": 11,
+            "eqHit": 11
+          },
+          "pdf": {
+            "docs": 272,
+            "recall": 0.99975,
+            "phantom": 0.00046,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 342,
+            "tableExact": 0.98844,
+            "cellF1": 0.99697,
+            "eqRef": 11,
+            "eqHit": 7
+          }
+        }
+      },
+      "exitCodes": {
+        "table": 0,
+        "text": 0,
+        "annex": 0
+      },
+      "manifestSHA256": "70f10e68aa00a55a0c1c8ec80a9cad1521c2add3867f1a13dfb7f9bee17fbe3d"
+    },
+    {
+      "round": 4,
+      "track": "PDF",
+      "layoutSnapshot": "round4-v3",
+      "pdfSuite": "alternating-20261016-r4-v2",
+      "layout": {
+        "ok": {
+          "population": 25581,
+          "matched": 25313
+        },
+        "lines": {
+          "population": 311942,
+          "matched": 311870
+        }
+      },
+      "paragraphDelta": {
+        "population": 25581,
+        "up": 0,
+        "down": 0
+      },
+      "pdf": {
+        "text": {
+          "pairs": 744,
+          "refChars": 2857682,
+          "recall": 0.99858,
+          "precision": 0.9967,
+          "order": 0.99239,
+          "spaceF1": 0.99019,
+          "parseErrors": 0,
+          "excluded": 22
+        },
+        "table": {
+          "pairs": 708,
+          "refTables": 2331,
+          "reordered": 5,
+          "matchedRate": 0.998713,
+          "exactRate": 0.981124,
+          "cellF1": 0.991673,
+          "cellExactRate": 0.98827,
+          "contentNED": 0.985077,
+          "parseErrors": 0,
+          "nested": {
+            "pairs": 29,
+            "refTables": 101,
+            "reordered": 0,
+            "matchedRate": 1,
+            "exactRate": 1,
+            "cellF1": 1,
+            "cellExactRate": 1,
+            "contentNED": 1
+          }
+        },
+        "annex": {
+          "hwp": {
+            "docs": 272,
+            "recall": 1,
+            "phantom": 1e-05,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 346,
+            "tableExact": 1,
+            "cellF1": 1,
+            "eqRef": 11,
+            "eqHit": 11
+          },
+          "pdf": {
+            "docs": 272,
+            "recall": 0.99975,
+            "phantom": 0.00046,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 342,
+            "tableExact": 0.98844,
+            "cellF1": 0.99697,
+            "eqRef": 11,
+            "eqHit": 7
+          }
+        }
+      },
+      "exitCodes": {
+        "table": 0,
+        "annex": 0,
+        "text": 0,
+        "odl": 0,
+        "odlbest": 0,
+        "odlfast": 0,
+        "odlocr": 0
+      },
+      "manifestSHA256": "68c6a3be2f1ebe708bf2b25c325446a3c5247d7943361d6ab37e517e84d6bdbb"
+    },
+    {
+      "round": 5,
+      "track": "layout",
+      "layoutSnapshot": "round5-final",
+      "pdfSuite": "alternating-20261016-r5-final",
+      "layout": {
+        "ok": {
+          "population": 25581,
+          "matched": 25321
+        },
+        "lines": {
+          "population": 311942,
+          "matched": 311872
+        }
+      },
+      "paragraphDelta": {
+        "population": 25581,
+        "up": 8,
+        "down": 0
+      },
+      "pdf": {
+        "text": {
+          "pairs": 744,
+          "refChars": 2857682,
+          "recall": 0.99858,
+          "precision": 0.9967,
+          "order": 0.99239,
+          "spaceF1": 0.99019,
+          "parseErrors": 0,
+          "excluded": 22
+        },
+        "table": {
+          "pairs": 708,
+          "refTables": 2331,
+          "reordered": 5,
+          "matchedRate": 0.998713,
+          "exactRate": 0.981124,
+          "cellF1": 0.991673,
+          "cellExactRate": 0.98827,
+          "contentNED": 0.985077,
+          "parseErrors": 0,
+          "nested": {
+            "pairs": 29,
+            "refTables": 101,
+            "reordered": 0,
+            "matchedRate": 1,
+            "exactRate": 1,
+            "cellF1": 1,
+            "cellExactRate": 1,
+            "contentNED": 1
+          }
+        },
+        "annex": {
+          "hwp": {
+            "docs": 272,
+            "recall": 1,
+            "phantom": 1e-05,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 346,
+            "tableExact": 1,
+            "cellF1": 1,
+            "eqRef": 11,
+            "eqHit": 11
+          },
+          "pdf": {
+            "docs": 272,
+            "recall": 0.99975,
+            "phantom": 0.00046,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 342,
+            "tableExact": 0.98844,
+            "cellF1": 0.99697,
+            "eqRef": 11,
+            "eqHit": 7
+          }
+        }
+      },
+      "exitCodes": {
+        "table": 0,
+        "annex": 0,
+        "text": 0
+      },
+      "manifestSHA256": "04642a4cf34eeb9ef68a32d019dbbb3ca60b4a8b276026e636a31caf8ae49740"
+    }
+  ],
+  "partialEdit": {
+    "fixture": "rhwp/issue3751/vpos_reset_midparagraph_fit.hwpx",
+    "expectedHU": 62400,
+    "beforeHU": 67200,
+    "afterHU": 62400,
+    "cachedParagraphPreserved": true
+  },
+  "separate2022": {
+    "before": {
+      "ok": {
+        "population": 17173,
+        "matched": 17035
+      },
+      "lines": {
+        "population": 150410,
+        "matched": 150385
+      }
+    },
+    "after": {
+      "ok": {
+        "population": 17173,
+        "matched": 17043
+      },
+      "lines": {
+        "population": 150410,
+        "matched": 150387
+      }
+    },
+    "delta": {
+      "population": 17173,
+      "up": 8,
+      "down": 0
+    }
+  },
+  "crossEffects": {
+    "layoutToPdf": "all scoring rows unchanged in rounds 1,3,5",
+    "pdfToLayout": "all paragraph matches unchanged in rounds 2,4",
+    "withinPdf": "round 4 table row restoration also improved reading order"
+  },
+  "verification": {
+    "tests": 3991,
+    "passed": 3982,
+    "skipped": 9,
+    "failed": 0,
+    "typecheck": true,
+    "reflowGate": [
+      59,
+      59
+    ],
+    "pagesGate": [
+      10,
+      10
+    ],
+    "ODL": {
+      "documentsPerMode": 200,
+      "modes": [
+        "default",
+        "plain+htmlTables",
+        "ocr:true",
+        "ocr:false"
+      ],
+      "pdfRounds": [
+        2,
+        4
+      ],
+      "documentScoreChanges": 0
+    },
+    "guiVisualInspection": false
+  },
+  "provenanceNote": "Round 4 layout uses round4-v3; PDF uses round4-v2. Their sole source difference is render/reflow.ts line advance. PDF and all non-render source files are byte-identical. Final whole-build PDF scores were independently remeasured in round5-final. Source/build manifests were checked unchanged after measurements."
+}

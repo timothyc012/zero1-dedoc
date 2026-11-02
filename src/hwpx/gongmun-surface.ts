@@ -18,7 +18,8 @@ import type { GongmunOptions, GongmunPreset } from "./gongmun.js"
 
 export const BODY_FONTS = ["myeongjo", "gothic"] as const
 export const H2_MARKERS = ["band", "roman", "box", "number", "none"] as const
-export const BULLET2_CHARS = ["ㅇ", "○"] as const
+export const BULLET2_CHARS = ["ㅇ", "○", "◦", "❍"] as const
+export const TOTAL_ROWS = ["top", "bottom", "keep"] as const
 
 /** 요소별 글꼴 오버라이드 역할 키 (GongmunOptions.fonts) */
 export const FONT_ROLE_KEYS = ["body", "heading", "ref", "table"] as const
@@ -88,6 +89,7 @@ export interface GongmunSurfaceInput {
   levels?: NonNullable<GongmunOptions["levels"]>
   bullet2?: (typeof BULLET2_CHARS)[number]
   suppressSingle?: boolean
+  totalRow?: (typeof TOTAL_ROWS)[number]
   docHead?: NonNullable<GongmunOptions["docHead"]>
   docFoot?: NonNullable<GongmunOptions["docFoot"]>
   reportInfo?: string
@@ -103,6 +105,8 @@ export interface GongmunSurfaceInput {
   dept?: string
   /** 표지 우상단 취급 표시 — "대외주의" 등 (업무보고 프리셋, cover와 함께) */
   coverLabel?: string
+  /** 기관 서식 — 중앙행정기관 이름 또는 "공통" (agency.ts) */
+  agency?: string
 }
 
 /**
@@ -143,6 +147,7 @@ export function buildGongmunOptions(input: GongmunSurfaceInput): GongmunOptions 
   if (input.levels && Object.keys(input.levels).length > 0) g.levels = input.levels
   if (input.bullet2) g.bullet2 = input.bullet2
   if (input.suppressSingle !== undefined) g.suppressSingle = input.suppressSingle
+  if (input.totalRow) g.totalRow = input.totalRow
   if (input.docHead) g.docHead = input.docHead
   if (input.docFoot) g.docFoot = input.docFoot
   if (input.reportInfo) g.reportInfo = input.reportInfo
@@ -151,7 +156,16 @@ export function buildGongmunOptions(input: GongmunSurfaceInput): GongmunOptions 
   if (input.summary) g.summary = input.summary
   if (input.docInfo) g.docInfo = input.docInfo
   if (input.checklist !== undefined) g.checklist = input.checklist
+  if (input.agency?.trim()) g.agency = input.agency.trim()
   return g
+}
+
+/**
+ * 부서 서식 견본(template) 과 함께 준 서식 옵션 오류 문구 — CLI 플래그(--preset)·MCP 파라미터(preset) 이름을 그대로 받는다.
+ * 견본이 쪽 설정·글꼴·문단 모양·표 서식을 정하므로 두 표면 모두 조용히 버리지 않고 멈춘다.
+ */
+export function templateConflictMessage(names: string[]): string {
+  return `부서 서식 견본(template)은 ${names.join(", ")} 와 함께 쓸 수 없습니다 — 쪽·글꼴·문단·표 서식은 견본이 정합니다. 견본만 주거나 견본 없이 프리셋으로 생성하세요`
 }
 
 /**

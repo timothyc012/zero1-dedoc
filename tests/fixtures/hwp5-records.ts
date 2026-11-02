@@ -34,12 +34,13 @@ export function faceName(name: string): HwpRecord {
 }
 
 /** CHAR_SHAPE 74B — baseSize 1/100pt, attr bit0 italic·bit1 bold·bit2-3 underline, color COLORREF */
-export function docCharShape(o: { baseSize?: number; bold?: boolean; italic?: boolean; underline?: boolean; faceId?: number; ratio?: number; spacing?: number; relSize?: number; color?: number } = {}): HwpRecord {
+export function docCharShape(o: { baseSize?: number; bold?: boolean; italic?: boolean; underline?: boolean; faceId?: number; ratio?: number; spacing?: number; relSize?: number; color?: number; shade?: number } = {}): HwpRecord {
   const b = Buffer.alloc(74)
   for (let i = 0; i < 7; i++) { b.writeUInt16LE(o.faceId ?? 0, i * 2); b[14 + i] = o.ratio ?? 100; b.writeInt8(o.spacing ?? 0, 21 + i); b[28 + i] = o.relSize ?? 100 }
   b.writeInt32LE(o.baseSize ?? 1000, 42)
   b.writeUInt32LE((o.italic ? 1 : 0) | (o.bold ? 2 : 0) | (o.underline ? 4 : 0), 46)
   b.writeUInt32LE(o.color ?? 0, 52)
+  b.writeUInt32LE(o.shade ?? 0xffffffff, 60) // 음영 색 — 한컴 저장본의 없음은 0xFFFFFFFF
   return rec(0x15, 0, b)
 }
 

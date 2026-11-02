@@ -35,6 +35,17 @@ describe("wrapEquationRuns", () => {
     assert.deepEqual(out, ["$\\sqrt{8}\\times 4^{\\frac{1}{4}}$"])
   })
 
+  it("수식 글꼴 막대 위·아래의 본문 글꼴 글자도 분자·분모 — 배출농도 / 배출허용기준농도", () => {
+    // 대기환경보전법 시행령 [별표 8] 비고: 막대만 수식 글꼴(가로로 늘려 크기 199), 한글 분자·분모는 본문 글꼴로 한 글자씩
+    const chars = (s: string, x: number, y: number) => [...s].map((c, k) => item(c, x + k * 12, y, 12, 12, "body"))
+    const out = run([
+      ...chars("배출농도", 282, 421),
+      item(E(0x6d), 256, 408, 100, 199),
+      ...chars("배출허용기준농도", 258, 405),
+    ])
+    assert.deepEqual(out, ["$\\frac{\\text{배출농도}}{\\text{배출허용기준농도}}$"])
+  })
+
   it("해독표에 없는 코드뿐인 조각은 버리고, 수식 글꼴이 아닌 글은 그대로", () => {
     assert.deepEqual(run([item(E(0x7b), 10, 500, 5), item("본문", 30, 500, 18, 9, "body")]), ["본문"])
   })

@@ -85,7 +85,7 @@ export function registerSystemCommands(program: Command): void {
       try {
         const { getOcrModelStatus, ensureOcrModels, getOcrModelsDir, normalizeOcrLanguage } = await import("../ocr/models.js")
         const language = normalizeOcrLanguage(opts.language)
-        const dir = getOcrModelsDir(language)
+        const dir = getOcrModelsDir()
         if (opts.statusOnly) {
           const status = await getOcrModelStatus(language)
           process.stdout.write(

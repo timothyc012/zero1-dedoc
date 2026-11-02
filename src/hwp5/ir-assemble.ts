@@ -6,8 +6,10 @@
  * 좌표 셀 → builder 직접 배치(후행 빈 열 트림 계약)와 손상 표(겹친 앵커) 정리.
  */
 
-import { buildTable, convertTableToText, MAX_COLS, MAX_ROWS } from "../table/builder.js"
-import type { CellContext, IRBlock, IRTable, InlineStyle } from "../types.js"
+import { buildTable, captionedText, convertTableToText, MAX_COLS, MAX_ROWS } from "../table/builder.js"
+import type { CellContext, IRBlock, IRTable, IRSpan, InlineStyle } from "../types.js"
+import { CELL_EDGES, type Edges } from "../table/layout-frames.js"
+import { TOC_ENTRY_BLOCKS } from "../toc-entry.js"
 
 /** 글자처럼 취급 표 자리 표지 — 문단 글을 표 앞뒤로 나눈다 (HWPX section-walker 와 같은 문자) */
 export const INLINE_TABLE_MARK = "\x1E"
@@ -34,16 +36,22 @@ export interface ParaEmitInput {
   headMarker: string | null
   /** 개요 제목 수준 (0 = 본문) */
   headingLevel: number
+  /** 목차 항목(채움 탭 + 쪽 번호 줄) — 글자 크기·"제N장" 제목 추정에서 뺀다 (#121) */
+  tocEntry?: boolean
   style?: InlineStyle
   /** 각주/미주 ("1) 내용") */
   footnotes: string[]
+  /** 주석 안에 표가 있을 때 주석 본문 구조 블록 — IRBlock.footnoteBlocks 로 (#149, HWP5) */
+  footnoteBlocks?: IRBlock[]
   objects: ParaObject[]
   pageNumber?: number
+  /** 인라인 강조 span (굵게·기울임·취소선·밑줄) — 글이 한 문단 블록으로만 나갈 때 붙인다(HWPX run-spans 대칭) */
+  spans?: IRSpan[]
 }
 
 /** 문단 1개 → [문단 블록(들), 개체 블록] */
 export function emitParagraphBlocks(p: ParaEmitInput): IRBlock[] {
-  const { headMarker, style, footnotes, objects, pageNumber } = p
+  const { headMarker, style, footnotes, footnoteBlocks, objects, pageNumber } = p
   const blocks: IRBlock[] = []
   // 취소선·밑줄 문단(법령 개정문 삭제·개정 표시 등)은 ~~…~~ / <u>…</u> 로 방출 —
   // 대표(최빈) 스타일 기준이라 문단 전체가 그어진 경우만 잡는다 (부분 서식은 미지원)
@@ -72,6 +80,7 @@ export function emitParagraphBlocks(p: ParaEmitInput): IRBlock[] {
       if (first) {
         if (style) block.style = style
         if (footnotes.length > 0) block.footnoteText = footnotes.join("; ")
+        if (footnoteBlocks) block.footnoteBlocks = footnoteBlocks
         first = false
       }
       if (lineOpen) INLINE_JOIN.add(block)
@@ -100,11 +109,16 @@ export function emitParagraphBlocks(p: ParaEmitInput): IRBlock[] {
       pageNumber,
     }
     if (p.headingLevel > 0) block.level = p.headingLevel
+    else if (p.spans) block.spans = headMarker ? [{ text: `${headMarker} ` }, ...p.spans] : p.spans
+    if (p.tocEntry) TOC_ENTRY_BLOCKS.add(block)
     if (style) {
       block.style = style
-      if (style.strike || style.underline) block.text = headMarker ? `${headMarker} ${decorate(trimmed)}` : decorate(trimmed)
+      // 강조 span 이 붙은 문단은 span 이 취소선·밑줄을 담는다 — 글에 표지를 구우면 칸 글(중첩 표 칸 등 글로 그리는 경로)에 표지가
+      // 남는다(HWPX 는 글이 평문)
+      if ((style.strike || style.underline) && !block.spans) block.text = headMarker ? `${headMarker} ${decorate(trimmed)}` : decorate(trimmed)
     }
     if (footnotes.length > 0) block.footnoteText = footnotes.join("; ")
+    if (footnoteBlocks) block.footnoteBlocks = footnoteBlocks
     blocks.push(block)
   } else if (footnotes.length > 0) {
     // 본문 없는 각주 anchor — 각주 내용 자체를 문단으로 보존
@@ -117,13 +131,13 @@ export function emitParagraphBlocks(p: ParaEmitInput): IRBlock[] {
 // ─── 평문 평탄화 ─────────────────────────────────────
 
 /**
- * 표 → 평문 — 셀은 " / ", 행은 줄바꿈(convertTableToText), 캡션 먼저. HWPX completeTable·buildSubListTable 과 같은 모양.
+ * 표 → 평문 — 셀은 " / ", 행은 줄바꿈(convertTableToText), 캡션은 먼저(표 아래 캡션은 뒤). HWPX completeTable·buildSubListTable 과 같은 모양.
  * 셀 이미지 sentinel("![image](hwp5bin:N)")은 남긴다 — images.ts 가 블록 트리 전체에서 추출 파일명으로 편다
  * (HWPX 도 머리말 표 이미지 셀을 "![image](…)" 로 남긴다). 종전엔 머리말·각주의 표를 건너뛰어 표 글이 통째로 사라졌다
  */
 export function tableFlatText(table: IRTable): string {
   const flat = convertTableToText(table.cells)
-  return table.caption ? table.caption + (flat ? "\n" + flat : "") : flat
+  return table.caption ? captionedText(flat, table.caption, table.captionBelow) : flat
 }
 
 /** 블록 리스트 → 평문 (각주 인라인 포함, 표는 평탄화, 이미지는 제외) — 머리말·각주·캡션용 */
@@ -168,8 +182,14 @@ export function cellTextFromBlocks(blocks: IRBlock[]): { text: string; hasStruct
       if (b.footnoteText) {
         b.text += ` (주: ${b.footnoteText})`
         delete b.footnoteText
+        delete b.footnoteBlocks
+        delete b.spans // 접은 각주 글은 span 에 없다 — 평문 경로로
       }
       add(b.text, b)
+      // 칸 문단은 HWPX 외래 문서처럼 혼합 가드 — 칸 전체가 굵게·기울임이면(머리 행·라벨 열의 구조 서식) 표지를 달지 않는다.
+      // 남은 강조 span 이 있는 칸은 블록째 남긴다(칸 마크다운에 강조 표지)
+      if (b.spans && !b.spans.some(s => s.strike || s.underline) && !b.spans.some(s => !(s.bold || s.italic))) delete b.spans
+      if (b.spans?.length) hasStructure = true
     }
   }
   return { text, hasStructure }
@@ -181,6 +201,8 @@ export function cellTextFromBlocks(blocks: IRBlock[]): { text: string; hasStruct
 export interface AddressedCell extends CellContext {
   blocks?: IRBlock[]
   isHeader?: boolean
+  /** 칸의 보이는 변 (셀 borderFillId → DocInfo BORDER_FILL) — IR 칸의 CELL_EDGES 로 */
+  edges?: Edges
 }
 
 /**
@@ -239,6 +261,11 @@ export function buildAddressedTable(cells: AddressedCell[], rows: number, cols: 
   const table = buildTable(byRow, { keepAnchoredEmptyCols })
   if (table.rows === 0) return null
   for (const c of placed) {
+    // 보이는 변은 글 대조 없이 좌표 자리 칸에 — 빈 칸도 테두리를 가진다
+    if (c.edges) {
+      const at = table.cells[c.rowAddr ?? 0]?.[c.colAddr ?? 0]
+      if (at) CELL_EDGES.set(at, c.edges)
+    }
     if (!c.blocks?.length && !c.isHeader) continue
     const target = table.cells[c.rowAddr ?? 0]?.[c.colAddr ?? 0]
     // 겹친 앵커로 합쳐진 셀·잘린 열의 앵커는 텍스트가 달라 붙지 않는다

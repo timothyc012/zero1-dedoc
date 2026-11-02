@@ -1,0 +1,258 @@
+{
+  "version": "4.18.6",
+  "phase": "completed",
+  "publicationStatus": "verified",
+  "sourceRevision": 2,
+  "sourceCommit": "9fe1a376383032b7ff3aae26326057c051393203",
+  "baselineVersion": "4.18.5",
+  "baselineCommit": "61c9660b0b8c21d11479704e1b62ea3555b32bc1",
+  "referenceCriteriaChanged": false,
+  "original": {
+    "url": "https://www.kha.or.kr/kha_home/notice_list.do?articleNo=47408&attachNo=426369&mode=download",
+    "contentDigest": "f10be4c227de0de939826ca5033d9b3d9efc9a8c06e6155a21c6cffece6d52ac",
+    "pages": 140,
+    "modes": [
+      {
+        "name": "native",
+        "options": {
+          "ocr": false,
+          "formulaOcr": false
+        },
+        "wholeDocument": true,
+        "pages": 140,
+        "characters": 79260
+      },
+      {
+        "name": "default",
+        "options": {},
+        "wholeDocument": true,
+        "pages": 140,
+        "characters": 83314
+      }
+    ]
+  },
+  "newRepair": {
+    "page": 49,
+    "repairedListSentences": [
+      "- 구급차의 이동거리를 측정하여 이를 금액으로 표시하는 장치",
+      "○ 장착대상(응급의료법 시행규칙 제38조제4항 [별표 16의2])",
+      "- 의료기관(다만, 의료기관 중 「의료법」 제35조에 따라 개설된 부속 의료기관이 운용하는 구급차의 경우에는 장착하지 아니할 수 있음)"
+    ],
+    "eachSentenceAppearsOnceAsUnorderedList": true,
+    "medicalContinuationAndClosingParenthesisJoined": true,
+    "marginBadge": {
+      "text": "Ⅶ",
+      "textAndBBoxUnchanged": true,
+      "orderChange": "Moves ahead of image caption and application list by original source cap position; no longer interrupts bracket reference"
+    },
+    "previousWarningRepairsRetained": 2,
+    "warningRepairsAreNewGain": false
+  },
+  "wholeDocumentConservation": {
+    "literalBaselineIdentical": false,
+    "rawConservationPassed": false,
+    "strictLiteralPassed": false,
+    "rawLiteralMismatchPreserved": true,
+    "intentionalChangedPages": [
+      49
+    ],
+    "otherPagesExactPerMode": 139,
+    "all140PagesIncluded": true,
+    "modes": [
+      {
+        "name": "native",
+        "beforeBlocks": 1619,
+        "afterBlocks": 1615,
+        "page49": {
+          "page": 49,
+          "beforeBlocks": 20,
+          "afterBlocks": 16,
+          "exactIR": false,
+          "sameTextSequence": false,
+          "characters": {
+            "beforeChars": 478,
+            "afterChars": 478,
+            "removed": [],
+            "added": [],
+            "preserved": true
+          },
+          "sameTablesGeometryContentsAndSpans": true,
+          "evidence": "/tmp/kordoc-bug-audit-20261002/original-4186-whole-r2/native/changes/page-049.json"
+        },
+        "characters": {
+          "beforeChars": 79260,
+          "afterChars": 79260,
+          "removed": [],
+          "added": [],
+          "preserved": true
+        },
+        "allTablesGeometryContentsAndSpansPreserved": true,
+        "changedPages": [
+          49
+        ]
+      },
+      {
+        "name": "default",
+        "beforeBlocks": 1699,
+        "afterBlocks": 1695,
+        "page49": {
+          "page": 49,
+          "beforeBlocks": 20,
+          "afterBlocks": 16,
+          "exactIR": false,
+          "sameTextSequence": false,
+          "characters": {
+            "beforeChars": 478,
+            "afterChars": 478,
+            "removed": [],
+            "added": [],
+            "preserved": true
+          },
+          "sameTablesGeometryContentsAndSpans": true,
+          "evidence": "/tmp/kordoc-bug-audit-20261002/original-4186-whole-r2/default/changes/page-049.json"
+        },
+        "characters": {
+          "beforeChars": 83314,
+          "afterChars": 83314,
+          "removed": [],
+          "added": [],
+          "preserved": true
+        },
+        "allTablesGeometryContentsAndSpansPreserved": true,
+        "changedPages": [
+          49
+        ]
+      }
+    ],
+    "sameWholeLiteralTextAndRepeatedPageVector": false,
+    "sourcePageOrderPreserved": true,
+    "semanticValidationPassed": true,
+    "independentTargetedRepairApproved": true,
+    "independentBlockingFindings": [],
+    "completeDocumentSemanticAccuracyClaimed": false,
+    "irComparisonNormalization": "fontName string g_d<number>_ document-instance prefix becomes g_doc_; font number/size and all other IR fields stay exact. HTML/whitespace stripping affects auxiliary text-frequency/sequence checks, not exactIR equality.",
+    "characterCountScope": "Recursive text Unicode codepoints after formatting/whitespace normalization; excludes image bytes. Character-frequency equality does not establish reading-order equality.",
+    "semanticApprovalScope": "The three predetermined source49 list sentences, their continuation/bracket/list repair, and local Ⅶ cap array movement; other139pages exact except fontName document-instance prefix. No complete page49 or whole-document semantic perfection claim."
+  },
+  "preservedRelations": {
+    "basis": "Previously verified4.18.5 relations retained through exact core-page IR and fresh24/78/22 penalty checks; no new relationship score increase.",
+    "requestedTopics": {
+      "groups": 5,
+      "correctRelations": 76,
+      "totalRelations": 76,
+      "basis": "12 fee + 27 equipment + 18 medicine + 10 common-device + 9 first-page penalty relations. Five requested topics, not five physical tables or all-page semantic accuracy.",
+      "penaltyScope": "First-page 9 relations span three physical penalty tables and are already included in the extended 78; do not sum them twice."
+    },
+    "relations": [
+      {
+        "name": "fees",
+        "correct": 12,
+        "total": 12,
+        "notesOutside": true
+      },
+      {
+        "name": "equipment",
+        "correct": 27,
+        "total": 27,
+        "special": 17,
+        "general": 10
+      },
+      {
+        "name": "medicine",
+        "correct": 18,
+        "total": 18,
+        "special": 11,
+        "general": 7
+      },
+      {
+        "name": "commonInternalDevices",
+        "correct": 10,
+        "total": 10,
+        "basis": "5 item/quantity facts shared by ordinary and special ambulance categories"
+      }
+    ],
+    "penalties": [
+      {
+        "mode": "native",
+        "physicalHeaders": 24,
+        "correctRelations": 78,
+        "detachedHeadersRestored": 22
+      },
+      {
+        "mode": "default",
+        "physicalHeaders": 24,
+        "correctRelations": 78,
+        "detachedHeadersRestored": 22
+      }
+    ]
+  },
+  "frames": {
+    "sourceWindows": 102,
+    "sourceWindowTypes": "One-cell boxes, badges and nested wrappers; not102 complete flowcharts.",
+    "modes": [
+      {
+        "mode": "native",
+        "exactWindows": 102,
+        "nonemptyComparableWindows": 102,
+        "emptyWindows": [],
+        "allWindowCharacterFrequenciesPreserved": true,
+        "allWindowSequencesPreserved": true
+      },
+      {
+        "mode": "default",
+        "exactWindows": 102,
+        "nonemptyComparableWindows": 99,
+        "emptyWindows": [
+          91,
+          117,
+          119
+        ],
+        "allWindowCharacterFrequenciesPreserved": true,
+        "allWindowSequencesPreserved": true
+      }
+    ],
+    "emptyWindowsProvideNoVisualContentProof": true
+  },
+  "residuals": [
+    "Raw whole-document literal comparison remains false for the intended page49 changes; scoped independent semantic approval is separate.",
+    "Isolated ○ 정의 heading/list ambiguity, original55 caption/legal-note rows, original68 outer-frame/nested-table structure, and some flowchart-label/reading-order imperfections remain.",
+    "Original55 third penalty table retains full-width caption/legal-note rows; target relations survive.",
+    "Original68 outer3×1 frame retains prose and nested2×4 table.",
+    "Some flowchart labels and PDF reading order remain imperfect; no visual/pixel100% claim."
+  ],
+  "visual": {
+    "source49PDFRenderedAndIndependentlyInspected": true,
+    "liveHancomExecuted": false,
+    "guiPixelEqualityVerified": false,
+    "referenceBaselineChanged": false
+  },
+  "verification": {
+    "tests": {
+      "total": 3210,
+      "passed": 3205,
+      "failed": 0,
+      "skipped": 5
+    },
+    "sourceFiles": 568,
+    "sourceTreeDigest": "62fb582028c7c10c5210fa1674941e9ec86188997ceb9b95c7b225c3a7dda712",
+    "externalOdlDocumentsPerMode": 200,
+    "externalOdlModes": 3,
+    "odlReferenceFilesUnchanged": 425,
+    "scope": "Independent candidate r2 checks and verified actual public-package source49 lists,6IR/8PNG plus exact142publication-distfiles.",
+    "publicPackageSource49Lists": 3,
+    "publicDistFilesExact": 142,
+    "publicDefaultNativeDocuments": 6,
+    "publicPngBuffersExact": 8
+  },
+  "evidence": {
+    "raw": "/tmp/kordoc-bug-audit-20261002/original-4186-whole-r2/report.json",
+    "semantic": "/tmp/kordoc-bug-audit-20261002/original-4186-whole-r2/semantic49-report.json",
+    "scopedApproval": "/tmp/kordoc-bug-audit-20261002/original-4186-whole-r2/scoped-semantic-approval.json",
+    "independent": "/tmp/kordoc-bug-audit-20261002/original-4186-r2-independent-semantic-review.json",
+    "targetedSourcePNG": "/tmp/kordoc-bug-audit-20261002/column-followup-original49.png",
+    "freshVerification": "/tmp/kordoc-bug-audit-20261002/paragraph-context-4186-verification-r2/final-verification-report.json",
+    "externalOdl": "/tmp/kordoc-bug-audit-20261002/odl-4186-comparison.json",
+    "prepublicationQuality": "/tmp/kordoc-bug-audit-20261002/prepublication-4186-r2-comparison.json"
+  },
+  "publicationEvidence": "docs/release-4.18.6.json"
+}

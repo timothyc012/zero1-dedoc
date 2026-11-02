@@ -6,7 +6,7 @@
  * 근사 클래스라 여유를 더 둔다.
  */
 
-import { measureTextWidth, faceClassForGen, simulateWrap, type FaceClass } from "./text-metrics.js"
+import { measureTextWidth, faceClassForGen, simulateWrap, prepareWrap, type FaceClass, type WrapResult } from "./text-metrics.js"
 
 export interface FitResult {
   pt: number
@@ -24,17 +24,19 @@ const SPACINGS = [0, -3, -5]
  * 보정으로 맞음, 한컴이 더 넓게 잡는 쪽이 최대 +3%). "한 줄에 들어간다"는 판단은 2% 여유를 둔다(여유 0.6% 로 한 줄에 맞춘
  * 압축 문단이 한컴에서 넘친 실사고, 2026-09-23). 근사 클래스는 호출부 값(2~5%).
  */
-function safety(faceClass: FaceClass, approx: number): number {
-  return faceClass.startsWith("font:") ? 0.98 : approx
+function safety(faceClass: FaceClass, approx: number, limit?: number): number {
+  const k = faceClass.startsWith("font:") ? 0.98 : approx
+  // limit(autoFit.safety): 다른 조판기(rhwp 등)로도 그리는 문서가 여유를 더 두게. 기본보다 엄격하게만
+  return limit === undefined ? k : Math.min(k, limit)
 }
 
 /**
  * @param minPt    글자 크기 하한 — pt 와 같으면 크기는 줄이지 않는다(□ 항목: 형제끼리 크기가 달라 들쭉날쭉해 보이는 것 방지)
  * @param minRatio 장평 하한(기본 85) — □ 는 90 (실측 96/95 관행, 85 는 눈에 띄게 납작함)
  */
-export function fitOneLine(text: string, font: string, pt: number, availHu: number, minPt: number = Math.max(pt - 3, 10), minRatio = 85): FitResult {
+export function fitOneLine(text: string, font: string, pt: number, availHu: number, minPt: number = Math.max(pt - 3, 10), minRatio = 85, safetyLimit?: number): FitResult {
   const faceClass = faceClassForGen(font)
-  const avail = availHu * safety(faceClass, 0.98)
+  const avail = availHu * safety(faceClass, 0.98, safetyLimit)
   const fits = (p: number, r: number, s: number) => measureTextWidth(text, p * 100, r, { spacingPct: s, faceClass }) <= avail
   if (fits(pt, 100, 0)) return { pt, ratio: 100, spacing: 0, overflow: false }
   const ratios = RATIOS.filter((r) => r >= minRatio)
@@ -102,33 +104,51 @@ function worstLooseness(text: string, starts: number[], firstW: number, contW: n
  *      + 고아 줄(마지막 줄 ≤ 가용폭 22%) + 압축량. 줄 수는 늘리지 않는다. 무압축이 최선이면 null.
  * @param minRatio 장평 하한 — 공문서 `autoFit.minRatio`(기본 90). 사다리에서 이보다 납작한 장평은 쓰지 않는다
  */
-export function fitParagraph(text: string, font: string, pt: number, firstW: number, contW: number, minRatio = 88, orphanRatio = ORPHAN_RATIO): { ratio: number; spacing: number } | null {
+export function fitParagraph(text: string, font: string, pt: number, firstW: number, contW: number, minRatio = 88, orphanRatio = ORPHAN_RATIO, safetyLimit?: number): { ratio: number; spacing: number } | null {
   const faceClass = faceClassForGen(font)
   const h = pt * 100
-  const k = safety(faceClass, 0.95)
+  const k = safety(faceClass, 0.95, safetyLimit)
   const f = firstW * k, c = contW * k
   const ladder: Array<[number, number]> = [[100, 0], ...SQUEEZE.filter(([r]) => r >= minRatio)]
   const base = simulateWrap(text, f, c, h, 100, "keep", { faceClass })
   if (base.lines < 2) return null
+  const prepared = prepareWrap(text, "keep", { faceClass })
+  // 꼬리 줄 탐색과 비용 탐색은 같은 후보를 본다 — 문단 한 번 안에서만 조판 결과를 재사용한다.
+  const wraps = new Map<string, WrapResult>([["100:0", base]])
+  const looseness = new Map<string, number>()
+  const wrap = (r: number, sp: number): WrapResult => {
+    const key = `${r}:${sp}`
+    let w = wraps.get(key)
+    if (!w) { w = simulateWrap(text, f, c, h, r, "keep", { faceClass, spacingPct: sp, prepared }); wraps.set(key, w) }
+    return w
+  }
+  const looseAt = (r: number, sp: number, w: WrapResult): number => {
+    const key = `${r}:${sp}`
+    let loose = looseness.get(key)
+    if (loose === undefined) { loose = worstLooseness(text, w.starts, f, c, h, r, sp, faceClass); looseness.set(key, loose) }
+    return loose
+  }
   if (base.lastLineWidth <= c * PULL_TAIL) {
     let pull: { r: number; sp: number; amt: number } | null = null
     for (const [r, sp] of ladder) {
       const amt = squeezeOf(r, sp)
       if (amt > PULL_MAX + 1e-9 || (pull && amt >= pull.amt - 1e-9)) continue
-      const w = simulateWrap(text, f, c, h, r, "keep", { faceClass, spacingPct: sp })
-      if (w.lines < base.lines && worstLooseness(text, w.starts, f, c, h, r, sp, faceClass) <= LOOSE_LIMIT) pull = { r, sp, amt }
+      const w = wrap(r, sp)
+      if (w.lines < base.lines && looseAt(r, sp, w) <= LOOSE_LIMIT) pull = { r, sp, amt }
     }
     if (pull) return { ratio: pull.r, spacing: pull.sp }
   }
   let baseLines = 0
   let best: { r: number; sp: number; cost: number } | null = null
   for (const [r, sp] of ladder) {
-    const w = simulateWrap(text, f, c, h, r, "keep", { faceClass, spacingPct: sp })
+    const w = wrap(r, sp)
     if (!best) { if (w.lines < 2) return null; baseLines = w.lines }
     if (w.lines > baseLines) continue
     const orphan = w.lines > 1 && w.lastLineWidth <= contW * orphanRatio
-    const loose = worstLooseness(text, w.starts, f, c, h, r, sp, faceClass)
+    const loose = looseAt(r, sp, w)
     const cost = Math.max(0, loose - LOOSE_LIMIT) + (orphan ? ORPHAN_COST : 0) + squeezeOf(r, sp) * COMPRESS_COST
+    // 꼬리 줄 올리기보다 뒤에서만: 비용은 음수가 없으므로 무압축 비용 0은 이미 최선이다.
+    if (r === 100 && sp === 0 && cost === 0) return null
     if (!best || cost < best.cost - 1e-9) best = { r, sp, cost }
   }
   return best && (best.r !== 100 || best.sp !== 0) ? { ratio: best.r, spacing: best.sp } : null
@@ -145,16 +165,17 @@ const LIST_BREAK = new Set([..."·,、/"])
  * ±1% 인 까닭: 글자 단위는 한 글자(1em ≈ 줄폭 3%)만 어긋나도 끊는 자리가 바뀐다. ±2% 면 허용 구간이 한 글자 폭보다 넓어
  * 후보가 거의 없다(서울시 11개 구 목록 문단 실측: ±2% 0건, ±1% 자간 -12 에서 "서초·|성동").
  */
-export function fitCharBreaks(text: string, font: string, pt: number, firstW: number, contW: number, minRatio = 88): { ratio: number; spacing: number } | null {
+export function fitCharBreaks(text: string, font: string, pt: number, firstW: number, contW: number, minRatio = 88, safetyLimit?: number): { ratio: number; spacing: number } | null {
   const faceClass = faceClassForGen(font)
   const h = pt * 100
-  const k = safety(faceClass, 0.95)
+  const k = safety(faceClass, 0.95, safetyLimit)
   if (!text.split(/ +/).some((w) => measureTextWidth(w, h, 100, { faceClass }) > contW * k)) return null
+  const prepared = prepareWrap(text, "charAll", { faceClass })
   let best: { r: number; sp: number; amt: number } | null = null
   for (const [r, sp] of [[100, 0] as [number, number], ...SQUEEZE.filter(([r]) => r >= minRatio)]) {
     const amt = squeezeOf(r, sp)
     if (amt > PULL_MAX + 1e-9 || (best && amt >= best.amt - 1e-9)) continue
-    const wrapAt = (s: number) => simulateWrap(text, firstW * s, contW * s, h, r, "charAll", { faceClass, spacingPct: sp }).starts
+    const wrapAt = (s: number) => simulateWrap(text, firstW * s, contW * s, h, r, "charAll", { faceClass, spacingPct: sp, prepared }).starts
     const starts = wrapAt(1)
     if (wrapAt(0.99).join() !== starts.join() || wrapAt(1.01).join() !== starts.join()) continue
     if (!starts.slice(1).every((s) => text[s - 1] === " " || LIST_BREAK.has(text[s - 1]))) continue

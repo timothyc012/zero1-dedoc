@@ -3,7 +3,7 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { parseMarkdownToBlocks } from "../src/hwpx/md-runs.js"
-import { buildOutline } from "../src/hwpx/outline.js"
+import { buildOutline, parseLeadingMarker } from "../src/hwpx/outline.js"
 
 const outlineOf = (md: string) => buildOutline(parseMarkdownToBlocks(md), { gaejosik: true, consumeTitle: true, summaryFromQuote: false })
 const items = (md: string) => outlineOf(md).nodes.filter((n) => n.kind === "item").map((n) => n.kind === "item" ? [n.depth, n.text] : [])
@@ -30,5 +30,27 @@ describe("outline 부호 확장", () => {
     assert.equal(o.nodes.filter((n) => n.kind === "item").length, 0)
     assert.equal(o.nodes.filter((n) => n.kind === "para").length, 3)
     assert.equal(o.hasBoxMarkers, false)
+  })
+  it("부호만 굵게 감싸도 닫는 구분자를 본문으로 옮기지 않는다", () => {
+    for (const mark of ["□", "ㅇ", "○", "-", "※"]) for (const bold of ["**", "__"]) {
+      const expected = parseLeadingMarker(`${mark} 설명`)
+      assert.deepEqual(parseLeadingMarker(`${bold}${mark}${bold} 설명`), expected)
+      assert.deepEqual(parseLeadingMarker(`${bold}${mark}${bold} **설명**`), { ...expected, rest: "**설명**" })
+    }
+    assert.deepEqual(items("**ㅇ** 설명\n\n__□__ 계획"), [[1, "설명"], [0, "계획"]])
+  })
+  it("부호 문단 아래 들여 쓴 목록은 그 부호 한 단계 아래부터 (listUnderMarker) — 네 칸 \"- 세부\" 가 4단계로 내려가지 않는다", () => {
+    const md = "# 제목\n\n□ 대항목\n  ㅇ 중항목\n    - 세부\n      - 더 세부\n    - 세부2"
+    const o = buildOutline(parseMarkdownToBlocks(md), { gaejosik: true, consumeTitle: true, summaryFromQuote: false, listUnderMarker: true })
+    assert.deepEqual(o.nodes.filter((n) => n.kind === "item").map((n) => n.kind === "item" ? [n.depth, n.text] : []),
+      [[0, "대항목"], [1, "중항목"], [2, "세부"], [3, "더 세부"], [2, "세부2"]])
+    // 부호 문단 없이 시작한 목록은 들여쓰기 그대로
+    const bare = buildOutline(parseMarkdownToBlocks("# 제목\n\n- 가\n  - 나"), { gaejosik: true, consumeTitle: true, summaryFromQuote: false, listUnderMarker: true })
+    assert.deepEqual(bare.nodes.filter((n) => n.kind === "item").map((n) => n.kind === "item" ? n.depth : -1), [0, 1])
+  })
+  it("부호와 본문을 함께 굵게 감싼 별표·밑줄 구분자를 보존한다", () => {
+    for (const bold of ["**", "__"]) {
+      assert.equal(parseLeadingMarker(`${bold}ㅇ 설명${bold} (추가)`).rest, `${bold}설명${bold} (추가)`)
+    }
   })
 })

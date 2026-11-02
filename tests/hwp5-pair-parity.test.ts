@@ -15,6 +15,9 @@ import {
 import { detectImageMime, extractHwp5Images } from "../src/hwp5/images.js"
 import { blocksToMarkdown } from "../src/table/builder.js"
 import type { IRBlock, ParseWarning } from "../src/types.js"
+import { existsSync, readdirSync, readFileSync } from "node:fs"
+import { join } from "node:path"
+import { parseHwp5Document } from "../src/hwp5/parser.js"
 
 // ─── 합성 레코드 빌더 ────────────────────────────────
 
@@ -255,15 +258,17 @@ describe("글자처럼 취급 표 — 앞뒤 글을 표 자리에서 나눈다 (
 
 // ─── 채움 탭 · 누름틀 · 셀 각주 ───────────────────────
 
-describe("채움(리더) 탭 — 뒤 목차 쪽번호 절단 (HWPX leader-tab-cut 대칭)", () => {
-  it("채움 모양 ≠ 0 탭 뒤는 버리고, 보통 탭은 남긴다", () => {
+describe("채움(리더) 탭 — 보통 탭과 같이 뒤 글을 남긴다 (HWPX 채움 탭 대칭)", () => {
+  it("채움 모양 ≠ 0 탭 뒤 목차 쪽 번호·다음 항목이 남는다 (종전엔 잘렸다)", () => {
     const { blocks } = parse([
       rec(TAG_PARA_HEADER, 0, paraHeaderData()),
       rec(TAG_PARA_TEXT, 1, Buffer.concat([utf16("Ⅰ. 개요"), tabChar(3), utf16(" 12")])),
       rec(TAG_PARA_HEADER, 0, paraHeaderData()),
+      rec(TAG_PARA_TEXT, 1, Buffer.concat([utf16("<참고1> 동향"), tabChar(3), utf16("19"), utf16("\n"), utf16("<참고2> 개요"), tabChar(3), utf16("20")])),
+      rec(TAG_PARA_HEADER, 0, paraHeaderData()),
       rec(TAG_PARA_TEXT, 1, Buffer.concat([utf16("성명"), tabChar(0), utf16("홍길동")])),
     ])
-    assert.deepEqual(blocks.map(b => b.text), ["Ⅰ. 개요", "성명\t홍길동"])
+    assert.deepEqual(blocks.map(b => b.text), ["Ⅰ. 개요\t 12", "<참고1> 동향\t19\n<참고2> 개요\t20", "성명\t홍길동"])
   })
 })
 
@@ -331,5 +336,64 @@ describe("이미지 형식 판별 — 한컴 BinData WMF(배치 헤더 없음)·
     assert.equal(detectImageMime(Buffer.from([0x49, 0x49, 0x2a, 0x00])), "image/tiff")
     assert.equal(detectImageMime(Buffer.from([0x4d, 0x4d, 0x00, 0x2a])), "image/tiff")
     assert.equal(detectImageMime(Buffer.from([0x01, 0x00, 0x00, 0x00])), "image/emf")
+  })
+})
+
+describe("인라인 강조 span — HWPX run-spans 와 같은 판정 (글자 모양 굵게·밑줄)", () => {
+  const docInfo = {
+    charShapes: [{ fontSize: 100, attrFlags: 0 }, { fontSize: 100, attrFlags: 0x02 }, { fontSize: 100, attrFlags: 1 << 2 }, { fontSize: 100, attrFlags: 1 << 15 }],
+    paraShapes: [], styles: [], binData: [], numberings: [], bullets: [], borderEdges: [],
+  } as unknown as Parameters<typeof parseSection>[1]
+  const para = (text: string, runs: Array<[number, number]>): Buffer[] => {
+    const cs = Buffer.alloc(runs.length * 8)
+    runs.forEach(([p, id], k) => { cs.writeUInt32LE(p, k * 8); cs.writeUInt32LE(id, k * 8 + 4) })
+    return [rec(TAG_PARA_HEADER, 0, paraHeaderData()), rec(TAG_PARA_TEXT, 1, utf16(text)), rec(0x44, 1, cs)]
+  }
+  const parseWith = (bufs: Buffer[]) => parseSection(readRecords(Buffer.concat(bufs)), docInfo, [], 1, createHwp5DocState())
+
+  it("문단 안 굵게·밑줄 조각을 span 으로 — 마크다운 ** · <u>", () => {
+    const blocks = parseWith(para("성명 홍길동 확인", [[0, 0], [3, 1], [6, 0], [7, 2]]))
+    assert.deepEqual(blocks[0].spans, [{ text: "성명 " }, { text: "홍길동", bold: true }, { text: " " }, { text: "확인", underline: true }])
+    assert.equal(blocksToMarkdown(blocks).trim(), "성명 **홍길동** <u>확인</u>")
+  })
+
+  it("굵은 글 사이 보통 위첨자 — 첨자 태그가 span 마다 짝이 맞아 강조를 버리지 않는다 (HWPX 와 같다)", () => {
+    // 굵은 "확충" · 보통 위첨자 "*" · 굵은 " 및" — 종전엔 닫는 </sup> 가 다음 span 으로 가 문단 강조가 통째 사라졌다
+    const blocks = parseWith(para("확충* 및", [[0, 1], [2, 3], [3, 1]]))
+    assert.equal(blocksToMarkdown(blocks).trim(), "**확충**<sup>\\*</sup> **및**")
+  })
+
+  it("강제 줄바꿈이 든 문단은 강조 span 없이 평문 (HWPX 는 줄바꿈 요소가 든 문단에서 강조를 내지 않는다)", () => {
+    const blocks = parseWith(para("첫 줄\n둘째 줄", [[0, 1]]))
+    assert.equal(blocks[0].spans, undefined)
+  })
+
+  it("span 이 붙은 밑줄 문단은 글에 <u> 를 굽지 않는다 — 표지는 span 이 담는다 (칸 글로 그리는 경로에 표지가 남지 않게)", () => {
+    const blocks = parseWith(para("밑줄 문단", [[0, 2]]))
+    assert.equal(blocks[0].text, "밑줄 문단")
+    assert.equal(blocksToMarkdown(blocks).trim(), "<u>밑줄 문단</u>")
+  })
+
+  it("머리말 컨트롤이 붙은 문단 — 머리말이 비었으면 강조를 내고, 글이 있으면 평문 (HWPX 는 글 담은 ctrl 문단만 강조를 막는다)", () => {
+    const withHeader = (inner: Buffer[]): Buffer[] => {
+      const cs = Buffer.alloc(8); cs.writeUInt32LE(0, 0); cs.writeUInt32LE(1, 4)
+      return [rec(TAG_PARA_HEADER, 0, paraHeaderData()), rec(TAG_PARA_TEXT, 1, Buffer.concat([extCtrlChar(0x10, "daeh"), utf16("굵은 글")])),
+        rec(0x44, 1, cs), rec(TAG_CTRL_HEADER, 1, Buffer.from("daeh", "ascii")), rec(TAG_LIST_HEADER, 2, Buffer.alloc(8)), ...inner]
+    }
+    const empty = parseWith(withHeader([rec(TAG_PARA_HEADER, 2, paraHeaderData())]))
+    assert.deepEqual(empty[0].spans, [{ text: "굵은 글", bold: true }])
+    const filled = parseWith(withHeader([rec(TAG_PARA_HEADER, 2, paraHeaderData()), rec(TAG_PARA_TEXT, 3, utf16("머리말 글"))]))
+    assert.equal(filled.find(b => b.text?.includes("굵은 글"))?.spans, undefined)
+  })
+
+  const P04 = join(import.meta.dirname, "..", "bench", "corpus", "pairs")
+  const p04 = existsSync(P04) ? readdirSync(P04).find(f => f.startsWith("pair04-") && f.endsWith(".hwp")) : undefined
+  it("글상자 바로 안 문단은 강조 없이 평문 — HWPX drawText 문단과 같다 (코퍼스)", { skip: !p04 }, () => {
+    const md = parseHwp5Document(readFileSync(join(P04, p04!))).markdown
+    assert.ok(/(^|\n)55(\n|$)/.test(md) && !md.includes("*55*"), "글상자 \"55\" 문단")
+  })
+
+  it("강조 없는 문단은 span 없이 평문", () => {
+    assert.equal(parseWith(para("평문 문단", [[0, 0]]))[0].spans, undefined)
   })
 })

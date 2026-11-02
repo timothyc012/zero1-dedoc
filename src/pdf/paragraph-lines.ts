@@ -3,6 +3,7 @@ import { attachDropCaps } from "./local-regions.js"
 import { WrapLexicon, bodyLineJoins, wrapJoiner, startsNewItem, PARA_LAST_LINE, PARA_FIRST_LEFT } from "./line-wrap.js"
 import { computeBBox, dominantStyle, mergeLineSimple, sortLineByX, type NormItem } from "./text-line.js"
 import { tagScripts } from "./script-items.js"
+import { XY_WRAP_BANDS, tocRecordBoundaries } from "./xy-cut.js"
 
 /** 문단 블록의 서체별 글자 수 — 앞머리만 굵은 문장("Definition 1. A universe…")은 서체 차이로 제목이 아니다 */
 export const FACE_CHARS = new WeakMap<IRBlock, Map<string, number>>()
@@ -29,6 +30,43 @@ export function pushLineParagraphs(out: IRBlock[], yLines: NormItem[][], pageNum
     return { text: l.text, left: b.x, right: b.x + b.width, y: l.items.reduce((s, i) => s + i.y, 0) / l.items.length, fontSize: dominantStyle(l.items)?.fontSize ?? 0 }
   })
   const joins = bodyLineJoins(geo, lex)
+  // A two-line leaf can lose the other line-pitch samples from its parent region.
+  // Restore only those exact boundaries already confirmed before XY-cut.
+  const first = lines[0]?.items[0]
+  const bands = first ? XY_WRAP_BANDS.get(first) ?? [] : []
+  const hasBand = (top: number, bottom: number) => {
+    let lo = 0, hi = bands.length
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1
+      if (bands[mid].top > top + 3) lo = mid + 1
+      else hi = mid
+    }
+    for (; lo < bands.length && bands[lo].top >= top - 3; lo++) {
+      if (Math.abs(bands[lo].bottom - bottom) <= 3) return true
+    }
+    return false
+  }
+  for (let i = 0; i + 1 < geo.length; i++) {
+    if (joins[i] === "\n" && Math.abs(geo[i + 1].fontSize - geo[i].fontSize) <= 0.15 * geo[i].fontSize &&
+        !startsNewItem(geo[i].text, geo[i + 1].text) &&
+        hasBand(geo[i].y, geo[i + 1].y)) {
+      joins[i] = wrapJoiner(geo[i].text, geo[i + 1].text, lex)
+    }
+  }
+  // 줄 끝 아이템 뒤에 공백 글리프가 찍힌 꺾임은 어절 경계다 — 어휘 증거·형태 규칙이 붙인 것도 띄운다 (markTrailingSpaceGlyphs)
+  // 거꾸로 줄 끝 공백을 찍는 쪽에서 오른끝까지 찬 한글 줄이 공백 없이 끝나고 다음 줄이 영문·경로·연도 괄호("(ODA)"·"(/tmp"·"(’27~)")로
+  // 열면 앞 낱말에 붙은 원어·풀이다("공적개발원조⏎(ODA)", "하네스⏎(safety harness)" — 약어만 든 괄호는 원문도 띄운 곳이 섞여 형태 규칙이
+  // 띄운다). hwpx↔pdf 744쌍에서 이 꼴 78곳 모두 원문이 붙여 썼다. 한글·숫자로 여는 괄호("등⏎(국회의원)"·"지역⏎(2024년")는 원문도 띄운
+  // 곳이 섞이고, 덜 찬 줄은 원문 줄바꿈이다(ASEAN 노동장관회의 "…역량 인증⏎(Advancing …)")
+  const blockRight = Math.max(...geo.map(g => g.right))
+  for (let i = 0; i + 1 < lines.length; i++) {
+    const last = lines[i].items.reduce((a, b) => (b.x + b.w > a.x + a.w ? b : a))
+    if (joins[i] === "" && last.spaceAfter) joins[i] = " "
+    else if (joins[i] === " " && last.spaceAfter === false && blockRight - geo[i].right < 0.2 * geo[i].fontSize &&
+      /[가-힣]$/.test(geo[i].text.replace(/<\/?u>|~~/g, "").trimEnd()) && /^\((?:[A-Za-z/]|[’'‘])/.test(geo[i + 1].text.replace(/<\/?u>|~~/g, "").trimStart())) joins[i] = ""
+  }
+  // Completed TOC entries remain independent even inside a short-pitch leaf.
+  for (const i of tocRecordBoundaries(lines.map(line => line.items))) joins[i] = "\n"
   // 큰 글자로 따로 선 장 번호("2")는 아래 제목 줄과 다른 문단이다 (ODL 021)
   for (let i = 0; i + 1 < geo.length; i++) {
     if (/^\d{1,2}$/.test(geo[i].text.trim()) && geo[i].fontSize >= geo[i + 1].fontSize * 1.2) joins[i] = "\n"
@@ -54,7 +92,8 @@ export function pushLineParagraphs(out: IRBlock[], yLines: NormItem[][], pageNum
     for (const it of items) faces.set(it.fontName, (faces.get(it.fontName) ?? 0) + it.text.length)
     FACE_CHARS.set(block, faces)
     // 끝줄 기하 — 쪽 넘김 꺾임 잇기(joinPageBreakWraps) 재료
-    PARA_LAST_LINE.set(block.bbox!, { right: geo[i].right, width: geo[i].right - geo[i].left, fontSize: geo[i].fontSize })
+    PARA_LAST_LINE.set(block.bbox!, { right: geo[i].right, width: geo[i].right - geo[i].left, fontSize: geo[i].fontSize,
+      spaceAfter: lines[i].items.reduce((a, b) => (b.x + b.w > a.x + a.w ? b : a)).spaceAfter })
     PARA_FIRST_LEFT.set(block.bbox!, geo[first].left)
     out.push(block)
     i++

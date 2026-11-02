@@ -25,6 +25,10 @@ import type { LineSegment } from "../pdf/line-types.js"
 const INK_LUMA_MAX = 205
 /** 최소 선 길이 (pt) — 최소 셀 변(≈7mm)과 대형 글리프 획(≤1em) 사이 */
 const MIN_LINE_LENGTH_PT = 20
+/** 두 가로 괘선을 잇는 짧은 세로선의 최소 길이 (pt) — 조직도 상자 사이 연결선(16pt) */
+const BRIDGE_MIN_LENGTH_PT = 6
+/** 연결선이 잇는 상자의 최소 폭 (pt) */
+const BRIDGE_BOX_MIN_PT = 30
 /** 선 두께 상한 (pt) — 진짜 괘선(0.12~0.7mm ≈ 0.3~2pt)과 굵은 글리프 획(2pt+) 분리 */
 const MAX_LINE_WIDTH_PT = 2.5
 /** 런 내 허용 끊김 (px) — 스캔 노이즈/JPEG 아티팩트 */
@@ -63,6 +67,15 @@ const FILL_MIN_LENGTH_PT = 10
 const FILL_MIN_DEPTH_PT = 4
 const FILL_FLAT_TOL = 12
 const FILL_FLAT_RATIO = 0.8
+/**
+ * 채움 띠 안 밝은 칸 구분선 — 색 머리 행을 0.25pt 흰 선으로 가른 표는 216dpi 에서 선이 1px 도 안 돼 띠보다 조금 밝은 줄(띠 179 →
+ * 223)로만 남아 쪽 바탕 기준 채움 판정에 묻혔다(cbe-record-guide "페이지 | 주요 내용" 이 한 칸). 양옆 FILL_DIV_SIDE 블록이 채움이고
+ * 그 둘보다 FILL_DIV_DELTA 이상 밝은 블록 세로 런을 구분선 후보로 낸다 — 쓰임은 본문 세로 괘선과 같은 x 일 때만(detectRulingLines)
+ */
+const FILL_DIV_DELTA = 20
+/** 조각 난 채움 변을 이은 범위가 괘선 끝에서 떨어져도 되는 거리 (pt) — 칸 모서리 둥글림·첫 칸 글자 */
+const FILL_CHAIN_END_PT = 8
+const FILL_DIV_SIDE = 2
 
 /** 픽셀 공간(top-left origin) 선분 — 두께는 밴드 픽셀 수 */
 export interface PxSegment {
@@ -114,6 +127,31 @@ export function detectRulingLines(
   const dotH = detectBands(ink, width, height, maxThickPx, false, dotted)
   const dotV = detectBands(ink, width, height, maxThickPx, true, dotted)
   const tol = Math.max(2, Math.round(DOT_TOUCH_PT * scale))
+  // 같은 폭 두 가로 괘선을 잇는 짧은 세로선 — 최소 길이(20pt)에 못 미쳐 빠지던 조직도 연결선(과 상자 밑변 ↔ 팀 상자 윗변, 16pt)을 살린다.
+  // 텍스트층 경로는 벡터 연결선으로 두 상자를 한 열 격자로 묶어 과 → 팀 순으로 읽는다(여수 업무계획 조직도) — 위아래 끝이 모두
+  // 가로 괘선에 닿는 것만이라 칸 안 글자 획은 걸리지 않는다
+  const bridgeMin = Math.max(2, Math.round(BRIDGE_MIN_LENGTH_PT * scale))
+  const endsOn = (x: number, y: number) => horizontals.filter(h => Math.abs(h.y1 - y) <= tol + h.thicknessPx && h.x1 - tol <= x && h.x2 + tol >= x)
+  // 같은 폭 상자끼리(위 가로선과 아래 가로선의 양끝이 같다) — 조직도 가로 막대에서 상자로 내린 선까지 살리면 조직도 전체가 한 표로 뭉친다.
+  // 두 상자 사이 빈 틈이어야 한다 — 표 행은 양옆 세로 테두리가 그 사이를 지나가고, 행 높이에 꽉 찬 글자 획도 위아래 행 선에 닿는다
+  // (미래전략포럼 개요 표 3열이 16열로 갈렸다)
+  const sides = (x: number, y1: number, y2: number) => verticals.some(p => Math.abs(p.x1 - x) <= tol && p.y1 <= y1 + tol && p.y2 >= y2 - tol)
+  // 연결선은 상자 가로 가운데에 내린다(폭의 25% 안) — 겹친 네모 장식 그림 안 선은 가장자리에 붙는다(학교 업무 매뉴얼 표지 그림).
+  // 상자는 글 한 줄을 담을 폭(30pt) 이상
+  const boxMin = BRIDGE_BOX_MIN_PT * scale
+  // 위 가로선은 닫힌 상자의 밑변(양끝 세로 테두리가 위에서 내려와 거기서 끝남), 아래 가로선은 닫힌 상자의 윗변(양끝 테두리가 거기서
+  // 시작해 내려감)이어야 한다 — 테두리 없는 글 영역의 글자 획(가로로 긴 획)이 짧은 가로선으로 잡혀 그 사이를 이었다(web068 소속기관 줄)
+  const endsAt = (x: number, y: number) => verticals.some(p => Math.abs(p.x1 - x) <= tol && Math.abs(p.y2 - y) <= tol * 2 && p.y1 < y - tol)
+  const startsAt = (x: number, y: number) => verticals.some(p => Math.abs(p.x1 - x) <= tol && Math.abs(p.y1 - y) <= tol * 2 && p.y2 > y + tol)
+  const sameSpan = (a: PxSegment[], b: PxSegment[], x: number) => a.some(p => b.some(q => Math.abs(p.x1 - q.x1) <= tol && Math.abs(p.x2 - q.x2) <= tol
+    && p.x2 - p.x1 >= boxMin && Math.abs(x - (p.x1 + p.x2) / 2) <= (p.x2 - p.x1) * 0.25
+    && !sides(p.x1, p.y1, q.y1) && !sides(p.x2, p.y1, q.y1)
+    && endsAt(p.x1, p.y1) && endsAt(p.x2, p.y1) && startsAt(q.x1, q.y1) && startsAt(q.x2, q.y1)))
+  const shortV = detectBands(ink, width, height, maxThickPx, true, (m, base, step, span) => solidRuns(m, base, step, span, bridgeMin)).filter(v => v.y2 - v.y1 + 1 < minLenPx)
+  for (const v of shortV) {
+    if (!sameSpan(endsOn(v.x1, v.y1), endsOn(v.x1, v.y2), v.x1)) continue
+    if (!verticals.some(p => Math.abs(p.x1 - v.x1) <= tol && p.y1 <= v.y1 + tol && p.y2 >= v.y2 - tol)) verticals.push(v)
+  }
   const allH = [...horizontals, ...dotH], allV = [...verticals, ...dotV]
   // 가로 a 가 세로 선(p.x1 = p.x2)과 만나거나 끝이 닿는지 (세로 a 는 축을 바꿔 같은 판정)
   const touchesV = (a: PxSegment) => allV.some(p => p.x1 >= a.x1 - tol && p.x1 <= a.x2 + tol && a.y1 >= p.y1 - tol && a.y1 <= p.y2 + tol)
@@ -128,11 +166,56 @@ export function detectRulingLines(
   const ruleH = horizontals.filter(p => inkV.some(v => v.x1 >= p.x1 - tol && v.x1 <= p.x2 + tol && p.y1 >= v.y1 - tol && p.y1 <= v.y2 + tol))
   const fill = fillEdges(luma, width, height, scale)
   const fillH = fill.horizontals.filter(a => ruleH.some(p => Math.abs(p.x1 - a.x1) <= tol && Math.abs(p.x2 - a.x2) <= tol))
+  // 흰 틈으로 칸마다 가른 색 머리 띠는 윗변이 칸 조각으로 끊긴다(띠 위에 걸친 그림·흰 글자도 끊는다) — 같은 y 조각을 이은 범위가
+  // 표 가로 괘선 폭 안에서 양 끝 FILL_CHAIN_END 안에 닿고 그 폭의 절반 이상을 덮으면 그 괘선 폭의 변 하나로 받는다
+  // (pen-cyberbridge p3 주황 머리 "구분 | 일정 | 내용 | 비고" 윗변 4조각 — 받지 않아 머리 행이 표 밖 문단이 됐다)
+  const rows = new Map<number, PxSegment[]>()
+  for (const a of fill.horizontals) if (!fillH.includes(a)) (rows.get(Math.round(a.y1)) ?? rows.set(Math.round(a.y1), []).get(Math.round(a.y1))!).push(a)
+  const chainEnd = Math.round(FILL_CHAIN_END_PT * scale)
+  for (const [y, segs] of rows) {
+    for (const p of ruleH) {
+      const inside = segs.filter(a => a.x1 >= p.x1 - tol && a.x2 <= p.x2 + tol)
+      if (inside.length < 2 || fillH.some(f => Math.abs(f.y1 - y) <= tol && f.x1 <= p.x1 + tol && f.x2 >= p.x2 - tol)) continue
+      const lo = Math.min(...inside.map(a => a.x1)), hi = Math.max(...inside.map(a => a.x2))
+      const cover = inside.reduce((n, a) => n + a.x2 - a.x1, 0)
+      if (lo - p.x1 <= chainEnd && p.x2 - hi <= chainEnd && cover >= (p.x2 - p.x1) * 0.5) fillH.push({ ...inside[0], x1: p.x1, x2: p.x2 })
+    }
+  }
+  // 머리 띠 아랫변이 왼쪽 회색 열(색이 다른 칠)에서 끊겨 한쪽 끝만 표 괘선 끝에 닿는 것도 그 괘선 폭의 변이다 — 한 끝이 맞고
+  // 폭의 70% 이상을 덮고, 안 맞는 끝이 칠한 열의 세로변(그 끝에서 아래로 내려가는 채움 세로변)에 닿을 때(비법인 지목별 토지 표: 진한 머리 띠
+  // 아래 262–1498, 회색 첫 열 변 x=259 — 안 받아 머리 행과 첫 행이 한 칸이 됐다). 서식 칸 음영 변을 이어 칸을 쪼개지 않게 끝을 따진다
+  for (const a of fill.horizontals) {
+    if (fillH.some(f => f === a || Math.abs(f.y1 - a.y1) <= tol && f.x1 <= a.x1 + tol && f.x2 >= a.x2 - tol)) continue
+    const p = ruleH.find(p => (Math.abs(p.x1 - a.x1) <= tol || Math.abs(p.x2 - a.x2) <= tol) && a.x1 >= p.x1 - tol && a.x2 <= p.x2 + tol && a.x2 - a.x1 >= (p.x2 - p.x1) * 0.7)
+    if (!p || ruleH.some(q => Math.abs(q.y1 - a.y1) <= tol)) continue
+    const loose = Math.abs(p.x1 - a.x1) <= tol ? a.x2 : a.x1
+    const depthPx = Math.round(FILL_MIN_DEPTH_PT * scale)
+    if (fill.verticals.some(v => Math.abs(v.x1 - loose) <= tol * 2 && Math.abs(v.y1 - a.y1) <= tol * 2 && v.y2 - v.y1 >= depthPx * 4)) fillH.push({ ...a, x1: p.x1, x2: p.x2 })
+  }
   horizontals.push(...fillH)
   const edgeH = [...ruleH, ...fillH]
-  verticals.push(...fill.verticals.filter(a =>
-    inkV.some(p => Math.abs(p.x1 - a.x1) <= tol && p.y1 <= a.y2 + tol && p.y2 >= a.y1 - tol) ||
-    edgeH.some(p => (Math.abs(p.x1 - a.x1) <= tol || Math.abs(p.x2 - a.x1) <= tol) && p.y1 >= a.y1 - tol && p.y1 <= a.y2 + tol)))
+  const depth = Math.round(FILL_MIN_DEPTH_PT * scale)
+  for (const a of fill.verticals) {
+    // 머리 띠와 본문 사이 굵은 괘선(1pt)만큼은 떨어져도 같은 열 경계다 (pen-cyberbridge p3 띠 아래끝 → 세로 괘선 위끝 7px).
+    // 그런 띠 안 구분선은 띠 높이를 다 긋는다 — 띠 가장자리 블록에서 짧아진 위끝을 띠 윗변에 잇는다(안 이으면 머리 행이 한 칸).
+    // 아래끝을 세로 괘선 위끝까지 늘이지는 않는다 — 3° 기울인 cbe 2쪽에서 위아래 두 표가 한 격자로 용접됐다
+    const col = inkV.find(p => Math.abs(p.x1 - a.x1) <= tol && p.y1 <= a.y2 + tol * 2 && p.y2 >= a.y1 - tol * 2)
+    if (col) {
+      const top = edgeH.filter(h => h.x1 <= a.x1 + tol && h.x2 >= a.x1 - tol && h.y1 < a.y1 && h.y1 >= a.y1 - depth)
+      verticals.push({ ...a, y1: top.length ? Math.min(...top.map(h => h.y1)) : a.y1 })
+    } else if (edgeH.some(p => (Math.abs(p.x1 - a.x1) <= tol || Math.abs(p.x2 - a.x1) <= tol) && p.y1 >= a.y1 - tol && p.y1 <= a.y2 + tol)) verticals.push(a)
+    // 칠한 열(회색 첫 열)의 오른쪽 변 — 위끝·아래끝이 둘 다 받은 표 가로선 안에 닿고, 그 사이 표 괘선을 하나 넘게 가로질러
+    // 여러 행에 걸치면 열 경계다. 머리 띠 한 행 안의 밝은 줄(본문 세로 괘선과 x 가 안 맞는)은 아니다
+    else if ([a.y1, a.y2].every(y => edgeH.some(p => Math.abs(p.y1 - y) <= tol * 2 && p.x1 < a.x1 - tol && p.x2 > a.x1 + tol)) &&
+      ruleH.some(p => p.y1 > a.y1 + tol * 2 && p.y1 < a.y2 - tol * 2 && p.x1 < a.x1 - tol && p.x2 > a.x1 + tol)) verticals.push(a)
+  }
+  // 머리 띠 안의 짧은 칸 구분선 — 띠 아래 겹줄 틈에서 아래 세로 괘선과 끊겨 최소 길이에 못 미쳤다. 위끝·아래끝이 가로 괘선에 닿고 바로 아래에서
+  // 같은 x 의 세로 괘선이 시작하면 그 열 경계다(검정고시 계획 과목 표: 노란 머리 행의 회색 구분선 15pt — 안 받으면 머리 글이 한 칸에 몰렸다)
+  for (const v of shortV) {
+    if (!endsOn(v.x1, v.y1).length || !endsOn(v.x1, v.y2).length) continue
+    if (!verticals.some(p => Math.abs(p.x1 - v.x1) <= tol && p.y1 >= v.y2 - tol && p.y1 <= v.y2 + tol * 3 && p.y2 - p.y1 + 1 >= minLenPx)) continue
+    if (!verticals.some(p => Math.abs(p.x1 - v.x1) <= tol && p.y1 <= v.y1 + tol && p.y2 >= v.y2 - tol)) verticals.push(v)
+  }
   // Faint internal rules are evidence only when enclosed by an existing dark
   // frame and repeated across both axes. Do not brighten the whole page's grid.
   const cellDividers: PxSegment[] = []
@@ -239,6 +322,15 @@ function fillEdges(pageLuma: Uint8Array, width: number, height: number, scale: n
       ;(vertical ? out.verticals : out.horizontals).push({ x1: c(s.x1), y1: c(s.y1), x2: c(s.x2), y2: c(s.y2), thicknessPx: 1 })
     }
   }
+  const div = new Uint8Array(n)
+  for (let y = 0; y < h; y++) {
+    for (let x = FILL_DIV_SIDE; x < w - FILL_DIV_SIDE; x++) {
+      const p = y * w + x, l = p - FILL_DIV_SIDE, r = p + FILL_DIV_SIDE
+      if (tint[l] && tint[r] && luma[p] >= Math.max(luma[l], luma[r]) + FILL_DIV_DELTA) div[p] = 1
+    }
+  }
+  const c = (v: number) => v * k + (k - 1) / 2
+  for (const s of detectBands(div, w, h, 1, true, solid)) out.verticals.push({ x1: c(s.x1), y1: c(s.y1), x2: c(s.x2), y2: c(s.y2), thicknessPx: 1 })
   return out
 }
 

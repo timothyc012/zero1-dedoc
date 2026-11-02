@@ -10,12 +10,13 @@
  * 디코딩은 optional dependency `sharp` — 미설치면 MISSING_DEPENDENCY 안내.
  */
 
-import type { IRBlock, ParseOptions, ParseWarning } from "../types.js"
+import type { IRBlock, OcrPageLines, ParseOptions, ParseWarning } from "../types.js"
 import { KordocError, OPTIONAL_DEP_INSTALL_HINT } from "../utils.js"
 import { getOcrEngine, type OcrPageStats } from "./engine.js"
-import { ensureOcrModels } from "./models.js"
+import { ensureOcrModelsFor } from "./models.js"
+import { applyImageFormulas } from "./image-formula.js"
 import { detectRulingLines, rulingToPdfLines } from "./ruling-lines.js"
-import { MAX_OCR_PIXELS, ocrItemsToBlocks } from "./pdf-ocr.js"
+import { MAX_OCR_PIXELS, builtinOcrConfig, cellEdgeHorizontals, cellEdgeVerticals, ocrItemsToBlocks, pageLines, recognizeOcrPage, reportModelDownload } from "./pdf-ocr.js"
 import { deskewPage } from "./deskew.js"
 
 /** 좌표 환산 기본 스케일 (px/pt) — PDF OCR 렌더(216dpi)와 동일 기준 */
@@ -42,6 +43,8 @@ export function imageScale(width: number, height: number, densityDpi?: number): 
 export interface ImageOcrResult {
   blocks: IRBlock[]
   warnings: ParseWarning[]
+  /** ocrLines 옵션일 때 이미지(1쪽)의 OCR 줄 */
+  lines?: OcrPageLines
 }
 
 /** 이미지 버퍼 → OCR → IRBlock[] (표 괘선 감지 포함) */
@@ -66,16 +69,21 @@ export async function parseImageDocument(
   // 픽셀 상한으로 줄인 이미지는 같은 지면을 낮은 해상도로 본 것 — px/pt 도 같은 비율로
   const scale = imageScale(width / shrink, height / shrink, density) * shrink
   // 스캔·사진 기울기 보정 — 인식과 괘선 감지가 같은(바로 선) 래스터를 본다
-  const { rgba: data } = deskewPage(decoded, width, height)
+  const { rgba: data, angle } = deskewPage(decoded, width, height)
 
-  await ensureOcrModels(p => {
-    if (p.phase === "download" && p.downloaded === 0) {
-      process.stderr.write(`[kordoc-ocr] ${p.spec.name} 다운로드 중 (~${p.spec.sizeMb}MB)...\n`)
-    }
-  }, options?.ocrLanguage)
-  const engine = await getOcrEngine(options?.ocrLanguage)
-  const stats: OcrPageStats = { droppedLowConf: 0 }
-  const items = await engine.recognizePage(data, width, height, stats)
+  const config = builtinOcrConfig(options)
+  await ensureOcrModelsFor(config.models, reportModelDownload)
+  if (config.handwriting) await ensureOcrModelsFor(config.handwriting, reportModelDownload)
+  const engine = await getOcrEngine(config.models)
+  const stats: OcrPageStats = { droppedLowConf: 0, ...(config.lines === "all" ? { dropped: [] } : {}) }
+  // 괘선을 먼저 찾아 검출 상자를 표 칸·행 경계에서 가른다 — PDF OCR(ocrOnePage)과 같은 순서. 인식 뒤에 찾으면 이웃 칸 글이 한 상자로
+  // 묶여 인식됐다(통계 보도자료 표 "2023 2024p ’23년대비" → "20232024p’23")
+  const ruling = detectRulingLines(data, width, height, scale)
+  let items = await recognizeOcrPage(engine, config, config.tuning, data, width, height, stats,
+    [...(ruling.cellDividers ?? []), ...cellEdgeVerticals(ruling)], cellEdgeHorizontals(ruling))
+  // 수식 OCR(선택) — 수식 자리 글상자를 $LaTeX$ 로 (image-formula)
+  if (options?.formulaOcr) items = await applyImageFormulas(items, data, width, height, warnings)
+  const lines = config.lines ? pageLines(1, width, height, scale, angle, items, stats.dropped) : undefined
   if (stats.droppedLowConf > 0) {
     warnings.push({
       page: 1,
@@ -88,14 +96,13 @@ export async function parseImageDocument(
   }
   if (items.length === 0) {
     warnings.push({ page: 1, message: "이미지에서 텍스트를 인식하지 못했습니다", code: "OCR_FAILED" })
-    return { blocks: [], warnings }
+    return { blocks: [], warnings, lines }
   }
 
   const pdfW = width / scale
   const pdfH = height / scale
-  const ruling = detectRulingLines(data, width, height, scale)
   const extraLines = rulingToPdfLines(ruling, scale, pdfH)
-  return { blocks: ocrItemsToBlocks(items, 1, pdfW, pdfH, scale, extraLines, options?.tables !== false), warnings }
+  return { blocks: ocrItemsToBlocks(items, 1, pdfW, pdfH, scale, extraLines, options?.tables !== false), warnings, lines }
 }
 
 /**

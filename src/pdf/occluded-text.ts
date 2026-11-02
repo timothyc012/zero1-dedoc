@@ -39,6 +39,13 @@ export function occludedTextItems(items: PdfTextItem[], fnArray: ArrayLike<numbe
       stack.push({ ctm: ctm.slice(), alpha, normalBlend, clip })
       const m = fn === OPS.paintFormXObjectBegin ? (args as unknown[])[0] : null
       if (Array.isArray(m) && m.length >= 6) ctm = mul(ctm, m as number[])
+      const bbox = fn === OPS.paintFormXObjectBegin ? args[1] : null
+      if (Array.isArray(bbox) && bbox.length === 4 && clip !== null) {
+        // 비스듬한 Form 경계는 축 정렬 사각형으로 넓혀 판정하지 않는다.
+        const axisAligned = ctm[1] === 0 && ctm[2] === 0 || ctm[0] === 0 && ctm[3] === 0
+        const bounds = box(bbox[0], bbox[1], bbox[2] - bbox[0], bbox[3] - bbox[1])
+        clip = axisAligned ? (clip ? meet(clip, bounds) : bounds) : null
+      }
     } else if (fn === OPS.restore || fn === OPS.paintFormXObjectEnd) {
       const s = stack.pop()
       if (s) ({ ctm, alpha, normalBlend, clip } = s)

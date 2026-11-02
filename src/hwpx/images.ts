@@ -6,7 +6,7 @@
 import type JSZip from "jszip"
 import { KordocError, isPathTraversal } from "../utils.js"
 import type { ExtractedImage, IRBlock, IRCell, ParseWarning } from "../types.js"
-import { MAX_DECOMPRESS_SIZE, MAX_XML_DEPTH } from "./parser-shared.js"
+import { MAX_DECOMPRESS_SIZE, MAX_XML_DEPTH, readZipEntry } from "./parser-shared.js"
 import { detectImageMime } from "../hwp5/images.js"
 
 // ─── 이미지 추출 ───────────────────────────────────
@@ -70,6 +70,7 @@ export async function extractImagesFromZip(
   decompressed: { total: number },
   warnings?: ParseWarning[],
   sweepUnreferenced?: boolean,
+  deletedRefs?: Set<string>,
 ): Promise<ExtractedImage[]> {
   const images: ExtractedImage[] = []
   let imageIndex = 0
@@ -116,12 +117,14 @@ export async function extractImagesFromZip(
         if (!file) continue
 
         try {
-          const data = await file.async("uint8array")
+          const data = await readZipEntry(file, "uint8array", decompressed.total)
           decompressed.total += data.length
           if (decompressed.total > MAX_DECOMPRESS_SIZE) throw new KordocError("ZIP 압축 해제 크기 초과 (ZIP bomb 의심)")
 
           const ext = path.includes(".") ? (path.split(".").pop() || "png") : "png"
-          const mimeType = imageExtToMime(ext)
+          // 스크립트·이벤트 속성이 든 SVG 는 그림으로 내보내지 않는다 — 추출 파일을 브라우저로 열면 그 스크립트가 돈다
+          const extMime = imageExtToMime(ext)
+          const mimeType = extMime === "image/svg+xml" && /<script|\son[a-z]+\s*=|javascript:|<foreignObject/i.test(Buffer.from(data).toString("utf8")) ? "application/octet-stream" : extMime
           imageIndex++
           const filename = `image_${String(imageIndex).padStart(3, "0")}.${mimeToExt(mimeType)}`
 
@@ -162,8 +165,12 @@ export async function extractImagesFromZip(
     const binEntries = zip.file(/(?:^|\/)BinData\//i)
     for (const file of binEntries) {
       if (file.dir || usedPaths.has(file.name) || isPathTraversal(file.name)) continue
+      // 살아있는 동일 ref는 위 image 블록 처리에서 이미 보존했다. 삭제 개체만 참조한 바이너리는 보강하지 않는다.
+      const basename = file.name.slice(file.name.lastIndexOf("/") + 1)
+      if (deletedRefs?.has(file.name) || deletedRefs?.has(basename)
+        || deletedRefs?.has(file.name.replace(/\.[^/.]+$/, "")) || deletedRefs?.has(basename.replace(/\.[^.]+$/, ""))) continue
       try {
-        const data = await file.async("uint8array")
+        const data = await readZipEntry(file, "uint8array", decompressed.total)
         decompressed.total += data.length
         if (decompressed.total > MAX_DECOMPRESS_SIZE) throw new KordocError("ZIP 압축 해제 크기 초과 (ZIP bomb 의심)")
 

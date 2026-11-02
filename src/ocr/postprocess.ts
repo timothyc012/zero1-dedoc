@@ -27,7 +27,42 @@ export function restoreSymbols(text: string, ringDecided = false): string {
   // "(cid:NN)" 은 PDF 텍스트 추출기가 유니코드 없는 글리프에 쓰는 표기 — 인식기가 학습 자료에서 배워 티끌·가는
   // 막대 박스에 낸다(pcccr·rda-planfarm·yeosu 실측, 박스 5~16px). 인쇄된 글자일 수 없으니 지운다
   s = s.replace(/\(cid:\d*\)/g, "")
-  return smartQuotes(joinDigitGroups(s))
+  // 직함 앞 "전(前)·현(現)" — 인식 사전에 前·現 이 없어 괄호만 남는다("트리셰 전()유럽중앙은행 총재", 금융안정 콘퍼런스 보도자료).
+  // 낱말 머리에 홀로 선 전·현 뒤 빈 괄호만 채운다(속기록 "생기()되는" 같은 다른 한자 자리는 무엇인지 모르니 둔다)
+  s = s.replace(/(^|[^\uac00-\ud7a3])(전|현)\(\s?\)(?=\S)/g, (_, a: string, b: string) => `${a}${b}(${b === "전" ? "\u524d" : "\u73fe"})`)
+  // 리터 ℓ — 사전 밖이라 라틴 l 로 읽는다("200l*12월" → "200ℓ*12월", 고흥 예산서). 한글 줄의 숫자 바로 뒤 홑 l 만(코퍼스 텍스트층
+  // 숫자 뒤 ℓ 70 : l 0)
+  if (/[가-힣]/.test(s)) s = s.replace(/(\d)l(?![A-Za-z])/g, "$1\u2113")
+  // 전화 기호 ☎ — 인식 사전 밖이라 라틴 글자 하나로 나온다("홍길동 과장(a750-2730)", 방통위 보도자료). 여는 괄호 바로 뒤 홑 라틴 글자에
+  // 붙임표 든 전화번호가 이어질 때만("(G20)" 같은 괄호 속 낱말은 붙임표 번호가 아니다)
+  // 붙여 쓴다(코퍼스 텍스트층 ☎ 뒤 숫자 292 : 공백 12)
+  s = s.replace(/([(（])\s?[A-Za-z@&]\s?(?=(?:0\d{1,2}-)?\d{3,4}-\d{4}\b)/g, "$1\u260e")
+  // 네모 친 번호를 "[②" 로 읽은 줄 머리 — 상자 왼 변을 여는 대괄호로 읽었다(농진청 성과계획 목차, 텍스트층은 ①②). 닫는 "]" 가 없는
+  // 줄의 머리 "[" 바로 뒤가 원문자일 때만 지운다
+  if (!s.includes("]")) s = s.replace(/^\[(?=[\u2460-\u2473])/, "")
+  return smartQuotes(dateDots(dateCommas(joinDigitGroups(s))))
+}
+
+/**
+ * 날짜 마침표를 쉼표로 읽은 것 — "2021, 12, 9" → "2021. 12. 9"(선거 사례집). 네 자리 연도 뒤 한두 자리 월·일만 —
+ * 천 단위 쉼표는 늘 세 자리씩 끊기니("2,021") 숫자와 섞이지 않는다
+ */
+export function dateCommas(s: string): string {
+  return s.replace(/(?<![\d,.])((?:19|20)\d{2})(\s?)[,.](\s?)(1[0-2]|0?[1-9])(\s?),(\s?)(3[01]|[12]\d|0?[1-9])(?![\d,])/g, "$1.$2$3$4.$5$6$7")
+    .replace(/(?<![\d,.])((?:19|20)\d{2})(\s?),(\s?)(1[0-2]|0?[1-9])(\s?)\.(\s?)(3[01]|[12]\d|0?[1-9])(?![\d,])/g, "$1.$2$3$4.$5$6$7")
+}
+
+/**
+ * 요일 붙은 날짜에서 빠진 마침표 — "2022. 3.3(목)" → "2022. 3.3.(목)", "2022 1.8.(토)" → "2022. 1.8.(토)"(선거 사례집).
+ * 작은 마침표가 숫자·괄호에 붙어 사라진다. 공문서는 요일 앞 일자 뒤에 마침표를 찍는다(PDF 코퍼스 텍스트층 1,110 : 21)
+ */
+export function dateDots(s: string): string {
+  // 물결 기간 앞 날짜의 빠진 끝점 — "’26.4~’26.12." → "’26.4.~’26.12.". 끝 날짜에 점이 있으면 앞 날짜도 찍는다(OCR 코퍼스 정답 물결 기간
+  // 11 : 0, 작은 점이 물결에 붙어 사라진다). 붙임표 기간("2020.04.13 - 2020.11.30.")은 정답도 앞 점이 없어 그대로
+  const D = String.raw`(?:[’‘']\d{2}|(?:19|20)\d{2})\. ?(?:1[0-2]|0?[1-9])(?:\. ?(?:3[01]|[12]\d|0?[1-9]))?`
+  s = s.replace(new RegExp(String.raw`(?<![\d.])(${D})(?= ?[~∼～] ?${D}\.(?! ?\d))`, "g"), "$1.")
+  return s.replace(/(?<![\d,.])((?:19|20)\d{2})( ?\. ?| )(1[0-2]|0?[1-9])( ?\. ?)(3[01]|[12]\d|0?[1-9])(\.?)( ?)(?=\([월화수목금토일]\))/g,
+    (_, y: string, a: string, m: string, b: string, d: string, _dot: string, sp: string) => `${y}${a === " " ? ". " : a}${m}${b}${d}.${sp}`)
 }
 
 /**
@@ -89,7 +124,8 @@ export function joinLeaderItems<T extends Placed>(items: T[], ends: Map<T, { lea
   const sameLine = (a: T, b: T) => Math.abs(a.y + a.h / 2 - (b.y + b.h / 2)) <= Math.max(a.h, b.h) / 2
   const merge = (left: T, right: T): void => {
     const x2 = Math.max(left.x + left.w, right.x + right.w), y2 = Math.max(left.y + left.h, right.y + right.h)
-    left.text = left.text.replace(/\s*\u2026$/, "") + " \u2026 " + right.text.replace(/^\u2026\s*/, "")
+    // 리더 가장자리에 걸친 점·쌍점 조각은 리더의 일부다("행정지원국 : … 419", "보건소·• … 561")
+    left.text = left.text.replace(/[\s.:\u00b7\u2022\u2026]+$/u, "") + " \u2026 " + right.text.replace(/^[\s.:\u00b7\u2022\u2026]+/u, "")
     left.x = Math.min(left.x, right.x)
     left.y = Math.min(left.y, right.y)
     left.w = x2 - left.x
@@ -97,25 +133,30 @@ export function joinLeaderItems<T extends Placed>(items: T[], ends: Map<T, { lea
     left.confidence = Math.min(left.confidence, right.confidence)
     gone.add(right)
   }
+  // 리더 가장자리에 따로 검출된 점·쌍점 잡티 박스("행정지원국 [:] [… 419]")는 건너뛰고 지운다
+  const junk = (o: T) => /^[\s.:\u00b7\u2022\u2026]+$/u.test(o.text)
   const neighbor = (it: T, toLeft: boolean): T | null => {
     let best: T | null = null
     for (const o of items) {
-      if (o === it || gone.has(o) || !sameLine(o, it)) continue
+      if (o === it || gone.has(o) || !sameLine(o, it) || junk(o)) continue
       if (toLeft ? o.x + o.w > it.x + 2 : o.x < it.x + it.w - 2) continue
       if (!best || (toLeft ? o.x + o.w > best.x + best.w : o.x < best.x)) best = o
     }
     return best
   }
   // 오른쪽부터 — 쪽번호 쪽("… 12")을 왼쪽 이웃에 붙이고, 제목 쪽("제목 …")은 오른쪽 이웃을 당겨 붙인다
+  const dropJunkBetween = (left: T, right: T) => {
+    for (const o of items) if (!gone.has(o) && junk(o) && sameLine(o, left) && o.x + o.w / 2 >= left.x + left.w - left.h && o.x + o.w / 2 <= right.x + right.h) gone.add(o)
+  }
   for (const it of [...items].sort((a, b) => b.x - a.x)) {
     if (gone.has(it) || !ends.get(it)?.lead) continue
     const left = neighbor(it, true)
-    if (left) merge(left, it)
+    if (left) { dropJunkBetween(left, it); merge(left, it) }
   }
   for (const it of [...items].sort((a, b) => a.x - b.x)) {
     if (gone.has(it) || !ends.get(it)?.trail) continue
     const right = neighbor(it, false)
-    if (right) merge(it, right)
+    if (right) { dropJunkBetween(it, right); merge(it, right) }
   }
   // 리더 점을 못 찾은 목차 줄 — 잡음·흐림에 점이 덜 잡히면 몇 줄만 [제목][쪽번호] 두 아이템으로 남고, 이어진 줄들 사이의
   // 그 두 줄이 클러스터 표를 불러 목차 전체를 칸에 섞었다(archives-record-duty 잡음 σ12: 29줄 중 3줄). 같은 쪽에서 리더로
@@ -128,12 +169,20 @@ export function joinLeaderItems<T extends Placed>(items: T[], ends: Map<T, { lea
       if (toc.filter(t => Math.abs(t.x + t.w - x2) <= Math.max(t.h, it.h)).length < 2) continue
       const left = neighbor(it, true)
       if (!left || toc.includes(left)) continue
-      left.text = left.text.replace(/[\s.:\u00b7\u2026]+$/, "")
-      it.text = it.text.replace(/^[\s.:\u00b7\u2026]+/, "")
+      dropJunkBetween(left, it)
       merge(left, it)
     }
   }
   return items.filter(it => !gone.has(it))
+}
+
+/**
+ * 남의 박스 안에 통째로 든 작은 조각 — 검출기가 이미 읽은 글자의 획 하나를 따로 잡아 읽은 것("업" 아래 ㅂ → "D", "여건" 안 점 → "‘",
+ * 함평 목차). 박스가 다른 박스 안에(2px 여유) 들고 높이가 그 박스의 60% 이하이며 신뢰도가 더 낮으면 버린다
+ */
+export function dropNestedFragments<T extends { x: number; y: number; w: number; h: number; confidence: number }>(items: T[]): T[] {
+  const inside = (a: T, b: T) => a.x >= b.x - 2 && a.x + a.w <= b.x + b.w + 2 && a.y >= b.y - 2 && a.y + a.h <= b.y + b.h + 2
+  return items.filter(a => !items.some(b => b !== a && a.h <= b.h * 0.6 && a.confidence < b.confidence && inside(a, b)))
 }
 
 /**

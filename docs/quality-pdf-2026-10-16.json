@@ -1,0 +1,227 @@
+{
+  "date": "2026-10-16",
+  "status": "unreleased",
+  "baseline": {
+    "version": "4.22.1",
+    "commit": "628e43446b63902b4d514f67d10652c837b36067",
+    "tag": "pdf-score-20261016-baseline"
+  },
+  "candidateTag": "pdf-score-20261016-final",
+  "groundTruthChanged": false,
+  "scorerChanged": false,
+  "populationChanged": false,
+  "tests": {
+    "total": 3967,
+    "passed": 3958,
+    "skipped": 9,
+    "failed": 0
+  },
+  "typecheck": "pass",
+  "build": "pass",
+  "sourceAndDistUnchangedDuringBench": true,
+  "comparisons": {
+    "text": {
+      "scoringRows": 744,
+      "before": {
+        "pairs": 744,
+        "refChars": 2857682,
+        "recall": 0.99858,
+        "precision": 0.9967,
+        "order": 0.99232,
+        "spaceF1": 0.99019,
+        "parseErrors": 0,
+        "excluded": 22
+      },
+      "after": {
+        "pairs": 744,
+        "refChars": 2857682,
+        "recall": 0.99858,
+        "precision": 0.9967,
+        "order": 0.99238,
+        "spaceF1": 0.99019,
+        "parseErrors": 0,
+        "excluded": 22
+      },
+      "down": 0,
+      "up": 1,
+      "improvedDocuments": [
+        "korea-kr-pairs2/156775701_2026년 벼 고추 재배면적조사 결과 보도자료"
+      ]
+    },
+    "table": {
+      "scoringRows": 730,
+      "before": {
+        "pairs": 708,
+        "refTables": 2331,
+        "reordered": 5,
+        "matchedRate": 0.998284,
+        "exactRate": 0.980266,
+        "cellF1": 0.991267,
+        "cellExactRate": 0.987963,
+        "contentNED": 0.984361,
+        "parseErrors": 0,
+        "nested": {
+          "pairs": 29,
+          "refTables": 101,
+          "reordered": 0,
+          "matchedRate": 1,
+          "exactRate": 1,
+          "cellF1": 1,
+          "cellExactRate": 1,
+          "contentNED": 1
+        }
+      },
+      "after": {
+        "pairs": 708,
+        "refTables": 2331,
+        "reordered": 5,
+        "matchedRate": 0.998284,
+        "exactRate": 0.980266,
+        "cellF1": 0.991406,
+        "cellExactRate": 0.9882,
+        "contentNED": 0.984727,
+        "parseErrors": 0,
+        "nested": {
+          "pairs": 29,
+          "refTables": 101,
+          "reordered": 0,
+          "matchedRate": 1,
+          "exactRate": 1,
+          "cellF1": 1,
+          "cellExactRate": 1,
+          "contentNED": 1
+        }
+      },
+      "down": 0,
+      "up": 2,
+      "improvedDocuments": [
+        "korea-kr-pairs2/156775701_2026년 벼 고추 재배면적조사 결과 보도자료",
+        "korea-kr-pairs2/156775997_260830_보도자료_26.9월 제조업 고위험 기계기구 취급사업장 집중 점검 운영"
+      ]
+    },
+    "annex": {
+      "scoringRows": 544,
+      "down": 0,
+      "up": 0,
+      "pdfExactTables": 342,
+      "pdfRefTables": 346,
+      "hwpExactTables": 346
+    },
+    "odl": {
+      "documents": 200,
+      "before": {
+        "overall_mean": 0.9629058908199619,
+        "nid_mean": 0.9631607483582301,
+        "nid_s_mean": 0.9665999478099063,
+        "teds_mean": 0.9801519879224879,
+        "teds_s_mean": 0.9906982529854047,
+        "mhs_mean": 0.9482938079964137,
+        "mhs_s_mean": 0.9781551873085683
+      },
+      "after": {
+        "overall_mean": 0.9629058908199619,
+        "nid_mean": 0.9631607483582301,
+        "nid_s_mean": 0.9665999478099063,
+        "teds_mean": 0.9801519879224879,
+        "teds_s_mean": 0.9906982529854047,
+        "mhs_mean": 0.9482938079964137,
+        "mhs_s_mean": 0.9781551873085683
+      },
+      "down": 0,
+      "up": 0,
+      "missingPredictions": 0
+    },
+    "odlbest": {
+      "documents": 200,
+      "before": {
+        "overall_mean": 0.9743759571983334,
+        "nid_mean": 0.9786457957918223,
+        "nid_s_mean": 0.9780632314807746,
+        "teds_mean": 0.9829880022855516,
+        "teds_s_mean": 0.9908039556438265,
+        "mhs_mean": 0.9581737322652393,
+        "mhs_s_mean": 0.9781551873085683
+      },
+      "after": {
+        "overall_mean": 0.9743759571983334,
+        "nid_mean": 0.9786457957918223,
+        "nid_s_mean": 0.9780632314807746,
+        "teds_mean": 0.9829880022855516,
+        "teds_s_mean": 0.9908039556438265,
+        "mhs_mean": 0.9581737322652393,
+        "mhs_s_mean": 0.9781551873085683
+      },
+      "down": 0,
+      "up": 0,
+      "missingPredictions": 0
+    },
+    "odlocr": {
+      "documents": 200,
+      "before": {
+        "overall_mean": 0.9644498639914558,
+        "nid_mean": 0.963903682730123,
+        "nid_s_mean": 0.9676677432986254,
+        "teds_mean": 0.9801519879224879,
+        "teds_s_mean": 0.9906982529854047,
+        "mhs_mean": 0.9537068357383429,
+        "mhs_s_mean": 0.9851645331029608
+      },
+      "after": {
+        "overall_mean": 0.9644498639914558,
+        "nid_mean": 0.963903682730123,
+        "nid_s_mean": 0.9676677432986254,
+        "teds_mean": 0.9801519879224879,
+        "teds_s_mean": 0.9906982529854047,
+        "mhs_mean": 0.9537068357383429,
+        "mhs_s_mean": 0.9851645331029608
+      },
+      "down": 0,
+      "up": 0,
+      "missingPredictions": 0
+    },
+    "odlfast": {
+      "documents": 200,
+      "before": {
+        "overall_mean": 0.9386471081508861,
+        "nid_mean": 0.9394781066267133,
+        "nid_s_mean": 0.9449332292214208,
+        "teds_mean": 0.9368989769486482,
+        "teds_s_mean": 0.9430792053663571,
+        "mhs_mean": 0.9340166198659459,
+        "mhs_s_mean": 0.9728147333699835
+      },
+      "after": {
+        "overall_mean": 0.9386471081508861,
+        "nid_mean": 0.9394781066267133,
+        "nid_s_mean": 0.9449332292214208,
+        "teds_mean": 0.9368989769486482,
+        "teds_s_mean": 0.9430792053663571,
+        "mhs_mean": 0.9340166198659459,
+        "mhs_s_mean": 0.9728147333699835
+      },
+      "down": 0,
+      "up": 0,
+      "missingPredictions": 0
+    }
+  },
+  "contentAudits": [
+    {
+      "document": "156775701",
+      "beforeChars": 9760,
+      "afterChars": 9760,
+      "lostCharacters": 0,
+      "addedCharacters": 0,
+      "cellMissesBefore": 6,
+      "cellMissesAfter": 0
+    },
+    {
+      "document": "156775997",
+      "beforeChars": 4759,
+      "afterChars": 4759,
+      "lostCharacters": 0,
+      "addedCharacters": 0,
+      "cellMissesBefore": 22,
+      "cellMissesAfter": 4
+    }
+  ]
+}

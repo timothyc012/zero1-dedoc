@@ -33,28 +33,54 @@ export interface NormItem {
   hasSpaceBefore?: boolean
   /** 직전 공백이 pdfjs 가 글자 틈으로 만든 것뿐(글리프 흐름에 공백 글리프 없음, tracked-text markSyntheticSpaces) — 균등배분 run 을 끊지 않는다 */
   syntheticSpace?: boolean
+  /** 줄 끝 아이템 뒤 글리프가 공백 글리프인가(tracked-text markTrailingSpaceGlyphs) — true 면 이 줄의 꺾임은 어절 경계, false 는 줄 끝 공백을
+   *  찍는 쪽에서 공백이 없던 줄 끝, 없으면 모름 */
+  spaceAfter?: boolean
   /** 취소선이 그어진 텍스트 (신구조문대비표 삭제 표시 등) */
   strike?: boolean
   /** 밑줄이 그어진 텍스트 (개정문 추가·변경 표시, 제목 강조 등) */
   underline?: boolean
+  /** 반올림 전 x·폭 — 자간 보정 공백 판정(trackedGaps)만 쓴다. 뒤에서 x·폭을 바꾼 아이템은 반올림 값이 어긋나 무시된다 */
+  fx?: number
+  fw?: number
   /** 콘텐츠 스트림 순번 — 좌표가 겹친 글자의 순서를 되살리는 데만 쓴다 (sortLineByX) */
   seq?: number
   /** 세로로 돌린 글 (글자 진행 방향이 y)의 세로 길이 — 쪽 여백 도장("arXiv:… [cs.CL]") 가르기용 */
   rotated?: number
+  /** 돌린 글이 아래로 진행(시계 방향 90°) — 없으면 위로(반시계) */
+  rotatedDown?: true
 }
 
 /** 같은 줄 아이템 x 정렬 — x 가 1pt 이내로 붙은 이웃은 콘텐츠 스트림 순서를 따른다. 좌표를 정수로 반올림하므로
  *  자간을 줄인 숫자에서 뒤 글자가 앞 글자 위로 0.1pt 겹치면(“.”@251.5 → 252, “8”@251.4 → 251) x 만으로는
- *  "147.8" 이 "1478." 로 뒤집힌다(해외직접투자 보도자료 표 실측). 제자리 정렬 후 반환 */
-export function sortLineByX<T extends { x: number; seq?: number }>(items: T[]): T[] {
+ *  "147.8" 이 "1478." 로 뒤집힌다(해외직접투자 보도자료 표 실측). 글자 폭의 0.35 안으로 겹쳐 덧찍은 이웃도 같다 — 채움 점이
+ *  넘친 목차 줄은 쪽 번호 글자를 거꾸로 겹쳐 찍는다("175" = 1@463.4·7@461.0·5@458.6, 편람 차례). 제자리 정렬 후 반환 */
+/** 덧찍은 이웃으로 볼 x 차 상한 (좁은 글자 폭 배수) — 넘친 목차 쪽 번호 실측 0.32, 보통 글자 진행은 0.5 넘게 */
+const OVERPRINT_RATIO = 0.35
+
+export function sortLineByX<T extends { x: number; seq?: number; w?: number; fontSize?: number; text?: string }>(items: T[]): T[] {
   items.sort((a, b) => a.x - b.x)
-  for (let i = 1; i < items.length; i++) {
-    for (let j = i; j > 0; j--) {
-      const a = items[j - 1], b = items[j]
-      if (b.x - a.x > 1 || a.seq === undefined || b.seq === undefined || b.seq >= a.seq) break
-      items[j - 1] = b
-      items[j] = a
+  // 앞 글자와 허용 거리 안으로 이어진 무리는 스트림 순서. 덧찍기 무리의 순번이 흩어졌으면(뒤에 덧붙인 벡터 글리프 복원 숫자 "1"
+  // 순번 111 옆 "항" 96) x 순서 그대로
+  for (let s = 0; s < items.length;) {
+    let e = s + 1, wide = false
+    while (e < items.length) {
+      const a = items[e - 1], b = items[e]
+      const tol = a.w !== undefined && b.w !== undefined ? Math.max(1, Math.min(a.w, b.w) * OVERPRINT_RATIO) : 1
+      if (b.x - a.x > tol) break
+      if (b.x - a.x > 1) wide = true
+      e++
     }
+    const run = items.slice(s, e), seqs = run.map(i => i.seq)
+    // 1pt 안 이웃은 종전대로(아래첨자 "HL₂" 의 ₂ 가 HL 보다 0.4pt 앞) — 접은 수식 아이템("$…$")만 뺀다(시험지 같은 x 의 두
+    // 수식을 스트림 순서로 뒤집어 정밀도가 깎였다). 1pt 넘게 덧찍은 무리는 순번이 몰리고 글자 크기가 같을 때만
+    const ok = !wide ? !run.some(i => i.text?.startsWith("$")) : Math.max(...seqs as number[]) - Math.min(...seqs as number[]) <= 2 * (e - s - 1) &&
+      run.every(i => Math.abs((i.fontSize ?? 0) - (run[0].fontSize ?? 0)) <= 0.5)
+    if (e - s > 1 && seqs.every(q => q !== undefined) && ok) {
+      run.sort((a, b) => a.seq! - b.seq!)
+      for (let k = 0; k < run.length; k++) items[s + k] = run[k]
+    }
+    s = e
   }
   return items
 }
@@ -63,9 +89,13 @@ export function sortLineByX<T extends { x: number; seq?: number }>(items: T[]): 
 // Hidden text 필터링 (prompt injection 방어)
 // ═══════════════════════════════════════════════════════
 
-/** 한자·가나와 라틴 글자·숫자 사이의 좁은 틈(글자 크기 0.3배 미만)인가 — 조판기의 아시아-라틴 자동 간격이라 공백이 아니다(한글 제외) */
-export function isCjkLatinAutospace(prevText: string, nextText: string, gap: number, fontSize: number): boolean {
-  if (!(gap < fontSize * 0.3)) return false
+/** 한자·가나와 라틴 글자·숫자 사이의 좁은 틈(글자 크기 0.35배 미만)인가 — 조판기의 아시아-라틴 자동 간격이라 공백이 아니다(한글 제외).
+ *  LibreOffice 는 이 간격을 0.2~0.3em 공백 글리프로 찍는다 — 정확히 0.3em(kpipa 계약서 일문 "第⏎3者" 3.00pt/10pt)이 경계에 걸려 띄워졌다.
+ *  원문에 띄어쓰기가 있으면 자동 간격에 공백 폭이 더해져 0.45em 을 넘는다 */
+export function isCjkLatinAutospace(prevText: string, nextText: string, gap: number, fontSize: number, hangulLine = false): boolean {
+  if (!(gap < fontSize * 0.35)) return false
+  // 한글 줄 속 한자 약칭 뒤 띄어쓰기는 진짜 공백이다("中 H형강" — 한컴 글꼴 공백이 0.3em 남짓으로 좁고, "H" 는 영문 글꼴 조각이라 줄 전체로 본다)
+  if (hangulLine) return false
   const a = prevText.slice(-1), b = nextText[0] ?? ""
   const cjk = /[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff]/, latin = /[A-Za-z0-9]/
   return (cjk.test(a) && latin.test(b)) || (latin.test(a) && cjk.test(b))
@@ -98,10 +128,12 @@ export function filterHiddenText(items: NormItem[], pageWidth: number, pageHeigh
  */
 export function collapseEvenSpacing(text: string, whole = true): string {
   // 1. 전체가 균등배분: 토큰의 70%가 1글자
-  const tokens = text.split(" ")
-  const singleCharCount = tokens.filter(t => t.length === 1).length
-  if (whole && tokens.length >= 3 && singleCharCount / tokens.length >= 0.7 && !isDateUnitBlank(tokens)) {
-    return tokens.join("")
+  if (whole) {
+    const tokens = text.split(" ")
+    // 표시 서식은 글자 비율·날짜 빈칸 판정에 영향이 없다. 출력 태그는 원래 토큰으로 보존한다.
+    const visible = tokens.map(t => t.replace(/<\/?u>|~~/g, ""))
+    const singleCharCount = visible.filter(t => t.length === 1).length
+    if (tokens.length >= 3 && singleCharCount / tokens.length >= 0.7 && !isDateUnitBlank(visible)) return tokens.join("")
   }
 
   // 2. 부분 균등배분: 한글 1자가 3개+ 연속 (2자 단어는 건드리지 않음)
@@ -112,7 +144,13 @@ export function collapseEvenSpacing(text: string, whole = true): string {
   // hwpx↔pdf 752쌍: 96문서 나아짐·4문서 나빠짐(각 1~2어절)
   return text.replace(
     /(?<![^\s>])[가-힣](?: [가-힣\d]){2,}(?![^\s<])/g,
-    match => (isDateUnitBlank(match.split(" ")) ? match : match.replace(/ /g, "")),
+    (match, offset: number) => {
+      // 표지는 낱말 경계가 아니다 — "할 수 있</u>다"의 "있"은 홀로 선 한 글자가 아니다.
+      const before = text.slice(0, offset).replace(/(?:<\/?u>|~~)+$/, "")
+      const after = text.slice(offset + match.length).replace(/^(?:<\/?u>|~~)+/, "")
+      if (/\S$/.test(before) || /^\S/.test(after)) return match
+      return isDateUnitBlank(match.split(" ")) ? match : match.replace(/ /g, "")
+    },
   )
 }
 
@@ -156,6 +194,8 @@ export function dominantStyle(items: NormItem[]): { fontSize: number; fontName?:
 
 export function normalizeItems(rawItems: PdfTextItem[]): NormItem[] {
   const items: NormItem[] = []
+  /** 반올림 전 x·폭 — 가짜 볼드 판정용(자간을 줄인 "129.9" 의 두 "9" 는 3.72pt 떨어졌는데 반올림하면 3 이 되어 덧찍기로 지워졌다, 해외직접투자 보도자료) */
+  const rawX = new Map<NormItem, [number, number]>()
   // pdfjs 공백 아이템 위치 수집 — 단어 경계 힌트로 활용
   const spacePositions: { x: number; y: number; synthetic?: boolean }[] = []
 
@@ -188,27 +228,36 @@ export function normalizeItems(rawItems: PdfTextItem[]): NormItem[] {
     const isHidden = fontSize === 0 || (i.width === 0 && i.str.trim().length > 0)
 
     // letterSpacing이 적용된 숫자/기호 문자열 정규화
-    // "45 0 -7 3 40 )" → "450-7340)" (전화번호, 금액 등)
+    // "45 0 -7 3 40 )" → "450-7340)" (전화번호, 금액 등). 쉼표·마침표로 시작해 띄운 조각(앞 낱말 뒤 ", 5.")은 낱말 사이 공백이다 (ODL 192).
+    // 소수 덩어리가 둘 이상("1.0 2.0")이면 따로 선 수들이다 — 붙이면 한 조각에 든 표 한 행 값이 "21001.02.03.0…" 이 됐다(평가 기준 별표2)
     // 강희 부수(U+2F00~2FD5)로 매긴 한자 글리프는 통합 한자로 — "자성(⾃性)" → "자성(自性)" (NFKC, 부수 블록만)
     let text = i.str.trim().replace(/[\u2F00-\u2FD5]/g, c => c.normalize("NFKC"))
-    if (/^[\d\s\-().·,☎]+$/.test(text) && /\d/.test(text) && / /.test(text)) {
+    // 날짜 "2026. 8. 28.("·"8. 31.(" 은 원문이 띄어 쓴 글이다(보도자료 머리 보도시점·배포) — 수. 수. 꼴은 그대로
+    if (/^[\d\s\-().·,☎]+$/.test(text) && /\d/.test(text) && / /.test(text) && !/^[,.] /.test(text) &&
+        text.split(/\s+/).filter(t => /^\d+\.\d+$/.test(t)).length < 2 && !/(?:^|[^\d])\d{1,4}\. \d{1,2}\.(?: |$|\(|~)/.test(text)) {
       text = text.replace(/ /g, "")
     }
     // 글자마다 띄운 영문 대문자 표시 글(큰 제목 "H O W") — 한 아이템이 한 낱말이다
     if (fontSize >= 14 && /^[A-Z0-9?!&'’](?: [A-Z0-9?!&'’]){2,}$/.test(text)) text = text.replace(/ /g, "")
 
-    // 균등배분 TextItem 분해: "홍 보 지 원 반" → 개별 글자 아이템으로
-    const split = splitEvenSpacedItem(text, x, w, fontSize)
+    // 균등배분 TextItem 분해: "홍 보 지 원 반" → 개별 글자 아이템으로. 세로로 돌린 글은 가로 축으로 쪼개면 글자 자리가 틀어진다
+    // (돌려 찍은 표의 사업명 "복선 전 철" 조각이 칸 밖으로 샜다)
+    const turned = Math.abs(i.transform[1]) > Math.abs(i.transform[0]) * 4
+    const split = turned ? null : splitEvenSpacedItem(text, x, w, fontSize)
+    const spaceAfter = (i as { spaceAfter?: boolean }).spaceAfter
     if (split) {
       split.forEach((s, k) => {
-        items.push({ text: s.text, x: s.x, y, w: s.w, h, fontSize, fontName: i.fontName || "", isHidden, seq: seq + k / 1000 })
+        items.push({ text: s.text, x: s.x, y, w: s.w, h, fontSize, fontName: i.fontName || "", isHidden, seq: seq + k / 1000,
+          ...(spaceAfter !== undefined && k === split.length - 1 ? { spaceAfter } : {}) })
       })
     } else {
       const rotated = Math.abs(i.transform[1]) > Math.abs(i.transform[0]) * 4
       // 세로 글의 가로 폭은 글자 높이다 — 진행 길이(width)를 가로 폭으로 두면 나란한 세로 라벨이 서로 겹쳐 붙는다("01/201903/2019")
       const rw = rotated ? Math.max(1, fontSize) : w
       const rx = rotated && i.transform[1] > 0 ? x - rw : x
-      items.push({ text, x: rx, y, w: rw, h, fontSize, fontName: i.fontName || "", isHidden, seq, ...(rotated ? { rotated: Math.max(1, w) } : {}) })
+      items.push({ text, x: rx, y, w: rw, h, fontSize, fontName: i.fontName || "", isHidden, seq, ...(spaceAfter !== undefined ? { spaceAfter } : {}),
+        ...(rotated ? { rotated: Math.max(1, w), ...(i.transform[1] < 0 ? { rotatedDown: true as const } : {}) } : {}) })
+      if (!rotated) { rawX.set(items[items.length - 1], [i.transform[4], i.width]); items[items.length - 1].fx = i.transform[4]; items[items.length - 1].fw = i.width }
     }
   }
 
@@ -226,8 +275,12 @@ export function normalizeItems(rawItems: PdfTextItem[]): NormItem[] {
       // x 허용치는 글리프 폭 비례 — 고정 ±3px는 좁은 글리프(괄호 w≈3)에서 나란히
       // 놓인 진짜 두 글자("경북))")까지 삼킨다. 가짜 볼드 오프셋은 폭의 절반 미만.
       const xTol = Math.min(3, Math.max(0.5, sorted[i].w * 0.5))
+      // 숫자 한 글자는 반올림 전 자리로 — 자간을 줄인 수치("129.9")의 같은 숫자 둘이 반올림으로 3 안에 들었다. 도해 이름표 그림자
+      // (LibreOffice 표준안 "마"·"=" 를 2~3pt 밀어 두 번 찍음)는 종전대로 반올림 자리로 지운다
+      const ra = /^\d$/.test(prev.text) ? rawX.get(prev) : undefined, rb = ra ? rawX.get(sorted[i]) : undefined
+      const dx = ra && rb ? Math.abs(ra[0] - rb[0]) : Math.abs(prev.x - sorted[i].x)
       if (Math.abs(prev.y - sorted[i].y) <= 3 &&
-          prev.text === sorted[i].text && Math.abs(prev.x - sorted[i].x) <= xTol) {
+          prev.text === sorted[i].text && dx <= xTol) {
         isDup = true
         break
       }
@@ -428,6 +481,37 @@ export function groupByY(items: NormItem[]): NormItem[][] {
  * 수직으로 겹치면 같은 시각적 줄이다. mergeLineSimple이 x순 정렬하므로
  * 병합 후 원래 인라인 위치("①근로자...")가 복원된다.
  */
+/** 글자 앞에 붙는 첨자 꼴 — 라틴 글자·수식 기호가 없다 ("(’10)", "행안부", "①"; 적분 위끝 "3a+x" 는 아님) */
+export const PREFIX_SCRIPT = /^[^A-Za-z+=×÷<>≤≥∫∑∏√∞^_{}\\/]+$/
+/** 첨자 조각 줄 — 짧은 기호 조각 여럿(각 3자 이하 — 저자 줄 소속 표시 ∗·†·a·1)은 합이 10자를 넘어도, 조각마다 옆 줄 글자 오른끝에
+ *  붙어(0.35em 안) 있으면 조각이다. 글자 위에 얹힌 수식 조각(∑ 위아래 극한)은 붙어 있지 않다.
+ *  라틴 글자·수식 기호 없는 8자 이하 첨자는 글자 앞(빈칸 하나 0.6em 안)에 붙어도 같다 — 연도 위첨자 "(’10)10.2만건 → (’25)17.1만건"·
+ *  부처 첨자 "행안부급경사지, 국토부도로비탈면"·원문자 "①디스플레이, ②항공" 이 한 줄에 여럿. 적분 위끝("3a+x")은 다음 글자 앞에 붙어 있어 뺀다.
+ *  글자 상자가 겹치는 폭은 0.25em 까지 — 좌표를 정수로 반올림하면(normalizeItems) 0.8pt 겹친 첨자가 2pt 로 늘어 한 줄 열둘 가운데 하나가
+ *  0.1em 허용을 넘었고 첨자 줄이 통째로 따로 남았다(특별교통대책 보도자료 "부산(‘22년10:00"). 본문 줄(mergeSuperscriptLines)과 칸 글(cellTextToString)이 같이 쓴다 */
+export function isAttachedScripts(line: ReadonlyArray<{ text: string; x: number; w: number }>, host: ReadonlyArray<{ x: number; w: number; fontSize: number }>): boolean {
+  return line.length > 1 && line.length <= 16 && line.every(i => {
+    const t = i.text.trim(), n = t.length
+    if (n > 8 || !n) return false
+    return host.some(h => {
+      const after = i.x - (h.x + h.w), before = h.x - (i.x + i.w)
+      return (n <= 3 && after <= h.fontSize * 0.35 && after >= -h.fontSize * 0.25) ||
+        (PREFIX_SCRIPT.test(t) && before <= h.fontSize * 0.6 && before >= -h.fontSize * 0.25)
+    })
+  })
+}
+/** 첨자 조각 줄 — 덩어리 ≤8개·글자 ≤10자. 덩어리는 글자 크기 0.3배 안으로 붙은 아이템 무리다 — 한컴이 첨자를 글자마다 따로 찍은 줄
+ *  ("근우,인프라 삼동,미래형운송수단" 의 첨자 10자가 아이템 10개)이 아이템 수 상한에 걸려 따로 남아 본문 줄 위로 올라갔다(국민성장펀드 표 칸).
+ *  본문 줄(mergeSuperscriptLines)과 칸 글(cellTextToString)이 같이 쓴다 */
+export function isFragmentLine(line: ReadonlyArray<{ text: string; x: number; w: number; fontSize: number }>): boolean {
+  let total = 0
+  for (const i of line) total += i.text.trim().length
+  if (total === 0 || total > 10) return false
+  const byX = [...line].sort((a, b) => a.x - b.x)
+  let runs = 1
+  for (let k = 1; k < byX.length; k++) if (byX[k].x - (byX[k - 1].x + byX[k - 1].w) > byX[k].fontSize * 0.3) runs++
+  return runs <= 8
+}
 export function mergeSuperscriptLines(lines: NormItem[][]): NormItem[][] {
   if (lines.length <= 1) return lines
   const band = (line: NormItem[]) => {
@@ -441,18 +525,8 @@ export function mergeSuperscriptLines(lines: NormItem[][]): NormItem[][] {
   }
   // 조각 판정 — 글자 단위로 흩어진 소형 라벨("과기정통부" 1자×5)도 흡수하도록
   // 아이템 수 대신 총 글자수로 제한 (높이비·수직겹침 가드가 과병합을 막는다)
-  const isFrag = (line: NormItem[]) => {
-    if (line.length > 8) return false
-    let total = 0
-    for (const i of line) total += i.text.trim().length
-    return total > 0 && total <= 10
-  }
-  // 짧은 기호 조각 여럿(각 3자 이하 — 저자 줄 소속 표시 ∗·†·a·1)은 합이 10자를 넘어도, 조각마다 옆 줄 글자 오른끝에
-  // 붙어(0.35em 안) 있으면 조각이다. 글자 위에 얹힌 수식 조각(∑ 위아래 극한)은 붙어 있지 않다
-  const isMarkers = (line: NormItem[], host: NormItem[]) => line.length > 1 && line.length <= 16 && line.every(i => {
-    if (i.text.trim().length > 3 || !i.text.trim()) return false
-    return host.some(h => { const g = i.x - (h.x + h.w); return g <= h.fontSize * 0.35 && g >= -h.fontSize * 0.1 })
-  })
+  const isFrag = isFragmentLine
+  const isMarkers = isAttachedScripts
 
   const result: NormItem[][] = [lines[0]]
   for (let i = 1; i < lines.length; i++) {
@@ -472,12 +546,61 @@ export function mergeSuperscriptLines(lines: NormItem[][]): NormItem[][] {
   return result
 }
 
+type Tracked = { text: string; x: number; w: number; fontSize: number; fx?: number; fw?: number }
+const precise = (i: Tracked) => i.fx !== undefined && i.fw !== undefined && Math.round(i.fx) === i.x && Math.abs(Math.round(i.fw) - i.w) <= 1
+
+/** 공백 힌트 자리의 틈 — 둘 다 반올림 전 좌표가 있으면 그것으로 잰다. 공백 글리프 위에 덧찍은 쉼표가 반올림으로 1pt 떨어져 보였다
+ *  ("55만원 ,", 실제 −0.06pt, 청년 종합투자 보도자료). 보도자료 42문서 어절 F1 오름 — 자간을 크게 줄인 줄의 진짜 공백 둘은 잃는다("5,514명 발생") */
+export function exactGap(a: Tracked, b: Tracked, rounded: number): number {
+  return precise(a) && precise(b) ? b.fx! - (a.fx! + a.fw!) : rounded
+}
+
+/**
+ * 자간을 줄인 줄의 공백 — 한컴은 자간 음수 글을 글자마다 따로 찍어(아이템 폭은 글리프 본래 폭) 이웃 글자가 같은 만큼 겹치고, 낱말 사이
+ * 공백도 그만큼 줄어 문턱 밑으로 사라졌다(노인일자리 표 칸 "65세 이상": 글자 폭 11.04·간격 7.8 → 겹침 3.24, "세"·"이" 틈 0.6 = 공백 3.84 − 3.24).
+ * 반올림 전 좌표로 같은 글자 크기 한글 이웃의 겹침이 셋 이상 고르면(글자 크기 5% 안) 그 겹침을 글자 간격 기준으로 보고, 이웃 사이 틈에
+ * 더해 공백 문턱과 견준다. 정수 좌표로는 9pt 글에서 오차(±1)가 공백 여유보다 커 "1 만원" 같은 거짓 공백이 났다. 공백을 더하기만 한다
+ */
+export function trackingShift(lines: Tracked[][]): number | null {
+  const ds: number[] = []
+  let fs = 0
+  for (const sorted of lines) for (let k = 1; k < sorted.length; k++) {
+    const a = sorted[k - 1], b = sorted[k]
+    if (!precise(a) || !precise(b) || Math.abs(a.fontSize - b.fontSize) > 0.5 || !/^[가-힣]$/.test(a.text) || !/^[가-힣]$/.test(b.text)) continue
+    const d = b.fx! - (a.fx! + a.fw!)
+    if (d < -0.05 * a.fontSize && d > -0.45 * a.fontSize) { ds.push(d); fs = a.fontSize }
+  }
+  if (ds.length < 3) return null
+  ds.sort((x, y) => x - y)
+  const med = ds[ds.length >> 1]
+  return ds.filter(d => Math.abs(d - med) <= 0.05 * fs).length >= 3 ? med : null
+}
+
+/** 줄 아이템마다 자간 보정으로 공백을 더할 자리 — 겹침 기준(med)은 줄(본문) 또는 칸 전체(칸 글)에서 잰다 */
+export function trackedSpaces(sorted: Tracked[], med: number | null = trackingShift([sorted])): boolean[] | null {
+  if (med === null) return null
+  return sorted.map((b, k) => {
+    if (!k) return false
+    const a = sorted[k - 1]
+    if (!precise(a) || !precise(b) || Math.abs(a.fontSize - b.fontSize) > 0.5) return false
+    // 좁은 괄호·문장부호는 겹침이 글자 폭을 넘어 고르지 않다 — 여는 괄호 뒤·닫는 부호 앞은 보정하지 않는다("( 일부" 거짓 공백)
+    if (/[(\[{〈《「『‘“]$/.test(a.text) || /^[)\]}〉》」』’”,.·]/.test(b.text)) return false
+    // 글자마다 따로 찍은 아이템끼리만 — 여러 글자 아이템 폭에는 자간이 이미 들어 있다("달성 하고자" 거짓 공백)
+    if ([...a.text].length !== 1 || [...b.text].length > 2) return false
+    // 한글·한자끼리만 — 가운뎃점 이음("연계·활용")은 띄우지 않고, 숫자는 한글과 겹침이 달라 거짓 공백이 났다("2 차", "8 0%")
+    if (!/^[가-힣一-鿿]$/.test(a.text) || !/^[가-힣一-鿿]/.test(b.text)) return false
+    return b.fx! - (a.fx! + a.fw!) - med > spaceGapThreshold((a.fontSize + b.fontSize) / 2)
+  })
+}
+
 export function mergeLineSimple(items: TextItem[]): string {
   if (items.length <= 1) return items[0]?.text || ""
   const sorted = sortLineByX([...items])
+  const tracked = trackedSpaces(sorted)
 
   // 좌표 기반 균등배분 감지 (ODL TextLineProcessor 방식)
   const isEvenSpaced = detectEvenSpacedItems(sorted)
+  const hangulLine = sorted.some(it => /[가-힣]/.test(it.text))
 
   let result = sorted[0].text
   for (let i = 1; i < sorted.length; i++) {
@@ -502,12 +625,13 @@ export function mergeLineSimple(items: TextItem[]): string {
     // 한자·가나와 라틴 글자·숫자 사이의 좁은 틈(글자 크기 0.3배 미만)은 조판기의 아시아-라틴 자동 간격이다 — 원문에 공백이 없다.
     // pdfjs 는 이 틈에도 공백 아이템을 만들어 넣으니 아래 공백 힌트보다 먼저 본다
     // ("第1条"·"1番地" 가 "第 1 条"·"1 番地" 로, LibreOffice·Word 일본어·중국어 문서). 한글은 "1 번지" 처럼 실제로 띄어 써 제외
-    if (isCjkLatinAutospace(sorted[i - 1].text, sorted[i].text, gap, avgFs)) {
+    if (isCjkLatinAutospace(sorted[i - 1].text, sorted[i].text, gap, avgFs, hangulLine)) {
       result += sorted[i].text
       continue
     }
-    // pdfjs 공백 아이템이 있었으면 단어 경계 — 갭 크기 무관하게 공백 삽입
-    if (sorted[i].hasSpaceBefore && gap >= avgFs * 0.05) {
+    // pdfjs 공백 아이템이 있었으면 단어 경계 — 갭 크기 무관하게 공백 삽입. 틈은 반올림 전 좌표로 — 공백 글리프 위에 덧찍은 쉼표가
+    // 반올림으로 1pt 떨어져 보여 "55만원 ," 가 됐다(실제 −0.06pt, 청년 종합투자 보도자료)
+    if (sorted[i].hasSpaceBefore && exactGap(sorted[i - 1], sorted[i], gap) >= avgFs * 0.05) {
       result += " "
       result += sorted[i].text
       continue
@@ -519,7 +643,7 @@ export function mergeLineSimple(items: TextItem[]): string {
       continue
     }
     // 폰트 크기 비례 공백 임계값 — 고정 px 기준은 Type3/대형 폰트에서 공백 소실·과다 유발
-    if (gap > spaceGapThreshold(avgFs)) result += " "
+    if (gap > spaceGapThreshold(avgFs) || tracked?.[i]) result += " "
     result += sorted[i].text
   }
   return result

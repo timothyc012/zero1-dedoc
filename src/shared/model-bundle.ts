@@ -14,7 +14,12 @@ import {
   getModelStatusIn,
   getModelsDir,
 } from "../pdf/formula/models.js"
-import { ALL_OCR_MODELS, getOcrModelProfile, profileSpecs } from "../ocr/models.js"
+import { ALL_OCR_MODELS, languageModelSpecs } from "../ocr/models.js"
+
+/** (Zero1 포크) 언어 프로필 모델은 ppocr 아래 하위 폴더 경로를 파일 이름에 담는다 — 묶음은 그 하위 폴더를 모델군으로 삼는다 */
+function inSubdir(specs: ModelSpec[], prefix: string): ModelSpec[] {
+  return specs.filter(s => s.filename.startsWith(prefix)).map(s => ({ ...s, filename: s.filename.slice(prefix.length) }))
+}
 
 /** 모델군 — 캐시 하위 디렉토리 이름이 곧 번들 디렉토리 이름 */
 export interface ModelGroup {
@@ -25,8 +30,8 @@ export interface ModelGroup {
 
 export const MODEL_GROUPS: ReadonlyArray<ModelGroup> = [
   { subdir: "ppocr", label: "텍스트 OCR (PP-OCRv5 korean)", specs: ALL_OCR_MODELS },
-  { subdir: "ppocr/en", label: "텍스트 OCR (PP-OCRv5 English)", specs: profileSpecs(getOcrModelProfile("en")) },
-  { subdir: "ppocr/de-v6", label: "텍스트 OCR (PP-OCRv6 German)", specs: profileSpecs(getOcrModelProfile("de")) },
+  { subdir: "ppocr/en", label: "텍스트 OCR (PP-OCRv5 English)", specs: inSubdir(languageModelSpecs("en"), "en/") },
+  { subdir: "ppocr/de-v6", label: "텍스트 OCR (PP-OCRv6 German)", specs: inSubdir(languageModelSpecs("de"), "de-v6/") },
   { subdir: "pix2text", label: "수식 OCR (Pix2Text)", specs: ALL_FORMULA_MODELS },
 ]
 

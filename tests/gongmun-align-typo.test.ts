@@ -86,6 +86,10 @@ describe("문자 다듬기 — 묶음 빈칸·따옴표", () => {
     assert.equal(n("2026. 1. 22. 시행, 2026. 2. 확정"), "2026.⍽1.⍽22. 시행, 2026.⍽2. 확정")
     assert.equal(n("용역 2026. 5. 7.~11. 6.(3억 원)"), "용역 2026.⍽5.⍽7.~11.⍽6.(3억⍽원)")
     assert.equal(n("회의 14:00 ~ 16:00, 992억 5,700만 원"), "회의 14:00⍽~⍽16:00, 992억 5,700만⍽원")
+    // 띄어 쓴 날짜 기간 — 물결 양옆도 묶는다 (끝이 일만 있거나 연도가 붙어도)
+    assert.equal(n("기간 10. 19. ~ 11. 18. 운영"), "기간 10.⍽19.⍽~⍽11.⍽18. 운영")
+    assert.equal(n("2026. 10. 19. ~ 2027. 1. 5., 9. 1. ∼ 30."), "2026.⍽10.⍽19.⍽~⍽2027.⍽1.⍽5., 9.⍽1.⍽∼⍽30.")
+    assert.equal(n("1. 5 ~ 7. 9개"), "1. 5 ~ 7. 9개")
     assert.equal(n("'미확인'은 \"예시\"이고 '26. 9. 9.까지"), "‘미확인’은 “예시”이고 ’26.⍽9.⍽9.까지")
     // 소수·버전·개수 앞 숫자는 날짜가 아니다
     assert.equal(n("0.2%, v1.2. 3개, 3. 12개 과제"), "0.2%, v1.2. 3개, 3. 12개 과제")
@@ -191,6 +195,19 @@ describe("경계 사례 — 별표 강조·두 자리 번호·표지 묶음 빈�
     for (const mode of ["keep", "charAll"] as const) assert.deepEqual(simulateWrap(text, W, W, 1000, 100, mode, { faceClass: fc }).starts, [0, 11], mode)
   })
 
+  it("글자 겹치기(hp:compose)는 8슬롯 컨트롤로 한 글자 칸 폭을 차지한다", () => {
+    const xml = `<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:compose circleType="CHAR" composeType="OVERLAP" composeText="가나"/><hp:t>다</hp:t></hp:run></hp:p></hs:sec>`
+    const root = new DOMParser().parseFromString(xml, "text/xml").documentElement as unknown as Element
+    const chars = buildPara(root.getElementsByTagName("hp:p")[0]).chars
+    assert.deepEqual([chars.length, chars[0].ctrl, chars[0].ctrlText, chars[8].ch], [9, true, "\u3000", "다"])
+  })
+
+  it("제목 차례 표시(hp:titleMark)는 폭 없는 8슬롯 — 뒤 글의 textpos 가 8 밀린다", () => {
+    const xml = `<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t><hp:titleMark ignore="1"/>제목</hp:t></hp:run></hp:p></hs:sec>`
+    const root = new DOMParser().parseFromString(xml, "text/xml").documentElement as unknown as Element
+    assert.deepEqual(buildPara(root.getElementsByTagName("hp:p")[0]).chars.map((c) => c.ch), ["", "", "", "", "", "", "", "", "제", "목"])
+  })
+
   it("렌더 reflow — hp:nbSpace 는 공백으로 그리되 줄은 날짜 앞에서 바꾼다", () => {
     const xml = `<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${"가".repeat(10)} 2026.<hp:nbSpace/>9.<hp:nbSpace/>23.</hp:t></hp:run></hp:p></hs:sec>`
     const root = new DOMParser().parseFromString(xml, "text/xml").documentElement as unknown as Element
@@ -288,5 +305,19 @@ describe("한 줄 맞춤·긴 어절 (한컴 실렌더 지적 4건)", () => {
     const { sec, head } = await parts(await markdownToHwpx(`# 보고\n\n> 검토하고자 함\n\n### 대항목\n\n- 중항목\n  - ${text}\n  - 짧은 항목`, { gongmun: { preset: "report" } }))
     assert.ok(paraPrOf(head, paraOf(sec, "서대문구 계획서")).includes('breakNonLatinWord="KEEP_WORD"'))
     assert.ok(paraPrOf(head, paraOf(sec, "짧은 항목")).includes('breakNonLatinWord="BREAK_WORD"'))
+  })
+})
+
+describe("묶음 빈칸 — 열거 뒤 '등'·'낱말 숫자,' 열거 (단어 단위 규칙)", () => {
+  const show = (s: string) => polishGongmunText(s).replace(/\u00a0/g, "⍽")
+  it("의존명사 '등'(+조사)은 앞말과 묶고 '등록'·'등급'은 그대로", () => {
+    assert.equal(show("사과, 바나나 등으로 구성"), "사과, 바나나⍽등으로 구성")
+    assert.equal(show("버스 등, 택시"), "버스⍽등, 택시")
+    assert.equal(show("등록 절차와 등급"), "등록 절차와 등급")
+  })
+  it("'낱말 숫자,' 열거는 항목마다 묶고 마지막 항목은 앞 항목이 열거일 때만", () => {
+    assert.equal(show("수원 2, 서울 4, 용인 1등으로 구성"), "수원⍽2, 서울⍽4, 용인⍽1등으로 구성")
+    assert.equal(show("대회에서 1등으로 입상"), "대회에서 1등으로 입상")
+    assert.equal(show("2, 3, 4 순서"), "2, 3, 4 순서")
   })
 })

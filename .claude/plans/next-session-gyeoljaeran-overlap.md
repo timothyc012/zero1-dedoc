@@ -106,7 +106,7 @@ node bench/reflow-overlap-check.mjs out.svg 0 220
 
 - `bench/reflow-overlap-check.mjs` — 겹침 지표 도구 (이 브랜치에 커밋됨)
 - `tests/fixtures/real/지역아동센터계획.hwpx` — 재현 fixture (기존)
-- 관련: `.claude/plans/render-poc/findings.md`(세로모델 역설계), 직전 렌더수정 커밋 `2423a0a`(폰트·중첩표셀높이·다구역)
+- 관련: `.claude/plans/render-poc/findings.md`(세로모델 실측), 직전 렌더수정 커밋 `2423a0a`(폰트·중첩표셀높이·다구역)
 
 ## 9. 맥락 (왜 지금)
 

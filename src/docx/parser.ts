@@ -5,21 +5,27 @@
  * w:p → paragraph/heading, w:tbl → table, w:drawing → image.
  */
 
-import { wrapScript, tidyScriptTags } from "../script-tags.js"
+import { escapeLiteralTags, wrapScript, tidyScriptTags } from "../script-tags.js"
 import JSZip from "jszip"
 import { ListCounter } from "./numbering.js"
+import { symbolChar } from "./symbol-font.js"
 import { DOMParser } from "@xmldom/xmldom"
 import type {
   CellContext, IRBlock, DocumentMetadata, InternalParseResult,
   ParseOptions, ParseWarning, ExtractedImage, InlineStyle,
 } from "../types.js"
-import { KordocError, precheckZipSize, unzipLimitBytes, stripDtd, sanitizeHref } from "../utils.js"
-import { blocksToMarkdown, buildTable } from "../table/builder.js"
+import { KordocError, partExtension, precheckZipSize, unzipLimitBytes, stripDtd, sanitizeHref } from "../utils.js"
+import { blocksToMarkdown, buildTable, escapeLiteralDollar } from "../table/builder.js"
 import { ommlElementToLatex, isDisplayMath } from "./equation.js"
 import { detectImageMime } from "../hwp5/images.js"
+import { readZipEntry } from "../hwpx/parser-shared.js"
 
 /** ZIP 압축 해제 누적 최대 크기 (100MB) — ZIP bomb 방지 */
 const MAX_DECOMPRESS_SIZE = unzipLimitBytes(100 * 1024 * 1024)
+/** 그림·개체 파트 — images:false 면 풀지 않으니 ZIP 상한에서도 뺀다 (#108) */
+const MEDIA_PART_RE = /^word\/(?:media|embeddings)\//
+/** 그림이 아닌 미디어·OLE 임베드 — 파서가 어느 때도 풀지 않는다(ZIP 상한에서 늘 뺀다) */
+const NEVER_READ_RE = /^word\/(?:embeddings\/.*|media\/.+\.(?:mp4|m4v|mov|avi|wmv|mpe?g|mkv|webm|mp3|wav|m4a|wma|aac|ogg|flac|mid|bin))$/i
 
 // ─── XML 헬퍼 ──────────────────────────────────────────
 
@@ -48,8 +54,8 @@ function effectiveChildElements(parent: Element | Document): Element[] {
           result.push(...effectiveChildElements(c as Element))
         }
       }
-    } else if (matchesLocal(el, "ins") || matchesLocal(el, "smartTag")) {
-      // w:ins(변경추적 삽입)·w:smartTag도 자식 run을 그대로 노출 — 안 펼치면 run 전량 소실.
+    } else if (matchesLocal(el, "ins") || matchesLocal(el, "smartTag") || matchesLocal(el, "dir") || matchesLocal(el, "bdo")) {
+      // w:ins(변경추적 삽입)·w:smartTag·w:dir·w:bdo(양방향 글 조각, #107)도 자식 run을 그대로 노출 — 안 펼치면 run 전량 소실.
       // w:del은 삭제된 텍스트이므로 계속 제외.
       result.push(...effectiveChildElements(el))
     } else {
@@ -276,12 +282,43 @@ function parseFootnotes(xml: string): Map<string, string> {
       const runs = findElements(p, "r")
       for (const r of runs) {
         const tElements = getChildElements(r, "t")
-        for (const t of tElements) texts.push(t.textContent ?? "")
+        for (const t of tElements) texts.push(escapeLiteralTags(escapeLiteralDollar(t.textContent ?? "")))
       }
     }
     notes.set(id, texts.join("").trim())
   }
   return notes
+}
+
+// ─── OMML 수집 ────────────────────────────────────────
+
+/**
+ * paragraph 내부의 최상위 OMML 엘리먼트(`<m:oMath>` / `<m:oMathPara>`) 수집.
+ * `<m:oMathPara>` 안의 중첩 `<m:oMath>` 는 중복 제외.
+ */
+function collectOmmlRoots(p: Element): Element[] {
+  const out: Element[] = []
+  const walk = (node: Element) => {
+    const children = node.childNodes
+    if (!children) return
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i]
+      if (child.nodeType !== 1) continue
+      const el = child as Element
+      const tag = el.localName || el.tagName?.replace(/^[^:]+:/, "") || ""
+      if (tag === "oMath" || tag === "oMathPara") {
+        out.push(el)
+        // 내부는 재귀하지 않음 (oMathPara 안의 oMath 중복 방지)
+      } else if (tag === "txbxContent" || tag === "Fallback") {
+        // 텍스트박스 내용은 별도 블록으로 처리되고 mc:Fallback은 mc:Choice의 사본 —
+        // 여기서 재귀하면 같은 수식이 앵커 문단 + 텍스트박스 블록으로 이중/삼중 방출
+      } else {
+        walk(el)
+      }
+    }
+  }
+  walk(p)
+  return out
 }
 
 // ─── Run 텍스트 추출 ──────────────────────────────────
@@ -293,12 +330,14 @@ interface RunResult {
 }
 
 function extractRun(r: Element): RunResult {
-  // t/br/cr/tab을 문서 순서대로 수집 — br·cr은 줄바꿈, tab은 공백 (무시하면 텍스트 융합)
+  // t/br/cr/tab/sym을 문서 순서대로 수집 — br·cr은 줄바꿈, tab은 공백 (무시하면 텍스트 융합), sym은 기호 글꼴 글자(°·×·μ, #105)
   let text = ""
   for (const el of effectiveChildElements(r)) {
-    if (matchesLocal(el, "t")) text += el.textContent ?? ""
+    // IR 규약 — 리터럴 $ 는 \$ (OMML 수식이 $…$ 라 그대로 두면 "$10 ~ $20" 이 수식이 된다), 태그 모양 글자 "<sub>" 는 \<sub> (#122)
+    if (matchesLocal(el, "t")) text += escapeLiteralTags(escapeLiteralDollar(el.textContent ?? ""))
     else if (matchesLocal(el, "br") || matchesLocal(el, "cr")) text += "\n"
     else if (matchesLocal(el, "tab")) text += " "
+    else if (matchesLocal(el, "sym")) text += symbolChar(getAttr(el, "font"), getAttr(el, "char"))
   }
 
   let bold = false
@@ -389,11 +428,20 @@ function collectInline(
     fieldDisplay = ""
   }
 
+  // OMML 수식 — 문단 직속(sdt·ins·dir 펼침 포함) <m:oMath>/<m:oMathPara> 는 제자리에 (#104).
+  // 인라인은 `$...$`, display 는 `$$...$$`
+  const placedMath = new Set<Element>()
+  const mathText = (om: Element): string => {
+    const latex = ommlElementToLatex(om)
+    return !latex ? "" : isDisplayMath(om) ? " $$" + latex + "$$ " : "$" + latex + "$"
+  }
+
   for (const el of effectiveChildElements(p)) {
-    const tag = el.localName || el.tagName?.replace(/^[^:]+:/, "") || ""
-    if (tag === "oMath" || tag === "oMathPara") {
-      const latex = ommlElementToLatex(el)
-      if (latex) parts.push(isDisplayMath(el) ? " $$" + latex + "$$ " : "$" + latex + "$")
+    if (matchesLocal(el, "oMath") || matchesLocal(el, "oMathPara")) {
+      placedMath.add(el)
+      const m = mathText(el)
+      if (fieldActive && fieldStage === "display") fieldDisplay += m
+      else parts.push(m)
       continue
     }
 
@@ -451,6 +499,13 @@ function collectInline(
     }
   }
   flushField() // 닫히지 않은 필드 방어
+
+  // 더 깊이 든 수식(mc:AlternateContent·링크 안 등)은 제자리를 모르니 종전대로 문단 끝에 덧붙인다
+  for (const om of collectOmmlRoots(p)) {
+    if (placedMath.has(om)) continue
+    const m = mathText(om)
+    if (m) parts.push(isDisplayMath(om) ? m : " " + m + " ")
+  }
 
   const text = tidyScriptTags(parts.join("")).replace(/[ \t]{2,}/g, " ").trim()
   return { text, bold, italic, footnoteText }
@@ -688,6 +743,8 @@ async function buildImageMap(
   rels: Map<string, string>,
   doc: Document,
   warnings: ParseWarning[],
+  /** false(images:false) 면 그림 바이트를 풀지 않고 자리 표시 파일명만 정한다 (#108) */
+  readBytes: boolean,
 ): Promise<{ imageMap: Map<string, string>; images: ExtractedImage[] }> {
   const imageMap = new Map<string, string>()
   const images: ExtractedImage[] = []
@@ -718,18 +775,22 @@ async function buildImageMap(
     if (!imgFile) continue
 
     try {
-      const data = await imgFile.async("uint8array")
+      // 삼항 안 await 는 CJS 빌드(sucrase)가 못 읽는다 — if 로
+      let data: Uint8Array | null = null
+      if (readBytes) data = await readZipEntry(imgFile, "uint8array")
       imgIdx++
-      const ext = imgPath.split(".").pop()?.toLowerCase() ?? "png"
+      const ext = partExtension(imgPath)
       const mimeMap: Record<string, string> = {
         png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
         gif: "image/gif", bmp: "image/bmp", wmf: "image/wmf", emf: "image/emf",
         tif: "image/tiff", tiff: "image/tiff", svg: "image/svg+xml",
       }
       const filename = `image_${String(imgIdx).padStart(3, "0")}.${ext}`
-      // 미지 확장자를 image/png 로 단정하던 폴백 제거 — 매직바이트 실측 후 그래도 모르면 octet-stream (#70)
-      const mimeType = mimeMap[ext] ?? detectImageMime(data) ?? "application/octet-stream"
-      images.push({ filename, data, mimeType, source: imgPath })
+      if (data) {
+        // 미지 확장자를 image/png 로 단정하던 폴백 제거 — 매직바이트 실측 후 그래도 모르면 octet-stream (#70)
+        const mimeType = mimeMap[ext] ?? detectImageMime(data) ?? "application/octet-stream"
+        images.push({ filename, data, mimeType, source: imgPath })
+      }
       imageMap.set(embedId, filename)
     } catch (err) {
       warnings.push({
@@ -817,10 +878,10 @@ async function parseHeaderFooterBlocks(
     const file = seenParts.has(path) ? null : zip.file(path)
     seenParts.add(path)
     if (!file) continue
-    const xml = await file.async("text")
+    const xml = await readZipEntry(file, "text")
     const partDoc = parseXml(xml)
     const relsFile = zip.file(path.replace(/([^/]+)$/, "_rels/$1.rels"))
-    const partRels = relsFile ? parseRels(await relsFile.async("text")) : new Map<string, string>()
+    const partRels = relsFile ? parseRels(await readZipEntry(relsFile, "text")) : new Map<string, string>()
     const found: IRBlock[] = []
     for (const el of partDoc.documentElement ? effectiveChildElements(partDoc.documentElement) : []) {
       if (matchesLocal(el, "p")) {
@@ -851,7 +912,8 @@ export async function parseDocxDocument(
   options?: ParseOptions,
 ): Promise<InternalParseResult> {
   // ZIP bomb 사전 검사
-  precheckZipSize(buffer, MAX_DECOMPRESS_SIZE)
+  const readImages = options?.images !== false
+  precheckZipSize(buffer, MAX_DECOMPRESS_SIZE, undefined, { re: MEDIA_PART_RE, skip: !readImages, never: NEVER_READ_RE })
 
   const zip = await JSZip.loadAsync(buffer)
   const warnings: ParseWarning[] = []
@@ -866,7 +928,7 @@ export async function parseDocxDocument(
   let rels = new Map<string, string>()
   const relsFile = zip.file("word/_rels/document.xml.rels")
   if (relsFile) {
-    rels = parseRels(await relsFile.async("text"))
+    rels = parseRels(await readZipEntry(relsFile, "text"))
   }
 
   // 2. 스타일 로드
@@ -874,7 +936,7 @@ export async function parseDocxDocument(
   const stylesFile = zip.file("word/styles.xml")
   if (stylesFile) {
     try {
-      styles = parseStyles(await stylesFile.async("text"))
+      styles = parseStyles(await readZipEntry(stylesFile, "text"))
     } catch (err) {
       warnings.push({
         code: "PARTIAL_PARSE",
@@ -888,7 +950,7 @@ export async function parseDocxDocument(
   const numFile = zip.file("word/numbering.xml")
   if (numFile) {
     try {
-      numbering = parseNumbering(await numFile.async("text"))
+      numbering = parseNumbering(await readZipEntry(numFile, "text"))
     } catch (err) {
       warnings.push({
         code: "PARTIAL_PARSE",
@@ -902,7 +964,7 @@ export async function parseDocxDocument(
   const fnFile = zip.file("word/footnotes.xml")
   if (fnFile) {
     try {
-      footnotes = parseFootnotes(await fnFile.async("text"))
+      footnotes = parseFootnotes(await readZipEntry(fnFile, "text"))
     } catch (err) {
       warnings.push({
         code: "PARTIAL_PARSE",
@@ -912,7 +974,7 @@ export async function parseDocxDocument(
   }
 
   // 5. 본문 파싱
-  const docXml = await docFile.async("text")
+  const docXml = await readZipEntry(docFile, "text")
   const doc = parseXml(docXml)
   const body = findElements(doc, "body")
   if (body.length === 0) {
@@ -920,7 +982,7 @@ export async function parseDocxDocument(
   }
 
   // 6. 이미지 맵 — 본문 워크에서 문단 위치에 맞춰 인라인 방출하려면 먼저 구성
-  const { imageMap, images } = await buildImageMap(zip, rels, doc, warnings)
+  const { imageMap, images } = await buildImageMap(zip, rels, doc, warnings, readImages)
   const linkedImages = new Set<string>()
 
   const blocks: IRBlock[] = []
@@ -963,7 +1025,7 @@ export async function parseDocxDocument(
   const coreFile = zip.file("docProps/core.xml")
   if (coreFile) {
     try {
-      const coreXml = await coreFile.async("text")
+      const coreXml = await readZipEntry(coreFile, "text")
       const coreDoc = parseXml(coreXml)
       const getFirst = (tag: string) => {
         const els = coreDoc.getElementsByTagName(tag)
@@ -989,7 +1051,7 @@ export async function parseDocxDocument(
     .filter(b => b.type === "heading")
     .map(b => ({ level: b.level ?? 2, text: b.text ?? "" }))
 
-  const markdown = blocksToMarkdown(blocks)
+  const markdown = blocksToMarkdown(blocks, { tableFormat: options?.tableFormat })
 
   return {
     markdown,

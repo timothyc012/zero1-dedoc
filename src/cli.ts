@@ -1,14 +1,13 @@
-/** Zero1 Dedoc CLI — inherited Kordoc commands plus multilingual PDF fixes. */
+/** kordoc CLI — 모두 파싱해버리겠다 (하위 명령은 cli/ 아래 명령군 모듈) */
 
-import { readFileSync, writeFileSync, mkdirSync, statSync } from "fs"
-import { basename, resolve } from "path"
 import { Command } from "commander"
-import { detectFormat } from "./detect.js"
-import type { ParseOptions } from "./types.js"
-import { VERSION, toArrayBuffer, sanitizeError, classifyError, routeConsoleToStderr } from "./utils.js"
-import { detectImageMime } from "./hwp5/images.js"
+import { VERSION, sanitizeError, routeConsoleToStderr } from "./utils.js"
+import { convertFiles } from "./cli/convert.js"
+import { assertDistinctStems, convertParallel, registerBatchWorker } from "./cli/batch.js"
 import { registerDocCommands } from "./cli/commands-docs.js"
+import { registerConvertCommands } from "./cli/commands-convert.js"
 import { registerGenerateCommands } from "./cli/commands-generate.js"
+import { registerPackCommands } from "./cli/commands-pack.js"
 import { registerRenderCommands } from "./cli/commands-render.js"
 import { registerSystemCommands } from "./cli/commands-system.js"
 import { registerWorkerCommands } from "./cli/commands-worker.js"
@@ -17,10 +16,11 @@ const program = new Command()
 
 program
   .name("zero1-dedoc")
-  .description("Zero1 Dedoc — HWP, HWPX, multilingual PDF, XLSX, DOCX and images → Markdown")
+  .description("Zero1 Dedoc — HWP, HWPX, 다국어 PDF, XLSX, DOCX, PPTX, 이미지(PNG/JPG/WebP) → Markdown (Kordoc 포크)")
   .version(VERSION)
   .argument("<files...>", "변환할 파일 경로 (HWP, HWPX, PDF, XLSX, DOCX, PNG/JPG/WebP — 이미지는 OCR 자동 적용)")
   .option("-o, --output <path>", "출력 파일 경로 (단일 파일 시)")
+  .option("--jobs <count>", "병렬 변환 프로세스 수 (기본 1, 다중 파일은 -d 필요)", "1")
   .option("-d, --out-dir <dir>", "출력 디렉토리 (다중 파일 시)")
   .option("-p, --pages <range>", "페이지 범위 (예: 1-3, 1,3,5) — 한컴 저장본은 실제 페이지, 조판 캐시 없으면 섹션 근사")
   .option("--format <type>", "출력 형식: markdown (기본), json, chunks (RAG용 구조 청크 JSON — 헤딩·개조식 위계 breadcrumb + 표 독립 청크)", "markdown")
@@ -28,16 +28,28 @@ program
   .option("--no-tables", "PDF 표 감지 끄기 — 테두리 박스를 표로 오인해 읽기 순서가 뒤집히는 문서(2단 시험지 등)에서 자연 읽기순 텍스트만 뽑는다 (#64)")
   .option("--formula-ocr", "PDF 수식 OCR 활성화 (MFD+MFR ONNX, 첫 사용 시 모델 ~155MB 자동 다운로드)")
   .option("--ocr", "스캔/이미지 PDF 텍스트 OCR (내장 PP-OCRv5 korean, 첫 사용 시 모델 ~18MB 자동 다운로드 — OCR 필요 페이지만 인식)")
-  .option("--ocr-language <lang>", "내장 OCR 언어: korean, en, de (모델을 먼저 사이드로드해야 함)")
   .option("--ocr-force", "전 페이지 강제 OCR (텍스트층이 있어도 무시하고 재인식)")
+  .option("--ocr-language <lang>", "내장 OCR 언어 프로필 (Zero1): korean (기본) | en | de (PP-OCRv6, 독일어 — 모델을 먼저 받아 둬야 함)")
+  .option("--ocr-lines", "내장 OCR 이 읽은 줄(래스터 px 상자·신뢰도)을 --format json 결과 ocrLines 로")
+  .option("--ocr-lines-all", "--ocr-lines 에 저신뢰로 버린 줄도 dropped 표시로 함께")
+  .option("--ocr-det <model>", "OCR 글줄 검출 모델: mobile (기본) | server (~88MB 첫 사용 시 다운로드) | medium (PP-OCRv6 ~62MB, 기울임·흐림·스캔 입력용) | 로컬 ONNX 경로 (--ocr-det-sha256 필수)")
+  .option("--ocr-det-sha256 <hex>", "--ocr-det 로컬 파일의 SHA-256 — 다르면 로드 거부")
+  .option("--ocr-det-long-side <px>", "OCR 글줄 검출 입력 긴 변 (32~4096, 기본 960) — 키우면 작은 글자를 더 잡고 느려진다")
+  .option("--ocr-rec <model>", "OCR 글자 인식 모델: handwriting (수기 서류용 한국어 손글씨 rec, ~15MB 첫 사용 시 다운로드) | auto (확신도 낮은 손글씨 쪽만 손글씨 rec 로 다시 읽음) | 로컬 ONNX 경로 (--ocr-rec-sha256 필수)")
+  .option("--ocr-rec-sha256 <hex>", "--ocr-rec 파일의 SHA-256")
+  .option("--ocr-rec-dict <path>", "OCR 글자 인식 사전을 로컬 inference.yml 로 (--ocr-rec-dict-sha256 필수, 기본 내장 한국어 사전)")
+  .option("--ocr-rec-dict-sha256 <hex>", "--ocr-rec-dict 파일의 SHA-256")
   .option("--dedupe-headers", "HWP5 레이아웃 표 페이지 반복 러닝 헤더 중복 제거 (기본 off — 붙임별 재번호 오삭제 주의)")
   .option("--keep-empty-cols", "표 오른쪽 끝 빈 열(서식 입력란) 보존 (#47, 기본 off: 후행 빈 열 트림)")
   .option("--keep-empty-paragraphs", "빈 문단 보존 — 본문은 빈 paragraph 블록, 표 셀은 빈 줄로 (#57, 기본 off: 빈 문단 제거)")
   .option("--include-field-placeholders", "미기입 누름틀 안내문도 출력 — 빈 서식의 칸 용도 보존 (#92, 기본 off: 인쇄되지 않는 안내문 제외)")
+  .option("--memos", "메모(한글 메모 넣기)를 문서 끝 '메모' 절로 — 작성자·시각·붙은 글·메모 글 (#180, HWPX·HWP5). --format json 결과에는 memos 목록이 늘 들어간다")
   .option("--inline-images", "이미지를 base64 data URI 로 마크다운에 인라인 (BMP→PNG 압축, HWP5 전용 — 인라인된 경우만 파일 미저장, 그 외 포맷은 저장 유지)")
   .option("--image-refs", "--format json 에서 이미지 바이트를 인라인하지 않고 파일 참조(images/<문서 이름>/<파일명>)만 남김 (#65 — 이미지가 수백 장인 문서의 직렬화 한계 회피, -o/-d 와 함께 사용)")
   .option("--password <pw>", "암호로 보호된 문서의 열기 암호 (#59, HWPX·HWP3·HWP5. 한컴 DRM 문서는 해당 없음)")
   .option("--html-tables", "모든 표를 HTML 로 — 파이프 표도 HTML 표로, 태그마다 한 줄씩 들여써 냄")
+  .option("--table-format <format>", "표 출력 형식: gfm — 모든 표를 HTML 없이 GFM 파이프 표로, 셀 안 표는 부모 뒤 독립 표 + 관계 표지(<!-- <table … /> -->) (RAG 색인용, --html-tables 와 함께 못 씀)")
+  .option("--keep-layout-tables", "테두리가 안 보이는 틀 표도 원본 표 구조 그대로 (기본: 보이는 대로 — 틀은 글, 칸으로 조립한 분수는 수식). patch 로 되돌릴 편집본은 이 옵션으로 뽑는다")
   .option("--script-tags", "위·아래첨자를 <sup>·<sub> 로 표기 — PDF 는 기본 끔(논문·수식 PDF 에 권장), HWPX·HWP·DOCX 는 기본 켬")
   .option("--no-script-tags", "첨자 표기 끄기 — 모든 형식에서 평문(\"104 m2\")")
   .option("--plain", "평문 Markdown — 그림 자리 표시·링크 URL·밑줄/굵게 표기를 빼고 글만 (제목·목록·표 구조는 유지, 색인·RAG 용)")
@@ -49,180 +61,45 @@ program
       process.stderr.write(`[kordoc] 지원하지 않는 형식: ${opts.format} (markdown, json, chunks)\n`)
       process.exit(1)
     }
+    if (opts.tableFormat !== undefined && opts.tableFormat !== "gfm") {
+      process.stderr.write(`[kordoc] 지원하지 않는 표 형식: ${opts.tableFormat} (gfm)\n`)
+      process.exit(1)
+    }
+    if (opts.tableFormat && opts.htmlTables) {
+      process.stderr.write(`[kordoc] --table-format 과 --html-tables 는 함께 쓸 수 없습니다\n`)
+      process.exit(1)
+    }
     // -o는 단일 파일 전용 — 다중 파일에서 무음 무시되지 않게 경고
     if (opts.output && files.length > 1) {
       process.stderr.write(`[kordoc] ⚠️ -o/--output 은 단일 파일 전용이라 무시됩니다 — 다중 파일은 -d/--out-dir 를 사용하세요\n`)
     }
-    for (let fi = 0; fi < files.length; fi++) {
-      const filePath = files[fi]
-      const absPath = resolve(filePath)
-      const fileName = basename(absPath)
-      const filePrefix = files.length > 1 ? `[${fi + 1}/${files.length}] ` : ""
-      let detectedFormat: ReturnType<typeof detectFormat> = "unknown"
-
+    const jobs = Number(opts.jobs)
+    if (!/^\d+$/.test(opts.jobs) || !Number.isSafeInteger(jobs) || jobs < 1) {
+      program.error("--jobs must be a positive integer")
+    }
+    if (jobs > 1 && files.length > 1) {
+      if (!opts.outDir) program.error("--jobs > 1 requires --out-dir for multiple files")
       try {
-        const fileSize = statSync(absPath).size
-        if (fileSize > 500 * 1024 * 1024) {
-          process.stderr.write(`\n[kordoc] SKIP: ${fileName} — 파일이 너무 큽니다 (${(fileSize / 1024 / 1024).toFixed(1)}MB)\n`)
-          process.exitCode = 1
-          continue
-        }
-        const buffer = readFileSync(absPath)
-        const arrayBuffer = toArrayBuffer(buffer)
-        const format = detectFormat(arrayBuffer)
-        detectedFormat = format
-
-        if (!opts.silent) {
-          process.stderr.write(`[kordoc] ${filePrefix}${fileName} (${format}) ...`)
-        }
-
-        const parseOptions: ParseOptions = { filePath: absPath }
-        if (opts.pages) parseOptions.pages = opts.pages as string
-        if (opts.headerFooter === false) parseOptions.removeHeaderFooter = false
-        if (opts.tables === false) parseOptions.tables = false
-        if (opts.formulaOcr) parseOptions.formulaOcr = true
-        if (opts.ocrForce) parseOptions.ocr = "force"
-        else if (opts.ocr) parseOptions.ocr = true
-        if (opts.ocrLanguage) parseOptions.ocrLanguage = opts.ocrLanguage as "korean" | "en" | "de"
-        if (opts.dedupeHeaders) parseOptions.dedupeRunningHeaders = true
-        if (opts.keepEmptyCols) parseOptions.keepTrailingEmptyCols = true
-        if (opts.keepEmptyParagraphs) parseOptions.keepEmptyParagraphs = true
-        if (opts.includeFieldPlaceholders) parseOptions.includeFieldPlaceholders = true
-        if (opts.inlineImages) parseOptions.inlineImages = true
-        if (opts.password) parseOptions.password = opts.password as string
-        if (opts.images === false) parseOptions.images = false
-        if (opts.plain) parseOptions.plain = true
-        if (opts.scriptTags !== undefined) parseOptions.scriptTags = opts.scriptTags as boolean
-        if (opts.htmlTables) parseOptions.htmlTables = true
-        if (!opts.silent) {
-          parseOptions.onProgress = (current: number, total: number) => {
-            process.stderr.write(`\r[kordoc] ${filePrefix}${fileName} (${format}) [${current}/${total}]`)
-          }
-        }
-        const { parse } = await import("./parse.js")
-        const result = await parse(arrayBuffer, parseOptions)
-        detectedFormat = result.fileType  // ZIP 세분화(xlsx·docx) 반영 — 실패 JSON 의 fileType
-
-        if (!result.success) {
-          process.stderr.write(` FAIL\n`)
-          process.stderr.write(`  → ${result.error}\n`)
-          // 실패는 모든 --format 에서 stdout 에 동일한 실패 JSON(success:false + code)을 낸다(#69)
-          // — 호출자가 원인 코드(ENCRYPTED 등)로 분기할 수 있는 기계 계약. 성공 출력과 충돌하지
-          // 않는다: markdown 성공은 마크다운, chunks 성공은 JSON 배열이고 실패는 객체 + exit 1.
-          // stderr 의 FAIL 문구는 사람용으로 그대로 둔다.
-          process.stdout.write(JSON.stringify({ ...result, file: fileName }, null, 2) + "\n")
-          process.exitCode = 1
-          continue
-        }
-
-        if (!opts.silent) process.stderr.write(` OK\n`)
-
-        let markdown = result.markdown
-        // 이미지 인라인은 HWP5 경로에서만 실제로 일어난다(parser.ts). 그 외 포맷(HWPX/DOCX 등)은
-        // --inline-images 를 줘도 인라인되지 않으므로, 이미지 저장/경로접두사를 생략하면 참조가
-        // 깨지고(dangling) 바이트가 유실된다 → 실제 인라인된 경우에만 생략한다.
-        const imagesInlined = opts.inlineImages && result.fileType === "hwp"
-        // 그림을 파일로 저장하는 실행(--out-dir 또는 단일 파일 --output, 아래 saveImages)이면 이미지 참조 경로에 images/ 접두사 추가
-        // (인라인 모드에선 이미지가 마크다운에 임베드되므로 건너뜀). 종전엔 --out-dir 만 봐서 -o 결과의 그림 링크가 전부 깨졌다(#94).
-        // <img src> 는 병합/중첩 표 셀 경로(table/builder.ts) — 마크다운 문법과 함께 둘 다 바꿔야 참조가 안 깨진다
-        const savesImageFiles = Boolean(opts.outDir || (opts.output && files.length === 1))
-        // 그림은 문서마다 images/<문서 이름>/ 에 — 같은 폴더로 여러 문서를 변환하면 image_001.png 가 서로 덮어써졌다(#98).
-        // 문서 이름은 출력 파일 이름(-o) 또는 입력 파일 이름(-d)에서 확장자를 뺀 것. 링크에서는 공백·괄호만 퍼센트 인코딩한다
-        const docStem = (opts.output && files.length === 1 ? basename(opts.output) : fileName).replace(/\.[^.]+$/, "")
-        const imgLink = `images/${docStem.replace(/[ ()]/g, ch => encodeURIComponent(ch))}/`
-        if (savesImageFiles && result.images?.length && !imagesInlined) {
-          markdown = markdown
-            .replace(/!\[image\]\(image_/g, `![image](${imgLink}image_`)
-            .replace(/(<img\b[^>]*\bsrc=")image_/g, `$1${imgLink}image_`)
-        }
-        // json 직렬화 — refsOnly면 이미지 바이트를 빼고 저장 경로만 남긴다.
-        // 이미지가 수백 장인 문서는 base64 총량이 V8 문자열 한계를 넘어 RangeError 로
-        // 터졌고, 그 예외가 성공 로그 뒤 비-JSON 출력이 되어 파이프라인이 깨졌다 (#65).
-        const serializeJson = (refsOnly: boolean): string => {
-          const payload = refsOnly && result.images?.length
-            ? { ...result, images: result.images.map(img => ({ filename: img.filename, mimeType: img.mimeType, path: `images/${docStem}/${img.filename}` })) }
-            : result
-          return JSON.stringify(payload, (_key, value) =>
-            value instanceof Uint8Array ? Buffer.from(value).toString("base64") : value
-          , 2)
-        }
-        let output: string
-        if (opts.format === "json") {
-          const savesImages = Boolean((opts.output && files.length === 1) || opts.outDir) && !imagesInlined
-          try {
-            output = serializeJson(Boolean(opts.imageRefs) && savesImages)
-          } catch (err) {
-            // 한계 초과 — 이미지를 어차피 파일로 저장하는 실행이면 참조 모드로 자동 강등한다.
-            // 저장 위치가 없으면(stdout) 구제할 방법이 없으므로 실패 JSON 계약으로 넘긴다.
-            if (!savesImages || !result.images?.length) throw err
-            output = serializeJson(true)
-            process.stderr.write(`  ⚠️ 이미지 base64 인라인이 직렬화 한계를 넘어 파일 참조로 대체했습니다 (${result.images.length}개 → images/${docStem}/)\n`)
-          }
-        } else if (opts.format === "chunks") {
-          const { blocksToChunks } = await import("./chunks.js")
-          output = JSON.stringify(blocksToChunks(result.blocks), null, 2)
-        } else {
-          output = markdown
-        }
-
-        // 이미지 저장 (--out-dir 또는 --output 시) — 실제 인라인된 경우(HWP5)에만 미저장, 그 외엔 저장 유지
-        const saveImages = (dir: string) => {
-          if (!result.images?.length || imagesInlined) return
-          const imgDir = resolve(dir, "images", docStem)
-          mkdirSync(imgDir, { recursive: true })
-          for (const img of result.images) {
-            writeFileSync(resolve(imgDir, img.filename), img.data)
-          }
-          // images/<문서 이름>/manifest.json — 소비자가 확장자·매직바이트 추측 없이 형식 분기(#70).
-          // mimeType 은 매직바이트 실측 우선 — 확장자 유래 선언값은 실데이터와 어긋날 수 있다.
-          const manifest = result.images.map(img => ({
-            name: img.filename,
-            mimeType: detectImageMime(img.data) ?? img.mimeType,
-            bytes: img.data.length,
-            ...(img.source ? { source: img.source } : {}),
-          }))
-          writeFileSync(resolve(imgDir, "manifest.json"), JSON.stringify(manifest, null, 2), "utf-8")
-          if (!opts.silent) process.stderr.write(`  → ${result.images.length}개 이미지 → ${imgDir} (manifest.json 포함)\n`)
-        }
-
-        if (opts.output && files.length === 1) {
-          writeFileSync(opts.output, output, "utf-8")
-          if (!opts.silent) process.stderr.write(`  → ${opts.output}\n`)
-          saveImages(resolve(opts.output, ".."))
-        } else if (opts.outDir) {
-          mkdirSync(opts.outDir, { recursive: true })
-          const outExt = opts.format === "json" ? ".json" : opts.format === "chunks" ? ".chunks.json" : ".md"
-          const outPath = resolve(opts.outDir, fileName.replace(/\.[^.]+$/, outExt))
-          writeFileSync(outPath, output, "utf-8")
-          if (!opts.silent) process.stderr.write(`  → ${outPath}\n`)
-          saveImages(opts.outDir)
-        } else {
-          process.stdout.write(output + "\n")
-        }
+        if (!await convertParallel(files, opts, jobs)) process.exitCode = 1
       } catch (err) {
-        process.stderr.write(`\n[kordoc] ERROR: ${fileName} — ${sanitizeError(err)}\n`)
-        // 파싱 이후(출력·직렬화) 단계에서 터져도 실패 JSON 을 내야 호출자가 원인 코드로
-        // 분기할 수 있다 — 종전엔 성공 로그 뒤 비-JSON 이었다 (#65). json 외 포맷에도
-        // 동일 계약을 적용한다 (#69).
-        process.stdout.write(JSON.stringify({
-          success: false,
-          fileType: detectedFormat,
-          // 다중 입력에서 어느 파일이 실패했는지 호출자가 기계적으로 특정할 수 있게 한다 (#69).
-          // basename 만 노출 — 전체 경로는 내부 정보로 보아 넣지 않는다.
-          file: fileName,
-          error: sanitizeError(err),
-          code: classifyError(err),
-        }, null, 2) + "\n")
-        process.exitCode = 1
+        program.error(sanitizeError(err))
       }
+    } else {
+      if (opts.outDir && files.length > 1) {
+        try { assertDistinctStems(files) } catch (err) { program.error(sanitizeError(err)) }
+      }
+      if (!await convertFiles(files, opts)) process.exitCode = 1
     }
   })
 
 registerDocCommands(program)
+registerConvertCommands(program)
 registerGenerateCommands(program)
+registerPackCommands(program)
 registerRenderCommands(program)
 registerSystemCommands(program)
 registerWorkerCommands(program)
+registerBatchWorker(program)
 
 // stdout 은 마크다운·JSON·생성 바이너리 채널 — pdfjs 등이 console 로 찍는 경고가 섞이지 않게 stderr 로
 // (parse-worker·MCP 와 같은 처리). setup 은 사람이 보는 설치 화면이라 그대로 둔다
@@ -230,4 +107,6 @@ program.hook("preAction", (_program, action) => {
   if (action.name() !== "setup") routeConsoleToStderr()
 })
 
-program.parse()
+// 출처를 node 로 고정 — 정하지 않으면 commander 가 process.versions.electron 을 보고 Electron 앱 방식(argv[1]부터)으로
+// 읽어, Electron 을 node 로 띄운(ELECTRON_RUN_AS_NODE) 데스크톱 앱에서 cli.js 자신이 입력 파일로 잡힌다
+program.parse(process.argv, { from: "node" })

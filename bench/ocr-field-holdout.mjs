@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url"
 import { parse } from "../dist/index.js"
 import { decodeToRgba } from "../src/ocr/image-ocr.js"
 import { getOcrEngine } from "../src/ocr/engine.js"
+import { languageModels } from "../src/ocr/models.js"
 import { getOcrModelStatus } from "../src/ocr/models.js"
 import { normalizeOcrText, scoreOcrFields } from "./lib/ocr-field-metrics.mjs"
 
@@ -53,7 +54,7 @@ const detailDocs=[]
 for(const language of selected==="both"?["de","en"]:[selected]){
   const profile=await getOcrModelStatus(language)
   if(!profile.every(model=>model.verified))throw new Error(`OCR ${language} models not SHA-verified; run check-ocr-models --language ${language} before this offline gate`)
-  const engine=await getOcrEngine(language)
+  const engine=await getOcrEngine(languageModels(language))
   const documents=[]
   for(const doc of manifest.languages[language].documents.slice(0,limit)){
     const image=await readFile(join(dirs[language],doc.image_path))

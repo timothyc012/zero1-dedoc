@@ -5,6 +5,8 @@
 //
 // 트랙:
 //   HWPX : 자기참조 XML GT — text_recall / phantom / table_structure / cell_content / order / specials
+//          표 정답은 hp:tbl 이 아니라 보이는 표(v4.17.0 채점 기준 변경, ref/visible-tables.mjs) — 틀 행 칸 글은 재현율 유닛으로만,
+//          칸으로 조립한 분수는 수식(eqPresence 모수)
 //   PDF  : pdftotext+pdfjs consensus 교차검증 — pdf_cross_coverage (needsOcr 페이지 격리)
 //   HWP5 : 같은 newsId의 .hwpx 쌍이 있으면 상호 정렬 기반 2차 트랙 (게이트 없음, 보고만)
 //
@@ -278,11 +280,11 @@ async function scoreHwpx(file, buf) {
       contentNum: tbl.contentNum, contentDen: tbl.contentDen,
       splitTables: tbl.splitTables, decorForgiven: tbl.decorForgiven,
       unmatchedRef: tbl.unmatchedRef, unmatchedIr: tbl.unmatchedIr,
-      nested: ref.counters.nestedTables,
+      nested: ref.counters.nestedTables, hwpx: ref.counters.hwpxTables,
       mismatches: tbl.details.filter(d => !d.exact).slice(0, 5),
     },
     specials: {
-      eqRef, eqOut: mdEqCount, eqPresence: round(eqPresence),
+      eqRef, eqOut: mdEqCount, eqPresence: round(eqPresence), fractions: ref.specials.fractions,
       fnRef, fnOut: mdFnCount, fnPresence: round(fnPresence),
       headers: ref.specials.headers.length, footers: ref.specials.footers.length,
       headerViolations,
@@ -347,6 +349,12 @@ function chunkUnits(plainText) {
 
 function crossCoverage(unitsText, targetKey) {
   const units = chunkUnits(unitsText)
+  // 두 출력의 정규화 글이 같으면 다 덮는다 — 정렬기가 되풀이되는 짧은 줄을 엇갈려 짝지어 같은 글에 벌점을 줬다
+  // (2026-10-17 채점 기준 변경: 지적측량 시행규칙 좌표전환계산부 쌍은 두 출력 253자가 같은데 0.9585)
+  if (normKey(unitsText) === targetKey) {
+    const total = units.reduce((n, u) => n + u.text.length, 0)
+    return { matched: total, total, coverage: 1 }
+  }
   const { perUnit } = alignUnits(units, targetKey)
   let m = 0, t = 0
   for (const r of perUnit) { m += r.matched; t += r.total }
@@ -535,6 +543,7 @@ const hwpxAgg = (() => {
     docs: hwpxDocs.length, refChars, matched, gates,
     tableCount, exactCount,
     nestedTables: sum(hwpxDocs, d => d.tables.nested),
+    hwpxTables: sum(hwpxDocs, d => d.tables.hwpx), fractions: sum(hwpxDocs, d => d.specials.fractions),
     splitTables: sum(hwpxDocs, d => d.tables.splitTables),
     pass: Object.values(gates).every(x => x.pass),
   }
@@ -611,7 +620,7 @@ const hwp5Agg = (() => {
 // agg가 null이 되고 ?? true 로 조용한 만점 PASS가 나는 것 방지 (리뷰 #14).
 // 부분 실행(subPath)은 의도된 축소라 스킵.
 // v4.15.0 보강 코퍼스 전체 실행 실측 모수로 상향 — 새 세트가 빠진 실행도 통과하지 않도록 한다.
-const MIN_POP = { hwpx: 2286, pdf: 1911, hwpPairs: 1120 }
+const MIN_POP = { hwpx: 2424, pdf: 1911, hwpPairs: 1130 }
 const population = {
   value: `hwpx ${hwpxDocs.length}/pdf ${pdfDocs.length}/hwp쌍 ${hwpPairs.length}`,
   threshold: `≥ ${MIN_POP.hwpx}/${MIN_POP.pdf}/${MIN_POP.hwpPairs}`,
@@ -652,7 +661,7 @@ if (hwpxAgg) {
     const extra = v.failDocs !== undefined ? ` 미달문서=${v.failDocs}` : v.violations !== undefined ? ` 위반=${v.violations}` : ""
     console.log(`  ${v.pass ? "✅" : "❌"} ${k.padEnd(12)} ${detail}${extra}`)
   }
-  console.log(`  표: ref=${hwpxAgg.tableCount} exact=${hwpxAgg.exactCount} | 중첩표(셀 내 보존, 비교 포함)=${hwpxAgg.nestedTables} | 분할보정=${hwpxAgg.splitTables}`)
+  console.log(`  표: ref=${hwpxAgg.tableCount} exact=${hwpxAgg.exactCount} | 중첩표(셀 내 보존, 비교 포함)=${hwpxAgg.nestedTables} | 분할보정=${hwpxAgg.splitTables} | 원본 hp:tbl ${hwpxAgg.hwpxTables} → 보이는 표 ${hwpxAgg.tableCount} · 칸 분수 ${hwpxAgg.fractions}`)
 
   const worst = [...hwpxDocs].sort((a, b) => a.recall - b.recall).slice(0, 10)
   console.log(`\n[HWPX recall 하위 10]`)

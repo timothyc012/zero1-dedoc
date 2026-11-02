@@ -9,6 +9,7 @@
  */
 
 import type { NormItem } from "./text-line.js"
+import { toTex } from "../table/layout-frames.js"
 
 /** 한컴 수식 글꼴 실명 (서브셋 접두 뗀 이름) */
 const EQ_FONT_RE = /^(?:Hy)?hwpEQ/i
@@ -114,6 +115,24 @@ export function wrapEquationRuns(items: NormItem[], faceName: (fontName: string)
   const eqIdx: number[] = []
   items.forEach((it, i) => { if (it.text.trim() && EQ_FONT_RE.test(faceName(it.fontName) ?? "")) eqIdx.push(i) })
   if (!eqIdx.length) return 0
+  // 분수 막대 바로 위·아래의 본문 글꼴 글도 분자·분모 — 한글 분자·분모는 본문 글꼴로 찍는다(대기환경보전법 시행령 [별표 8]
+  // "배출농도 / 배출허용기준농도": 수식 글꼴은 막대 하나뿐이라 종전엔 막대만 버리고 분자를 앞 문단으로 냈다)
+  const overBar = (bar: NormItem, it: NormItem): boolean => {
+    const cx = it.x + it.w / 2, dy = Math.abs(it.y - bar.y)
+    return cx > bar.x && cx < bar.x + bar.w && dy > 0 && dy <= Math.max(it.fontSize, 1) * 1.2
+  }
+  // 수식 글꼴 분자·분모가 하나도 없는 막대만 — 수식 글꼴로 찍은 분수(수능 모의고사) 둘레의 본문 글("위의")을 끌어들이지 않게
+  const barItems = eqIdx.map(i => items[i]).filter(bar => isBarItem(bar) && !eqIdx.some(j => !isBarItem(items[j]) && overBar(bar, items[j])))
+  const plain = new Set<number>()
+  if (barItems.length) {
+    items.forEach((it, i) => {
+      if (!it.text.trim() || EQ_FONT_RE.test(faceName(it.fontName) ?? "")) return
+      // 막대 폭 안에 가운데가 놓이고 막대 위·아래(글자 크기 1.2배 안)인 것만 — 막대 옆에 이어 쓴 글("이고")은 수식 밖
+      if (barItems.some(bar => overBar(bar, it))) plain.add(i)
+    })
+    if (plain.size) eqIdx.push(...plain)
+    eqIdx.sort((a, b) => a - b)
+  }
   // 근접 union-find — 목록은 줄 정렬이라 분자·분모·첨자가 멀리 떨어져 들어온다
   const parent = eqIdx.map((_, k) => k)
   const find = (k: number): number => { while (parent[k] !== k) { parent[k] = parent[parent[k]]; k = parent[k] } return k }
@@ -133,10 +152,11 @@ export function wrapEquationRuns(items: NormItem[], faceName: (fontName: string)
     for (const i of members) drop.add(i)
     const toks: Tok[] = cur.map(it => {
       const bar = isBarItem(it)
-      const text = bar ? "" : FUNC_RE.test(it.text.trim()) ? it.text.trim() : [...it.text].map(decodeEq).join("")
+      const text = bar ? "" : plain.has(items.indexOf(it)) ? toTex(it.text) : FUNC_RE.test(it.text.trim()) ? it.text.trim() : [...it.text].map(decodeEq).join("")
       return { text, x: it.x, y: it.y, w: it.w, size: sizeOf(it), bar }
     })
-    const tex = layout(toks)
+    // 글자마다 찍은 본문 글꼴 분자·분모는 \text{} 조각이 이어진다 — 한 덩어리로
+    const tex = layout(toks).replace(/\}\\text\{/g, "")
     if (!tex) continue // 되살릴 글이 없는 조각(표에 없는 코드) — 종전처럼 버린다
     // 줄 위치 — 본문 크기 조각이 가장 많이 놓인 기준선. 분수뿐인 덩어리는 막대 높이(분자·분모 가운데)에 둔다
     const size = Math.max(...cur.map(sizeOf))

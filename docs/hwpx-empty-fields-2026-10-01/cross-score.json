@@ -1,0 +1,98 @@
+{
+  "baselineVersion": "4.18.0",
+  "candidateVersion": "4.18.1",
+  "baselineCommit": "751928c74134869a16f05693b1969745e88440d3",
+  "baselineIndexSHA256": "773353e08d451c1e6b23c679669968cf54ec563acd1b32aa8a12491f819d3485",
+  "candidateIndexSHA256": "f366cef32e860b75913a6994fd10dc900030640f69e8d0ea8eefcc40baecd490",
+  "referenceCriteriaChanged": true,
+  "scorerNormalizationExclusionsChanged": false,
+  "matrix": [
+    {
+      "combination": "old-reference-old-parser",
+      "report": "/tmp/kordoc-hwpx-r3-baseline-4.18.0-20261001/baseline-hwpx-only-score.json",
+      "reportSHA256": "73d002d8b64a66b0ab324b1afbf0e2631d0334b48112a7dd41ddb5ebdfe7f4cb",
+      "documents": 2286,
+      "referenceTables": 9865,
+      "exactTables": 9849,
+      "exactPercent": 99.83781044095286,
+      "cellF1": 0.998581,
+      "contentNED": 0.999953,
+      "cellExact": 0.999982,
+      "pass": true,
+      "documentNamesSHA256": "25aee6b18e97afff9baaacb1500e6cfd7dbfa93f7f9e046617ae417f6dc0c602",
+      "elapsedMs": 71245
+    },
+    {
+      "combination": "old-reference-new-parser",
+      "report": "/tmp/kordoc-hwpx-r3-dual-score-20261001/old-reference-new-parser/bench/out/score.json",
+      "reportSHA256": "2098b14c6f46311fdab4b74735e4c8da6b206bb8092ef5c917314cb0b0a03836",
+      "documents": 2286,
+      "referenceTables": 9865,
+      "exactTables": 9849,
+      "exactPercent": 99.83781044095286,
+      "cellF1": 0.998581,
+      "contentNED": 0.999953,
+      "cellExact": 0.999982,
+      "pass": true,
+      "documentNamesSHA256": "25aee6b18e97afff9baaacb1500e6cfd7dbfa93f7f9e046617ae417f6dc0c602",
+      "elapsedMs": 69593
+    },
+    {
+      "combination": "new-reference-old-parser",
+      "report": "/tmp/kordoc-hwpx-r3-dual-score-20261001/new-reference-old-parser/bench/out/score.json",
+      "reportSHA256": "4f3137944e6eb3170c68aed218adc17926cb4e5537919c45fa76cc115eba95ff",
+      "documents": 2286,
+      "referenceTables": 9865,
+      "exactTables": 9851,
+      "exactPercent": 99.85808413583376,
+      "cellF1": 0.998581,
+      "contentNED": 0.999953,
+      "cellExact": 0.999982,
+      "pass": true,
+      "documentNamesSHA256": "25aee6b18e97afff9baaacb1500e6cfd7dbfa93f7f9e046617ae417f6dc0c602",
+      "elapsedMs": 70678
+    },
+    {
+      "combination": "new-reference-new-parser",
+      "report": "/Users/mong-e/workspace/kordoc-quality-99/bench/out/score.json",
+      "reportSHA256": "d83fdff47f0f870185b170846e491f231121b788ba55224eeb08cce743b45b5c",
+      "documents": 2286,
+      "referenceTables": 9865,
+      "exactTables": 9865,
+      "exactPercent": 100,
+      "cellF1": 1,
+      "contentNED": 0.999953,
+      "cellExact": 0.999982,
+      "pass": true,
+      "documentNamesSHA256": "25aee6b18e97afff9baaacb1500e6cfd7dbfa93f7f9e046617ae417f6dc0c602",
+      "elapsedMs": 69575
+    }
+  ],
+  "parserRestoredEmptyFields": 14,
+  "referenceOnlyEquationFixes": 2,
+  "unchangedPolicy": "Default trailing-empty-column trimming remains; last actual anchor cannot be deleted. keepTrailingEmptyCols:true retains all input columns.",
+  "legacyExactRegressions": 0,
+  "legacyStructureChangedDocuments": [
+    {
+      "file": "licbyl/17337363_주민투표관리규칙_인영신고서.hwpx",
+      "irOld": 1,
+      "irNew": 2,
+      "exactOld": 1,
+      "exactNew": 1,
+      "mdOld": 188,
+      "mdNew": 188
+    },
+    {
+      "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+      "irOld": 46,
+      "irNew": 59,
+      "exactOld": 46,
+      "exactNew": 46,
+      "mdOld": 18260,
+      "mdNew": 18260
+    }
+  ],
+  "guiPixelEqualityVerified": false,
+  "candidateSourceCommit": "5aeafcb593ef94dbc7a910da7edcd93f4bd2f352",
+  "finalPublicationValidation": "See release-4.18.1.json; cross-score build precedes the exact visual no-op patch guard, which does not alter parser outputs."
+}

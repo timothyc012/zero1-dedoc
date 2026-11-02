@@ -83,6 +83,19 @@ function medianOf(values: number[]): number {
  * - 한 단에만 있고 다른 단 첫 줄보다 위에 큰 틈으로 떨어진 짧은 줄(그림 옆 캡션)은 두 단보다 먼저,
  * - 단 아래쪽 본문보다 작은 글자로 이어지는 각주(번호 줄 포함)는 두 단 본문 뒤에 좌 → 우로 낸다.
  */
+/** 단 아래 각주 띠의 줄 수 — 아래에서부터 본문보다 작은 글자 줄이고 그중 하나가 각주 번호로 시작할 때 */
+export function noteLines(lines: NormItem[][]): number {
+  // 본문 크기는 줄의 25% 이상을 차지하는 가장 큰 글자 크기 — 각주 줄이 본문보다 많은 단은 중앙값이 각주 크기가 되고,
+  // 단 맨 위가 작은 캡션인 단(ODL 008 우단)은 첫 줄이 본문이 아니다
+  const sizes = lines.map(l => Math.max(...l.map(i => i.fontSize)))
+  const body = Math.max(0, ...sizes.filter(s => sizes.filter(o => Math.abs(o - s) < 0.5).length >= lines.length * 0.25))
+  let n = 0
+  while (n < lines.length && Math.max(...lines[lines.length - 1 - n].map(i => i.fontSize)) <= body * 0.9) n++
+  if (n === 0 || lines.length - n < 3) return 0
+  const tail = lines.slice(lines.length - n)
+  return tail.some(l => NOTE_START.test(mergeLineSimple(l))) ? n : 0
+}
+
 function columnPair(left: NormItem[], right: NormItem[]): NormItem[][] {
   if (left.length === 0 || right.length === 0) return [left, right].filter(g => g.length > 0)
   const byLine = (side: NormItem[]) => groupByY([...side].sort((a, b) => b.y - a.y || a.x - b.x))
@@ -110,19 +123,7 @@ function columnPair(left: NormItem[], right: NormItem[]): NormItem[][] {
   const nR = lift(R, L), nL = nR ? 0 : lift(L, R)
   if (nR) { out.push(R.slice(0, nR).flat()); R = R.slice(nR) }
   if (nL) { out.push(L.slice(0, nL).flat()); L = L.slice(nL) }
-  // 각주 띠 — 아래에서부터 본문보다 작은 글자 줄
-  const notes = (lines: NormItem[][]): number => {
-    // 본문 크기는 줄의 25% 이상을 차지하는 가장 큰 글자 크기 — 각주 줄이 본문보다 많은 단은 중앙값이 각주 크기가 되고,
-    // 단 맨 위가 작은 캡션인 단(ODL 008 우단)은 첫 줄이 본문이 아니다
-    const sizes = lines.map(l => Math.max(...l.map(i => i.fontSize)))
-    const body = Math.max(0, ...sizes.filter(s => sizes.filter(o => Math.abs(o - s) < 0.5).length >= lines.length * 0.25))
-    let n = 0
-    while (n < lines.length && Math.max(...lines[lines.length - 1 - n].map(i => i.fontSize)) <= body * 0.9) n++
-    if (n === 0 || lines.length - n < 3) return 0
-    const tail = lines.slice(lines.length - n)
-    return tail.some(l => NOTE_START.test(mergeLineSimple(l))) ? n : 0
-  }
-  const kL = notes(L), kR = notes(R)
+  const kL = noteLines(L), kR = noteLines(R)
   if (kL === 0 && kR === 0) return [...out, L.flat(), R.flat()].filter(g => g.length > 0)
   return [...out, L.slice(0, L.length - kL).flat(), R.slice(0, R.length - kR).flat(),
     L.slice(L.length - kL).flat(), R.slice(R.length - kR).flat()].filter(g => g.length > 0)
@@ -141,7 +142,7 @@ export function topTableBand(items: NormItem[]): { top: NormItem[]; rest: NormIt
     const top = upper.flat()
     const candidate = detectClusterTables(top.map(i => ({
       text: i.text, x: i.x, y: i.y, w: i.w, h: i.h,
-      fontSize: i.fontSize, fontName: i.fontName, hasSpaceBefore: i.hasSpaceBefore, syntheticSpace: i.syntheticSpace,
+      fontSize: i.fontSize, fontName: i.fontName, hasSpaceBefore: i.hasSpaceBefore, syntheticSpace: i.syntheticSpace, spaceAfter: i.spaceAfter,
     })), 1)
     if (!candidate.some(t => t.table.cols >= 3 && t.table.rows >= 3 && t.usedItems.size >= top.length * 0.75)) continue
     return { top, rest: lines.slice(n).flat() }
@@ -333,10 +334,19 @@ export function figureColumnBands(items: NormItem[], figures: ColRect[]): NormIt
     })
     if (left.length === 0 || right.length === 0 || gapped(left) || gapped(right)) { out.push(flat); continue }
     split = true
-    // 한 단의 끝줄이 다른 단 맨 아래보다도 아래에 있으면(쪽 꼬리말 "312 | Grouper …") 두 단 뒤에 온다
+    // 한쪽 "단" 이 반대쪽과 같은 높이의 줄 하나뿐이면 전폭 줄의 반 토막이고 그 틈은 낱말 간격이다(KS X ISO 704 21쪽: 첫 낱말 크기 차로 전폭
+    // 줄이 두 단 줄로 잘못 잡힌 문단 끝 석 줄에서 8pt 낱말 틈을 단 틈으로 가르자 줄 반쪽이 다음 줄 뒤로 갔다) — 그 무리는 가르지 않는다. 쪽은 그대로
+    // 띠마다 읽는다: 띠를 놓으면 쪽 전체 클러스터 표 감지가 그림 라벨과 본문을 6열 가짜 표로 묶었다. 반대쪽에 없는 높이의 한 줄(쪽 꼬리말)은 단이다
+    const halfLine = (side: NormItem[], other: NormItem[]) =>
+      groupByY([...side].sort((a, b) => b.y - a.y || a.x - b.x)).length === 1 && other.some(o => Math.abs(o.y - side[0].y) <= 3)
+    if (halfLine(left, right) || halfLine(right, left)) { out.push(flat); continue }
+    // 한 단의 끝줄이 다른 단 맨 아래보다도 아래에 있으면(쪽 꼬리말 "312 | Grouper …") 두 단 뒤에 온다. 같은 단 줄 간격으로 이어진 줄은
+    // 그 단의 글이다 — 큰 틈(글자 크기 3배 넘게) 뒤의 줄부터 꼬리(옆 단 캡션보다 아래로 내려온 문단 끝 두 줄이 캡션 뒤로 갔다, ODL 133)
     const low = (side: NormItem[], other: NormItem[]) => {
       const floor = Math.min(...other.map(i => i.y)) - Math.max(...other.map(i => i.fontSize))
-      return side.filter(i => i.y < floor)
+      const ls = groupByY([...side].sort((a, b) => b.y - a.y || a.x - b.x))
+      const k = ls.findIndex((l, n) => l[0].y < floor && (n === 0 || ls[n - 1][0].y - l[0].y > 3 * Math.max(...ls[n - 1].map(i => i.fontSize))))
+      return k < 0 ? [] : ls.slice(k).flat()
     }
     const tail = [...low(left, right), ...low(right, left)]
     out.push(left.filter(i => !tail.includes(i)), right.filter(i => !tail.includes(i)), tail)

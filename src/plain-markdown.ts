@@ -12,7 +12,7 @@ export function toPlainMarkdown(md: string): string {
     .replace(/!\[[^\]\n]*\]\([^)\n]*\)/g, "")
     .replace(/<img\b[^>]*>/gi, "")
     .replace(/(?<!!)\[([^\]\n]*)\]\((?:https?|mailto|ftp):[^)\s]*\)/g, "$1")
-    .replace(/<\/?u>/g, "")
+    .replace(/(?<!\\)<\/?u>/g, "")
     .replace(/(?<!\\)\*\*(?=\S)([^\n]*?\S)(?<!\\)\*\*/g, "$1")
     .replace(/(<br>)+(?=<\/t[dh]>)/g, "")
     .replace(/[ \t]+$/gm, "")

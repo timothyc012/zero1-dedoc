@@ -23,7 +23,7 @@ describe("escapeLiteralDollar · escapeGfm", () => {
   })
 
   it("이스케이프된 $ 에서는 수식 스팬을 열지 않는다 — 스팬 밖이라 _ 도 이스케이프", () => {
-    assert.equal(escapeGfm("echo \\$HOME \\$MY_VAR"), "echo \\$HOME \\$MY\\_VAR")
+    assert.equal(escapeGfm("echo \\$HOME \\$_VAR"), "echo \\$HOME \\$\\_VAR")
   })
 
   it("수식 스팬은 그대로 보호 (안의 _ 와 이스케이프된 \\$ 포함)", () => {

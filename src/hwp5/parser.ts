@@ -9,10 +9,12 @@ import { inlineImagesIntoMarkdown } from "../image/transcode.js"
 import { decryptViewText } from "./crypto.js"
 import { parseLenientCfb, type LenientCfbContainer } from "./cfb-lenient.js"
 import { blocksToMarkdown, flattenLayoutTables, dedupeRunningHeaders } from "../table/builder.js"
+import { unframeLayoutTables } from "../table/layout-frames.js"
 import type { IRBlock, DocumentMetadata, InternalParseResult, ParseOptions, ParseWarning, OutlineItem } from "../types.js"
 import { HEADING_RATIO_H1, HEADING_RATIO_H2, HEADING_RATIO_H3 } from "../types.js"
 import { assertDecryptedDocInfo, assertSupportedEncryptVersion, decryptPasswordStream, readEncryptVersion } from "./pw-crypto.js"
 import { KordocError } from "../utils.js"
+import { TOC_ENTRY_BLOCKS } from "../toc-entry.js"
 import { parsePageRange } from "../page-range.js"
 import { detectHwp5SectionPages, type Hwp5SectionPageDetect } from "./page-boundary.js"
 import { indexHwp5Tables } from "./table-ids.js"
@@ -21,6 +23,7 @@ import { parseSection, createHwp5DocState } from "./body.js"
 export { parseSection, createHwp5DocState, hasRealStrike, hasRealUnderline, type Hwp5DocState } from "./body.js"
 
 import { createRequire } from "module"
+import { locateMemoBlocks } from "../memo-notes.js"
 const require = createRequire(import.meta.url)
 const CFB: CfbModule = require("cfb")
 
@@ -137,7 +140,7 @@ export function readHwp5SectionStreams(c: Hwp5Container): Buffer[] {
     ? (c.cfb ? findViewTextSections(c.cfb, c.compressed) : findViewTextSectionsLenient(c.lenientCfb!, c.compressed))
     : c.encrypted
       ? findSectionsVia(c.findStream)
-      : (c.cfb ? findSections(c.cfb) : findSectionsLenient(c.lenientCfb!, c.compressed))
+      : (c.cfb ? findSections(c.cfb) : findSectionsLenient(c.lenientCfb!))
 }
 
 /** 섹션 스트림 → 레코드 (누적 압축해제 상한). 실패한 섹션은 null + PARTIAL_PARSE 경고 */
@@ -162,7 +165,8 @@ export function readHwp5SectionRecords(c: Hwp5Container, sections: Buffer[], war
 
 /** BinData 스토리지 — storageId(16진 BIN%04X) → 바이트(항목별 압축 정규화) */
 export function readHwp5BinData(c: Hwp5Container): Map<number, { data: Buffer; name: string }> {
-  return c.cfb ? collectHwp5BinData(c.cfb.FileIndex) : collectHwp5BinDataLenient(c.lenientCfb!)
+  const readStream = c.encrypted ? c.findStream : undefined
+  return c.cfb ? collectHwp5BinData(c.cfb.FileIndex, readStream) : collectHwp5BinDataLenient(c.lenientCfb!, readStream)
 }
 
 export function parseHwp5Document(buffer: Buffer, options?: ParseOptions): InternalParseResult {
@@ -245,12 +249,14 @@ export function parseHwp5Document(buffer: Buffer, options?: ParseOptions): Inter
 
   // BinData에서 이미지 추출 — 전체 파싱 시 본문 미참조 BinData 이미지도 스윕
   const images = cfb
-    ? extractHwp5Images(cfb.FileIndex, blocks, warnings, !pageFilter)
-    : extractHwp5ImagesLenient(lenientCfb!, blocks, warnings, !pageFilter)
+    ? extractHwp5Images(cfb.FileIndex, blocks, warnings, !pageFilter, encrypted ? findStream : undefined)
+    : extractHwp5ImagesLenient(lenientCfb!, blocks, warnings, !pageFilter, encrypted ? findStream : undefined)
 
   // 레이아웃 테이블 해체 (heading 감지 전에 수행하여 해체된 텍스트도 heading 감지 대상). 칸 테두리가 보이는 표는 풀지 않는다 —
   // 종전엔 3행 이하·글 많은 표를 테두리와 상관없이 풀어 같은 문서의 HWPX 표 118개가 사라지고 틀 안 중첩표가 바깥 단부터 풀렸다
   let flatBlocks = flattenLayoutTables(blocks)
+  // 보이지 않는 틀 표 풀기 (v4.17.0) — 칸 테두리로 선 없는 틀은 글로, 칸으로 조립한 분수는 수식으로
+  if (options?.layoutTables !== "keep") flatBlocks = unframeLayoutTables(flatBlocks, !!options?.keepTrailingEmptyCols)
   // 페이지 레이아웃 표의 반복 러닝 헤더 중복 제거 — opt-in (기본 off).
   // 위치 정보가 없는 HWP5 특성상 정당한 번호매김 반복(붙임별 재번호)까지 오삭제할 수
   // 있어 옵션이 켜졌을 때만 수행하고, 실제 제거가 있으면 경고로 가시화한다.
@@ -263,7 +269,7 @@ export function parseHwp5Document(buffer: Buffer, options?: ParseOptions): Inter
 
   // 스타일 기반 헤딩 감지
   if (docInfo) {
-    detectHwp5Headings(flatBlocks, docInfo)
+    detectHwp5Headings(flatBlocks, docInfo, doc.tocTexts)
   }
 
   // outline 구축
@@ -271,7 +277,7 @@ export function parseHwp5Document(buffer: Buffer, options?: ParseOptions): Inter
     .filter(b => b.type === "heading" && b.level && b.text)
     .map(b => ({ level: b.level!, text: b.text!, pageNumber: b.pageNumber }))
 
-  let markdown = blocksToMarkdown(flatBlocks)
+  let markdown = blocksToMarkdown(flatBlocks, { tableFormat: options?.tableFormat })
   // 이미지 인라인 옵션 — BMP→PNG 압축 후 base64 data URI 로 치환 (AI 에이전트 자체 완결형 마크다운)
   if (options?.inlineImages && options.images !== false && images.length > 0) {
     try {
@@ -282,7 +288,8 @@ export function parseHwp5Document(buffer: Buffer, options?: ParseOptions): Inter
       warnings.push({ message: `이미지 인라인 실패 — 원본 파일 참조로 폴백: ${inlineErr instanceof Error ? inlineErr.message : "알 수 없는 오류"}`, code: "SKIPPED_IMAGE" })
     }
   }
-  return { markdown, blocks: flatBlocks, metadata, outline: outline.length > 0 ? outline : undefined, warnings: warnings.length > 0 ? warnings : undefined, images: images.length > 0 ? images : undefined }
+  const memos = doc.memos.length ? locateMemoBlocks(flatBlocks, doc.memos) : undefined
+  return { markdown, blocks: flatBlocks, metadata, outline: outline.length > 0 ? outline : undefined, warnings: warnings.length > 0 ? warnings : undefined, images: images.length > 0 ? images : undefined, memos }
 }
 
 /** DocInfo 스트림 파싱 (best-effort) */
@@ -310,7 +317,7 @@ function parseDocInfoFromStream(raw: Buffer | null, compressed: boolean): HwpDoc
 }
 
 /** 스타일 기반 헤딩 감지 — 큰 폰트 + 짧은 텍스트 → heading */
-function detectHwp5Headings(blocks: IRBlock[], docInfo: HwpDocInfo): void {
+function detectHwp5Headings(blocks: IRBlock[], docInfo: HwpDocInfo, tocTexts?: Set<string>): void {
   // 기본(본문) 폰트 크기 = 블록 폰트 크기의 텍스트 길이 가중 최빈값.
   // 공문서는 바탕글(10pt)과 다른 크기(13-14pt)로 본문을 쓰는 경우가 많아
   // 바탕글 스타일을 기준으로 삼으면 본문 전체가 헤딩으로 오검출된다 (실증: 보도자료 24/24).
@@ -343,7 +350,7 @@ function detectHwp5Headings(blocks: IRBlock[], docInfo: HwpDocInfo): void {
   for (const block of blocks) {
     // 개요 수준(outlineLevel)으로 이미 heading이 된 블록은 스킵
     if (block.type === "heading") continue
-    if (block.type !== "paragraph" || !block.text) continue
+    if (block.type !== "paragraph" || !block.text || TOC_ENTRY_BLOCKS.has(block) || tocTexts?.has(block.text.trim())) continue
     const text = block.text.trim()
     if (text.length === 0 || text.length > 200) continue
     if (/^\d+$/.test(text)) continue
@@ -368,6 +375,7 @@ function detectHwp5Headings(blocks: IRBlock[], docInfo: HwpDocInfo): void {
     if (level > 0) {
       block.type = "heading"
       block.level = level
+      delete block.spans // 제목은 강조 표지 없이 (HWPX 와 같다)
     }
   }
 }
@@ -539,17 +547,16 @@ function findSections(cfb: CfbContainer): Buffer[] {
   return sections.sort((a, b) => a.idx - b.idx).map(s => s.content)
 }
 
-/** Lenient CFB: BodyText/Section{N} 탐색 — 누적 압축해제 크기 추적 */
-function findSectionsLenient(lcfb: LenientCfbContainer, compressed: boolean): Buffer[] {
+/** Lenient CFB: raw BodyText streams — readHwp5SectionRecords applies decompression once. */
+function findSectionsLenient(lcfb: LenientCfbContainer): Buffer[] {
   const sections: Array<{ idx: number; content: Buffer }> = []
-  let totalDecompressed = 0
+  let totalBytes = 0
   for (let i = 0; i < MAX_SECTIONS; i++) {
     const raw = lcfb.findStream(`/BodyText/Section${i}`) ?? lcfb.findStream(`Section${i}`)
     if (!raw) break
-    const content = compressed ? decompressStream(raw) : raw
-    totalDecompressed += content.length
-    if (totalDecompressed > MAX_TOTAL_DECOMPRESS) throw new KordocError("총 압축 해제 크기 초과 (decompression bomb 의심)")
-    sections.push({ idx: i, content })
+    totalBytes += raw.length
+    if (totalBytes > MAX_TOTAL_DECOMPRESS) throw new KordocError("총 압축 해제 크기 초과 (decompression bomb 의심)")
+    sections.push({ idx: i, content: raw })
   }
   if (sections.length === 0) {
     // fallback: 이름에 "Section" 포함된 스트림
@@ -559,10 +566,9 @@ function findSectionsLenient(lcfb: LenientCfbContainer, compressed: boolean): Bu
         const idx = parseInt(e.name.replace("Section", ""), 10) || 0
         const raw = lcfb.findStream(e.name)
         if (raw) {
-          const content = compressed ? decompressStream(raw) : raw
-          totalDecompressed += content.length
-          if (totalDecompressed > MAX_TOTAL_DECOMPRESS) throw new KordocError("총 압축 해제 크기 초과 (decompression bomb 의심)")
-          sections.push({ idx, content })
+          totalBytes += raw.length
+          if (totalBytes > MAX_TOTAL_DECOMPRESS) throw new KordocError("총 압축 해제 크기 초과 (decompression bomb 의심)")
+          sections.push({ idx, content: raw })
         }
       }
     }

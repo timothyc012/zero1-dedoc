@@ -11,7 +11,8 @@
  *  ③ 양방향(수평/수직) 컷을 모두 계산해 더 큰 갭 선택 + 최소 갭 5pt
  */
 
-import type { NormItem } from "./text-line.js"
+import { groupByY, mergeLineSimple, dominantStyle, computeBBox, type NormItem } from "./text-line.js"
+import { bodyLineJoins } from "./line-wrap.js"
 
 /** 재귀 깊이 제한 — 수천 아이템의 pathological 레이아웃에서 스택 오버플로 방지 */
 const MAX_XYCUT_DEPTH = 50
@@ -36,9 +37,39 @@ interface CutInfo {
   gap: number
 }
 
-export function xyCutOrder(items: NormItem[], gapThreshold: number, depth = 0): NormItem[][] {
+interface WrapBand { top: number; bottom: number; sources: { item: NormItem; state: NormItem }[] }
+
+/** Geometrically confirmed wrap boundaries in the parent reading region. Keys are
+ * original items in a leaf; row grouping retains their identity. Metadata expires
+ * with the items and never enters the public IR. */
+export const XY_WRAP_BANDS = new WeakMap<NormItem, WrapBand[]>()
+const XY_WRAP_ITEMS = new WeakMap<NormItem, NormItem[]>()
+const leaf = (items: NormItem[], wrapped: WrapBand[]): NormItem[][] => {
+  wrapped = validWrapBands(items, wrapped)
+  const source = wrapped.length ? [...items] : []
+  for (const item of items) {
+    if (wrapped.length) { XY_WRAP_BANDS.set(item, wrapped); XY_WRAP_ITEMS.set(item, source) }
+    else { XY_WRAP_BANDS.delete(item); XY_WRAP_ITEMS.delete(item) }
+  }
+  return [items]
+}
+
+/** 하위 무리를 다시 자를 때 물려줄 단(세로) 절단 최소 틈 — 벡터 차트 바로 밑의 짧은 띠(네 줄 이하: 축 이름·범례·출처)만 쪽 문턱을 받는다.
+ *  띠 높이로 다시 잰 문턱(최소 15pt)은 범례 항목 사이 18pt 틈을 단 경계로 갈랐다(ODL 077). 차트 밑이 아닌 무리는 종전대로 제 높이로 잰다 —
+ *  서명란·숫자 행·한 줄 제목은 15~22pt 틈에서 갈라야 글 벤치가 맞고, 줄 많은 무리는 그 문턱으로 좁은 단을 가른다. 가로 절단은 늘 무리 문턱
+ *  (쌓인 짧은 줄이 한 줄로 붙었다, 중문 계약서) */
+export function chartBandGap(group: NormItem[], gap: number, charts: { x1: number; x2: number; y1: number }[]): number {
+  if (charts.length === 0 || groupByY([...group].sort((a, b) => b.y - a.y || a.x - b.x)).length > 4) return 0
+  const x1 = Math.min(...group.map(i => i.x)), x2 = Math.max(...group.map(i => i.x + i.w))
+  const top = Math.max(...group.map(i => i.y + i.fontSize)), em = Math.max(...group.map(i => i.fontSize))
+  return charts.some(c => x1 >= c.x1 - 2 && x2 <= c.x2 + 2 && top <= c.y1 + 2 && c.y1 - top <= 2 * em) ? gap : 0
+}
+
+export function xyCutOrder(items: NormItem[], gapThreshold: number, depth = 0, wrapped?: WrapBand[], columnGap = 0): NormItem[][] {
   if (items.length === 0) return []
-  if (items.length <= 2 || depth >= MAX_XYCUT_DEPTH) return [items]
+  const newRegion = wrapped === undefined
+  wrapped ??= inheritedWrapBands(items)
+  if (items.length <= 2 || depth >= MAX_XYCUT_DEPTH) return leaf(items, wrapped)
 
   // Phase 1 (최상위에서만): cross-layout 전폭 요소 마스크
   if (depth === 0 && items.length >= 3) {
@@ -46,7 +77,7 @@ export function xyCutOrder(items: NormItem[], gapThreshold: number, depth = 0): 
     if (cross.size > 0 && cross.size <= items.length * CROSS_MAX_MASK_RATIO) {
       const rest = items.filter(i => !cross.has(i))
       if (rest.length > 0) {
-        const groups = xyCutOrder(rest, gapThreshold, 1)
+        const groups = xyCutOrder(rest, gapThreshold, 1, undefined, columnGap)
         return mergeCrossLayoutGroups(groups, [...cross])
       }
     }
@@ -54,11 +85,20 @@ export function xyCutOrder(items: NormItem[], gapThreshold: number, depth = 0): 
 
   // Phase 3: 양방향 컷 계산 → 더 큰 갭 선택 (기존: Y 무조건 우선 → 2단 인터리브)
   const minGap = Math.max(XYCUT_MIN_GAP, gapThreshold)
-  const hCut = findHorizontalCut(items)
-  const vCut = findVerticalCutWithOutlierFilter(items, minGap)
+  const sortedY = [...items].sort((a, b) => b.y - a.y)
+  let hCut = findHorizontalCut(sortedY, wrapped)
+  // Text assembly cannot affect a horizontal cut below its minimum gap.
+  // Reuse the sorted projection when a fresh region needs wrap protection.
+  if (newRegion && hCut.gap >= minGap) {
+    wrapped = wrappedLineBands(items, wrapped)
+    hCut = findHorizontalCut(sortedY, wrapped)
+  }
+  // 단(세로) 절단만 물려받은 최소 틈을 쓴다 — 가로 절단(쌓인 줄 사이)은 이 무리 문턱 그대로 (shortBandGap)
+  const vMinGap = Math.max(minGap, columnGap)
+  const vCut = findVerticalCutWithOutlierFilter(items, vMinGap)
 
   const hValid = hCut.gap >= minGap
-  const vValid = (vCut.gap >= minGap || (vCut.gap >= PROSE_GUTTER_MIN_GAP && isProseGutter(items, vCut.position))) &&
+  const vValid = (vCut.gap >= vMinGap || (vCut.gap >= PROSE_GUTTER_MIN_GAP && isProseGutter(items, vCut.position))) &&
     !splitsSpacedLabel(items, vCut.position)
 
   // 축 선택: 기본 Y 우선 (한국 공문서는 단일 컬럼 위주 — 코퍼스 검증 결과 Y 우선이 안정적).
@@ -69,23 +109,23 @@ export function xyCutOrder(items: NormItem[], gapThreshold: number, depth = 0): 
   if (hValid && vValid) useHorizontal = vCut.gap <= hCut.gap * 1.5 || staggeredSides(items, vCut.position)
   else if (hValid) useHorizontal = true
   else if (vValid) useHorizontal = false
-  else return splitEdgeSpannedColumns(items, gapThreshold, depth) ?? [items] // 분할 불가 → 리프 노드
+  else return splitEdgeSpannedColumns(items, gapThreshold, depth) ?? leaf(items, wrapped) // 분할 불가 → 리프 노드
 
   if (useHorizontal) {
     const upper = items.filter(i => i.y > hCut.position)
     const lower = items.filter(i => i.y <= hCut.position)
     if (upper.length > 0 && lower.length > 0 && upper.length < items.length) {
-      return [...xyCutOrder(upper, gapThreshold, depth + 1), ...xyCutOrder(lower, gapThreshold, depth + 1)]
+      return [...xyCutOrder(upper, gapThreshold, depth + 1, wrapped, columnGap), ...xyCutOrder(lower, gapThreshold, depth + 1, wrapped, columnGap)]
     }
   } else {
     const left = items.filter(i => i.x + i.w / 2 < vCut.position)
     const right = items.filter(i => i.x + i.w / 2 >= vCut.position)
     if (left.length > 0 && right.length > 0 && left.length < items.length) {
-      return [...xyCutOrder(left, gapThreshold, depth + 1), ...xyCutOrder(right, gapThreshold, depth + 1)]
+      return [...xyCutOrder(left, gapThreshold, depth + 1, undefined, columnGap), ...xyCutOrder(right, gapThreshold, depth + 1, undefined, columnGap)]
     }
   }
 
-  return [items]
+  return leaf(items, wrapped)
 }
 
 /**
@@ -180,24 +220,96 @@ function mergeCrossLayoutGroups(groups: NormItem[][], cross: NormItem[]): NormIt
   return result
 }
 
-/**
- * 수평 컷(Y축 분할) — Y 프로젝션에서 가장 넓은 갭.
- * 갭/분할점 계산은 기존 findYSplit과 동일 (y-h를 하단으로 보는 bbox 모델 유지 —
- * 코퍼스 검증 결과 모델 변경 시 행 분할점이 이동해 회귀 발생).
- */
-function findHorizontalCut(items: NormItem[]): CutInfo {
-  if (items.length < 2) return { position: 0, gap: 0 }
-  const sorted = [...items].sort((a, b) => b.y - a.y)
+/** Keep parent proof only while both original rows survive unchanged in this leaf. */
+function validWrapBands(items: NormItem[], bands: WrapBand[]): WrapBand[] {
+  if (!bands.length) return []
+  const present = new Set(items)
+  return bands.filter(b => b.sources.every(({ item: a, state: s }) => present.has(a) &&
+    a.text === s.text && a.x === s.x && a.y === s.y && a.w === s.w && a.h === s.h &&
+    a.fontSize === s.fontSize && a.fontName === s.fontName && a.isHidden === s.isHidden &&
+    a.hasSpaceBefore === s.hasSpaceBefore && a.syntheticSpace === s.syntheticSpace &&
+    a.strike === s.strike && a.underline === s.underline && a.seq === s.seq && a.rotated === s.rotated))
+}
+
+/** A second extraction pass may reuse only the same unchanged reading leaf. */
+function inheritedWrapBands(items: NormItem[]): WrapBand[] {
+  const source = XY_WRAP_ITEMS.get(items[0])
+  const present = source?.length === items.length ? new Set(items) : null
+  const sameLeaf = present && source!.every(item => present.has(item))
+  return sameLeaf ? validWrapBands(items, XY_WRAP_BANDS.get(items[0]) ?? []) : []
+}
+
+/** Two completed records with a shared page-number column are independent rows.
+ * tab-leaders keeps the leader's geometry as a whitespace item. Require a separate
+ * numeric run and a wide label-to-number gap; a bare number at a prose end is not proof. */
+export function tocRecordBoundaries(rows: NormItem[][]): Set<number> {
+  const out = new Set<number>()
+  if (rows.length < 2) return out
+  const records = rows.map((row, index) => {
+    const visible = row.filter(i => i.text.trim()).sort((a, b) => a.x - b.x)
+    let start = visible.length - 1
+    if (start < 1 || !/^\d+$/.test(visible[start].text.trim())) return null
+    for (; start > 0; start--) {
+      const a = visible[start - 1], b = visible[start]
+      if (!/^\d+$/.test(a.text.trim()) || b.x - (a.x + a.w) > 0.5 * b.fontSize) break
+    }
+    const nums = visible.slice(start), label = visible.slice(0, start).filter(i => !/^[·.⋯…]{4,}$/.test(i.text.trim()))
+    const fs = nums[0].fontSize
+    if (!/^\d{1,4}$/.test(nums.map(i => i.text.trim()).join("")) || fs <= 0 ||
+        !label.some(i => /[\p{L}]/u.test(i.text)) ||
+        nums[0].x - Math.max(...label.map(i => i.x + i.w)) < Math.max(2 * fs, 30)) return null
+    return { right: Math.max(...nums.map(i => i.x + i.w)), fs, index }
+  }).filter(record => record !== null).sort((a, b) => a.right - b.right)
+  // A wrapped label can intervene between completed entries in the same page column.
+  // Protect only boundaries after completed records, leaving its own wrap intact.
+  for (let i = 0; i + 1 < records.length; i++) {
+    const a = records[i], b = records[i + 1]
+    if (Math.abs(a.right - b.right) <= 0.5 * Math.min(a.fs, b.fs) &&
+        Math.abs(a.fs - b.fs) <= 0.15 * Math.min(a.fs, b.fs)) {
+      if (a.index + 1 < rows.length) out.add(a.index)
+      if (b.index + 1 < rows.length) out.add(b.index)
+    }
+  }
+  return out
+}
+
+/** Fresh wrap evidence is needed only for a region with a possible horizontal cut. */
+function wrappedLineBands(items: NormItem[], inherited: WrapBand[]): WrapBand[] {
+  // Reuse the paragraph assembler's width, pitch, font and new-item guards before
+  // cutting a wide line-spacing band (e.g. 30pt pitch in a 10pt body).
+  const rows = groupByY(items)
+  const records = tocRecordBoundaries(rows)
+  const lines = rows.map(row => {
+    const box = computeBBox(row, 0)
+    return { text: mergeLineSimple(row).replace(/<\/?u>|~~/g, ""), left: box.x, right: box.x + box.width,
+      y: row.reduce((n, i) => n + i.y, 0) / row.length, fontSize: dominantStyle(row)?.fontSize ?? 0,
+      sources: row.map(item => ({ item, state: { ...item } })) }
+  })
+  const joins = bodyLineJoins(lines)
+  const fresh = lines.slice(0, -1).flatMap((line, i) => joins[i] === "\n" || records.has(i) || line.text.trim() === lines[i + 1].text.trim() ? [] :
+    [{ top: line.y, bottom: lines[i + 1].y, sources: [...line.sources, ...lines[i + 1].sources] }])
+  const freshKeys = new Set(fresh.map(b => `${b.top}:${b.bottom}`))
+  return [...inherited.filter(b => !freshKeys.has(`${b.top}:${b.bottom}`)), ...fresh].sort((a, b) => b.top - a.top)
+}
+
+/** 수평 컷 — 기존 y-h 프로젝션 모델을 유지하고 확인된 줄 꺾임만 제외한다. */
+function findHorizontalCut(sorted: NormItem[], wrapped: WrapBand[]): CutInfo {
+  if (sorted.length < 2) return { position: 0, gap: 0 }
   let largestGap = 0
   let position = 0
+  let wrapIndex = 0
 
   for (let i = 1; i < sorted.length; i++) {
     const prevBottom = sorted[i - 1].y - sorted[i - 1].h
     const currTop = sorted[i].y
     const gap = prevBottom - currTop
-    if (gap > largestGap) {
+    if (gap <= 0) continue // Same-row/overlapping glyphs cannot advance the descending cut cursor.
+    const at = (prevBottom + currTop) / 2
+    while (wrapIndex < wrapped.length && at <= wrapped[wrapIndex].bottom) wrapIndex++
+    const band = wrapped[wrapIndex]
+    if (gap > largestGap && !(band && at < band.top && at > band.bottom)) {
       largestGap = gap
-      position = (prevBottom + currTop) / 2
+      position = at
     }
   }
   return { position, gap: largestGap }
@@ -224,7 +336,12 @@ function findVerticalCutWithOutlierFilter(items: NormItem[], minGap: number): Cu
     // 본문에서 가짜 컬럼 갭이 만들어지므로 70% 이상 유지될 때만 재시도
     if (filtered.length >= 2 && filtered.length < items.length && filtered.length >= items.length * 0.7) {
       const filteredCut = findVerticalCut(filtered)
-      if (filteredCut.gap > edgeCut.gap && filteredCut.gap >= minGap) {
+      // 뺀 좁은 조각이 컷 자리에 걸쳐 같은 줄 양옆에 글을 두면 쪽번호가 아니라 줄 안 낱말이다 — 한 줄 제목
+      // "1-2) 폭력 대비 및 대응의 적절성" 의 "및"(11pt)을 빼고 낸 23pt 틈으로 제목이 두 블록으로 갈렸다
+      const sameRow = (a: NormItem, b: NormItem) => Math.abs(a.y - b.y) <= Math.max(a.fontSize, b.fontSize) * 0.5
+      const inLine = items.some(r => r.w < narrowThreshold && r.x < filteredCut.position && r.x + r.w > filteredCut.position &&
+        filtered.some(o => sameRow(o, r) && o.x + o.w <= r.x + 1) && filtered.some(o => sameRow(o, r) && o.x >= r.x + r.w - 1))
+      if (filteredCut.gap > edgeCut.gap && filteredCut.gap >= minGap && !inLine) {
         return filteredCut
       }
     }

@@ -20,8 +20,11 @@ describe("PDF 표의 긴 본문 행 복원", () => {
       item(String(i + 1), 110, 140 - i * 15),
       item(String(i + 11), 210, 140 - i * 15),
     ]).flat()
-    const result = normalizeUndersegmentedTable(original, columns, body, [200, 180, 160, 20])
+    const kept = new Map<number, number>()
+    const result = normalizeUndersegmentedTable(original, columns, body, [200, 180, 160, 20], kept)
     assert.equal(result?.length, 10)
+    // 그대로 둔 행만 새 행 번호 → 원래 행 번호로 알린다(호출측이 칸 합침을 잇는다)
+    assert.deepEqual([...kept], [[0, 0], [1, 1]])
     assert.deepEqual(result?.slice(0, 2), original.slice(0, 2).map(row => row.map(cell => cell.text)))
     assert.deepEqual(result?.[2], ["지역0", "1", "11"])
     assert.deepEqual(result?.[9], ["지역7", "8", "18"])
@@ -46,5 +49,23 @@ describe("PDF 표의 긴 본문 행 복원", () => {
     assert.deepEqual(result?.[1], ["강원", "20", "21"])
     assert.deepEqual(result?.[10], ["충북", "30", "31"])
     assert.deepEqual(result?.at(-1), ["지역1-7", "8", "18"])
+  })
+})
+
+describe("가로선 없이 쌓은 하위 행", () => {
+  const ocr = (text: string, x: number, y: number, h: number): TextItem => ({ text, x, y, w: 35, h, fontSize: h, fontName: "ocr" })
+  // OCR 예산표: 줄 상자(14~20)가 줄 간격(13)보다 커 띠로는 한 행에 뭉친다 — 열마다 세 줄, k 번째 줄 높이가 맞는다
+  const lines = [["예산지출(a)", "57,549", "66,657", "15.6"], ["·일반회계", "51,469", "59,082", "14.7"], ["·특별회계", "6,080", "7,576", "24.6"]]
+  const cols = [0, 100, 200, 300, 400]
+
+  it("글 든 열 셋 이상이 같은 줄 수(셋+)로 높이가 맞으면 줄마다 행으로 나눈다", () => {
+    const items = lines.flatMap((row, i) => row.map((t, c) => ocr(t, cols[c] + 5, 160 - i * 13 + (c === 3 && i === 1 ? -3 : 0), c === 3 ? 8 : 16)))
+    const rebuilt = normalizeUndersegmentedTable([[{ text: "" }, { text: "" }, { text: "" }, { text: "" }]], cols, items)
+    assert.deepEqual(rebuilt, lines)
+  })
+
+  it("한 칸에서 꺾인 긴 글(다른 열은 한 줄)은 나누지 않는다", () => {
+    const items = [ocr("가나다라", 5, 160, 10), ocr("마바사아", 5, 147, 10), ocr("자차카타", 5, 134, 10), ocr("100", 105, 147, 10), ocr("200", 205, 147, 10), ocr("300", 305, 147, 10)]
+    assert.equal(normalizeUndersegmentedTable([[{ text: "" }, { text: "" }, { text: "" }, { text: "" }]], cols, items), null)
   })
 })

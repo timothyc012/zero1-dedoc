@@ -12,8 +12,10 @@ import type {
   ParseOptions, ParseWarning, ExtractedImage, SourceCellProvenance,
 } from "../types.js"
 import { KordocError, precheckZipSize, unzipLimitBytes, stripDtd } from "../utils.js"
-import { blocksToMarkdown, MAX_COLS } from "../table/builder.js"
-import { sheetToBlocks, type SheetMerge } from "./sheet-blocks.js"
+import { blocksToMarkdown, escapeLiteralDollar } from "../table/builder.js"
+import { escapeLiteralTags } from "../script-tags.js"
+import { MAX_SHEET_COLS, sheetToBlocks, type SheetMerge } from "./sheet-blocks.js"
+import { readZipEntry } from "../hwpx/parser-shared.js"
 
 // ─── 상수 ────────────────────────────────────────────
 
@@ -85,7 +87,7 @@ function parseXml(text: string): Document {
 
 // ─── 공유 문자열 파싱 ──────────────────────────────────
 
-/** si/is 하위 t 텍스트 수집 — rPh(후리가나) 하위 t는 본문이 아니므로 제외 */
+/** si/is 하위 t 텍스트 수집 — rPh(후리가나) 하위 t는 본문이 아니므로 제외. 원문 그대로(IR 이스케이프는 칸 값에 넣을 때, 원문은 출처 칸 rawValue) */
 function collectRichText(root: Element): string {
   let out = ""
   const walk = (node: Element) => {
@@ -297,7 +299,7 @@ function parseWorksheet(
         const ref = cellEl.getAttribute("r")
         const pos = ref !== null ? parseCellRef(ref) : { col: prevCol + 1, row: rowNum }
         // row도 col처럼 상한 검증 — "A5000000000" 하나로 그리드 폭주 방지
-        if (!pos || !Number.isFinite(pos.row) || pos.row < 0 || pos.row >= MAX_SHEET_ROWS || pos.col >= MAX_COLS) continue
+        if (!pos || !Number.isFinite(pos.row) || pos.row < 0 || pos.row >= MAX_SHEET_ROWS || pos.col >= MAX_SHEET_COLS) continue
         prevCol = pos.col
 
         // 값 추출
@@ -306,6 +308,7 @@ function parseWorksheet(
         const fElements = getElements(cellEl, "f")
         let value = ""
         let rawStored: string | null = null
+        let sourceText: string | undefined // 공유·인라인 문자열 원문 (이스케이프 전)
         let dateFormatted = false
 
         if (vElements.length > 0) {
@@ -314,7 +317,8 @@ function parseWorksheet(
           if (type === "s") {
             // shared string
             const idx = parseInt(raw, 10)
-            value = sharedStrings[idx] ?? ""
+            sourceText = sharedStrings[idx] ?? ""
+            value = escapeLiteralTags(escapeLiteralDollar(sourceText)) // IR 규약 — 리터럴 $ 는 \$, "<sub>" 는 \<sub> (#122)
           } else if (type === "b") {
             value = raw === "1" ? "TRUE" : "FALSE"
           } else {
@@ -334,7 +338,8 @@ function parseWorksheet(
           // <is><t>text</t></is>
           const isEl = getElements(cellEl, "is")
           if (isEl.length > 0) {
-            value = collectRichText(isEl[0])
+            sourceText = collectRichText(isEl[0])
+            value = escapeLiteralTags(escapeLiteralDollar(sourceText))
           }
         }
 
@@ -351,7 +356,7 @@ function parseWorksheet(
             : vElements.length ? "number" : "blank"
           const source: SourceCellProvenance = {
             address: ref ?? cellAddress(pos.col, pos.row), storedType,
-            rawValue: storedType === "string" ? value : rawStored,
+            rawValue: storedType === "string" ? sourceText ?? value : rawStored,
           }
           if (fElements.length) {
             source.formula = getTextContent(fElements[0])
@@ -361,10 +366,9 @@ function parseWorksheet(
           sourceCells.set(`${pos.row},${pos.col}`, source)
         }
 
-        // 행 확장 — 행은 희소(Map), 행 안은 그 행 끝 칸까지
+        // 행은 희소(Map), 행 안도 희소 — 열 끝(XFD)까지 받으니 앞 빈 칸을 채우면 먼 칸 하나가 1만 6천 칸을 깐다
         let row = rows.get(pos.row)
         if (!row) rows.set(pos.row, (row = []))
-        while (row.length <= pos.col) row.push("")
         row[pos.col] = value
 
         if (pos.col > maxCol) maxCol = pos.col
@@ -383,9 +387,9 @@ function parseWorksheet(
     if (m) {
       merges.push({
         r1: Math.min(m.startRow, MAX_SHEET_ROWS - 1),
-        c1: Math.min(m.startCol, MAX_COLS - 1),
+        c1: Math.min(m.startCol, MAX_SHEET_COLS - 1),
         r2: Math.min(m.endRow, MAX_SHEET_ROWS - 1),
-        c2: Math.min(m.endCol, MAX_COLS - 1),
+        c2: Math.min(m.endCol, MAX_SHEET_COLS - 1),
       })
     }
   }
@@ -420,11 +424,11 @@ export async function parseXlsxDocument(
   let sharedStrings: string[] = []
   const ssFile = zip.file("xl/sharedStrings.xml")
   if (ssFile) {
-    sharedStrings = parseSharedStrings(await ssFile.async("text"))
+    sharedStrings = parseSharedStrings(await readZipEntry(ssFile, "text"))
   }
 
   // 2. 시트 목록 로드
-  const { sheets, date1904 } = parseWorkbook(await workbookFile.async("text"))
+  const { sheets, date1904 } = parseWorkbook(await readZipEntry(workbookFile, "text"))
   if (sheets.length === 0) {
     throw new KordocError("XLSX 파일에 시트가 없습니다")
   }
@@ -434,7 +438,7 @@ export async function parseXlsxDocument(
   const stylesFile = zip.file("xl/styles.xml")
   if (stylesFile) {
     try {
-      dateXfs = parseStyleDateXfs(await stylesFile.async("text"))
+      dateXfs = parseStyleDateXfs(await readZipEntry(stylesFile, "text"))
     } catch {
       // 날짜 판정 실패해도 파싱은 계속 — 대신 날짜 셀이 시리얼 숫자로 노출됨을 경고로 남긴다
       warnings.push({
@@ -448,7 +452,7 @@ export async function parseXlsxDocument(
   let relsMap = new Map<string, string>()
   const relsFile = zip.file("xl/_rels/workbook.xml.rels")
   if (relsFile) {
-    relsMap = parseRels(await relsFile.async("text"))
+    relsMap = parseRels(await readZipEntry(relsFile, "text"))
   }
 
   // 4. 페이지 필터
@@ -492,7 +496,7 @@ export async function parseXlsxDocument(
     }
 
     try {
-      const sheetXml = await sheetFile.async("text")
+      const sheetXml = await readZipEntry(sheetFile, "text")
       const { rows, merges, maxCol, sourceCells, uncachedFormulas } = parseWorksheet(sheetXml, sharedStrings, dateXfs, date1904, options?.includeCellProvenance)
       if (uncachedFormulas) warnings.push({
         page: i + 1, code: "PARTIAL_PARSE",
@@ -516,7 +520,7 @@ export async function parseXlsxDocument(
   const coreFile = zip.file("docProps/core.xml")
   if (coreFile) {
     try {
-      const coreXml = await coreFile.async("text")
+      const coreXml = await readZipEntry(coreFile, "text")
       const doc = parseXml(coreXml)
       const getFirst = (tag: string) => {
         const els = doc.getElementsByTagName(tag)
@@ -532,7 +536,7 @@ export async function parseXlsxDocument(
     } catch { /* 메타데이터 실패는 무시 */ }
   }
 
-  const markdown = blocksToMarkdown(blocks)
+  const markdown = blocksToMarkdown(blocks, { tableFormat: options?.tableFormat })
 
   return { markdown, blocks, metadata, warnings: warnings.length > 0 ? warnings : undefined }
 }

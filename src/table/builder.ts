@@ -22,10 +22,13 @@ export interface BuildTableOptions {
    *  ParseOptions.keepEmptyParagraphs 연동 — 파서가 문단별로 이미 정돈한 텍스트를
    *  `\n` 결합해 넘기는 경로 전용. 기본 false: 종전대로 trim. */
   keepEmptyParagraphs?: boolean
+  /** 열 수 상한 (기본 MAX_COLS) — 시트는 칸 예산 안에서 늘린다 (xlsx/sheet-blocks) */
+  maxCols?: number
 }
 
 export function buildTable(rows: CellContext[][], options?: BuildTableOptions): IRTable {
   const maxRows = options?.maxRows ?? MAX_ROWS
+  const colCap = options?.maxCols ?? MAX_COLS
   if (rows.length > maxRows) rows = rows.slice(0, maxRows)
   const numRows = rows.length
 
@@ -40,11 +43,11 @@ export function buildTable(rows: CellContext[][], options?: BuildTableOptions): 
   for (let rowIdx = 0; rowIdx < numRows; rowIdx++) {
     let colIdx = 0
     for (const cell of rows[rowIdx]) {
-      while (colIdx < MAX_COLS && tempOccupied[rowIdx][colIdx]) colIdx++
-      if (colIdx >= MAX_COLS) break
+      while (colIdx < colCap && tempOccupied[rowIdx][colIdx]) colIdx++
+      if (colIdx >= colCap) break
 
       for (let r = rowIdx; r < Math.min(rowIdx + cell.rowSpan, numRows); r++) {
-        for (let c = colIdx; c < Math.min(colIdx + cell.colSpan, MAX_COLS); c++) {
+        for (let c = colIdx; c < Math.min(colIdx + cell.colSpan, colCap); c++) {
           tempOccupied[r][c] = true
         }
       }
@@ -181,6 +184,11 @@ function trimAndReturn(grid: IRCell[][], numRows: number, maxCols: number, ancho
   return { rows: numRows, cols: maxCols, cells: grid, hasHeader: numRows > 1 }
 }
 
+/** 표 평탄화 글에 캡션을 붙인다 — 표 아래 캡션(captionBelow)은 뒤에 */
+export function captionedText(flat: string, caption: string, below?: boolean): string {
+  return below ? (flat ? flat + "\n" : "") + caption : caption + (flat ? "\n" + flat : "")
+}
+
 export function convertTableToText(rows: CellContext[][]): string {
   return rows
     .map(row =>
@@ -193,6 +201,16 @@ export function convertTableToText(rows: CellContext[][]): string {
     .join("\n")
 }
 
+const WORD_CHAR = /[\p{L}\p{N}]/u
+
+/**
+ * 목록 항목 글 첫머리의 블록 표지 — 항목 표지 뒤에 다시 목록 표지("1. "·"- "·"+ ")나 인용(">")이 오면 마크다운이 항목 안에
+ * 중첩 목록·인용을 연다("- 1. 번호로 시작" 이 번호 목록 안 항목). 글자 그대로 읽히게 그 표지만 이스케이프한다. "# " 는 escapeGfm 몫
+ */
+function escapeItemHead(text: string): string {
+  return text.replace(/^([-+*])(?=\s|$)/, "\\$1").replace(/^(\d{1,9})([.)])(?=\s|$)/, "$1\\$2").replace(/^>/, "\\>")
+}
+
 /**
  * 마크다운 GFM 특수문자 이스케이프 — remark-gfm 오해석 방지. 라운드트립(markdown-units)이 표 재현
  * 드리프트 검사에 같은 함수를 쓰는 SSOT — 규칙을 바꾸면 그쪽 역변환(unescapeGfm·unescapeGfmCell)도
@@ -200,7 +218,7 @@ export function convertTableToText(rows: CellContext[][]): string {
  */
 export function escapeGfm(text: string): string {
   // ~ → \~ (GFM strikethrough 방지), * → \* (emphasis/HR·마스킹 별표 "******" 방지),
-  // _ → \_ (emphasis 방지), ` → \` (inline code 방지).
+  // _ → \_ (emphasis 방지, 단어 안 _ 는 그대로), ` → \` (inline code 방지).
   // | → \| — 문단 글의 리터럴 파이프는 GFM 표 구분자와 구별이 안 된다(줄 안 "| 이형식 |").
   //   이미 이스케이프된 \| (평탄화 표 텍스트 convertTableToText) 는 건드리지 않는다.
   // 줄 첫 ATX "# " → \# — 본문 "# arch -k"(유닉스 프롬프트)가 헤딩이 되던 것 (hwp3-sample11).
@@ -217,18 +235,33 @@ export function escapeGfm(text: string): string {
   // "](https://a <img src=x onerror=…>)" 의 날 태그까지 통째 보호해 이스케이프를 비켜 갔다 (v4.14.4 리뷰 재현)
   const NUL = String.fromCharCode(0) // 마크다운 본문에 없는 안전한 필러 (소스에 raw NUL 미기입)
   const spans: string[] = []
-  const masked = text.replace(/!\[[^\]<>\n]*\]\([^)\s<>"'\x60]*\)|\]\((?:https?:|mailto:|tel:|#)[^)\s<>"'\x60]*\)|(?<!\\)\$\$(?:\\[\s\S]|[^\\$])*\$\$|(?<!\\)\$(?:\\[^\n]|[^\\$\n])*\$/gi, (m) => {
+  const masked = text.replace(/!\[[^\]<>\n]*\]\([^)\s<>"'\x60:]*\)|\]\((?:https?:|mailto:|tel:|#)[^)\s<>"'\x60]*\)|(?<!\\)\$\$(?:\\[\s\S]|[^\\$])*\$\$|(?<!\\)\$(?:\\[^\n]|[^\\$\n])*\$/gi, (m) => {
     spans.push(m)
     return NUL + (spans.length - 1) + NUL
   })
   const escaped = masked
     // 원문의 리터럴 역슬래시 + ASCII 구두점은 CommonMark 가 이스케이프로 읽어 역슬래시를 지운다("C:\.Pls"·
-    // "cd \!*"·"{} \;") → \\ 로. IR 규약 이스케이프 \$(escapeLiteralDollar)·\|(convertTableToText)는 그대로 (v4.14.3)
-    .replace(/\\(?=[!-#%-\/:-@\[-\x60{}~])/g, "\\\\")
-    .replace(/([~*_`])/g, "\\$1")
+    // "cd \!*"·"{} \;") → \\ 로. IR 규약 이스케이프 \$(escapeLiteralDollar)·\|(convertTableToText)·태그 모양 원문 글자 \<sub>
+    // (script-tags escapeLiteralTags)는 그대로 (v4.14.3, #122)
+    .replace(/\\(?=[!-#%-\/:-@\[-\x60{}~])(?!<\/?(?:u|sup|sub)>)/g, "\\\\")
+    .replace(/([~*`])/g, "\\$1")
+    // _ 묶음은 양옆이 글자·숫자(단어 안)거나 양옆이 공백·줄 끝(빈칸 선 "성명: ______")이면 CommonMark 에서 강조를 열지도 닫지도
+    // 못해 그대로 둔다("snake_case"·"MY_VAR") — 단어 끝에 붙은 "_강조_"·"__init__" 와 밑줄뿐인 줄(가로줄이 된다)은 이스케이프한다
+    .replace(/_+/g, (m: string, i: number, s: string) => {
+      const before = s[i - 1] ?? "", after = s[i + m.length] ?? ""
+      if (WORD_CHAR.test(before) && WORD_CHAR.test(after)) return m
+      const line = s.slice(s.lastIndexOf("\n", i - 1) + 1, s.indexOf("\n", i) < 0 ? s.length : s.indexOf("\n", i))
+      if (/^\s?$/.test(before) && /^\s?$/.test(after) && !/^[ \t]*(?:_[ \t]*){3,}$/.test(line)) return m
+      return m.replace(/_/g, "\\_")
+    })
     .replace(/(?<!\\)\|/g, "\\|")
     .replace(/^([ \t]*)(?=#{1,6}(?:[ \t]|$))/gm, "$1\\")
     .replace(/<(?!\/?(?:u|sup|sub)>)(?=[A-Za-z/!?])/g, "\\<")
+    // 링크 문법 — 보호 스팬(안전 스킴 링크·그림 참조)은 가려졌으니 남은 "](" 는 문서 글이다: "[클릭](javascript:…)" 가
+    // 살아 있는 링크가 되지 않게 \] 로. 줄머리 "[이름]: 주소" 참조 정의도 같은 이유로 \[
+    // (앞 역슬래시가 짝수 개면 그 역슬래시들은 글자라 ] 는 살아 있다 — 원문 "\](" 는 위에서 "\\](" 가 된다)
+    .replace(/(\\*)\](?=\()/g, (m, bs: string) => bs.length % 2 ? m : bs + "\\]")
+    .replace(/^([ \t]{0,3})\[(?=[^\]\n]*\]:)/gm, "$1\\[")
   return escaped.replace(new RegExp(NUL + "(\\d+)" + NUL, "g"), (_, n) => spans[Number(n)])
 }
 
@@ -253,11 +286,15 @@ function sanitizePua(text: string): string {
   return mapPuaText(text)
     // Supplementary Private Use Area (U+F0000-U+FFFFD) — HWP 전용 기호 (매핑 안 된 잔여분)
     .replace(/[\u{F0000}-\u{FFFFD}]/gu, "")
+    // 소프트 하이픈 U+00AD — 한컴은 보이는 붙임표로 그린다(글머리 "­ 3D 프린터로…", 증감 칸 "­7,445" = −7,445; 한컴 PDF 도 폭 있는
+    // 붙임표 글리프). 글자 사이(낱말 안 꺾임 표시 "infor­mation")만 두고 "-" 로
+    .replace(/(?<!\p{L})\u00ad|\u00ad(?!\p{L})/gu, "-")
 }
 
-/** HWP PUA 특수문자 및 도형 대체텍스트 제거 — 모든 포맷 공통 */
-function sanitizeText(text: string): string {
-  let result = sanitizePua(text)
+/** HWP PUA 특수문자 및 도형 대체텍스트 제거 — 모든 포맷 공통 (roundtrip 재현도 이 함수를 쓴다) */
+export function sanitizeText(text: string): string {
+  // NUL 은 글이 아니다 — 일부 PDF 글꼴이 글리프를 U+0000 에 매겨 마크다운·JSON 소비자가 끊기고 escapeGfm 의 NUL 필러와 겹친다
+  let result = sanitizePua(text.replace(/\u0000/g, ""))
     // HWP 도형/개체 자동생성 대체텍스트 제거
     .replace(HWP_SHAPE_ALT_TEXT_RE, "")
     .replace(/  +/g, " ")
@@ -453,13 +490,52 @@ function spansToMarkdown(spans: IRSpan[]): string {
     }
     let open = marker
     let close = [...marker].reverse().join("")
+    if (s.code) {
+      // 코드 스팬 펜스는 내용 안 가장 긴 백틱 연속보다 길게(CommonMark) — 내용의 백틱이 스팬을 닫고 뒤 글이 원시 Markdown·HTML 이 되지 않게
+      const run = Math.max(0, ...(core.match(/`+/g) ?? []).map(r => r.length))
+      const pad = /^`|`$/.test(core) ? " " : ""
+      open = "`".repeat(run + 1) + pad
+      close = pad + "`".repeat(run + 1)
+    }
     if (uWrap) { open = "<u>" + open; close = close + "</u>" } // <u>~~**…**~~</u>
     out += m[1] + open + (s.code ? core : escapeGfm(core)) + close + m[3]
   }
   return out
 }
 
-export function blocksToMarkdown(blocks: IRBlock[]): string {
+/** blocksToMarkdown 렌더 옵션 */
+export interface MarkdownOptions {
+  /** 표 출력 형식 (`ParseOptions.tableFormat`). "gfm": 모든 표를 HTML 없이 GFM 파이프 표로 — 셀 안 표는 부모 뒤 독립 표로 꺼내고
+   *  부모·자식 관계를 HTML 주석 표지로 남긴다. 기본(미지정)은 병합·중첩 표를 HTML 로 */
+  tableFormat?: "gfm"
+}
+
+/**
+ * tableFormat "gfm" 관계 표지용 표 id(`t1`…, `IRTable.markdownId`) — 블록 트리 전위 순회 순번(캡션 안 표 → 표 → 셀 안 표).
+ * id 가 없는 표에만 이미 붙은 최댓값 다음 번호를 붙인다 — 쪽·청크 재렌더가 문서 전체 렌더에서 붙인 번호를 그대로 쓴다
+ */
+export function assignTableIds(blocks: IRBlock[]): void {
+  const tables: IRTable[] = []
+  const walk = (bs: IRBlock[] | undefined): void => {
+    for (const b of bs ?? []) {
+      if (b.type !== "table" || !b.table) continue
+      walk(b.table.captionBlocks)
+      tables.push(b.table)
+      for (const row of b.table.cells) for (const cell of row) walk(cell.blocks)
+    }
+  }
+  walk(blocks)
+  let next = 1
+  for (const t of tables) {
+    const n = t.markdownId ? Number(t.markdownId.slice(1)) : 0
+    if (n >= next) next = n + 1
+  }
+  for (const t of tables) if (!t.markdownId) t.markdownId = `t${next++}`
+}
+
+export function blocksToMarkdown(blocks: IRBlock[], options?: MarkdownOptions): string {
+  const gfm = options?.tableFormat === "gfm"
+  if (gfm) assignTableIds(blocks)
   const lines: string[] = []
 
   for (let i = 0; i < blocks.length; i++) {
@@ -471,8 +547,9 @@ export function blocksToMarkdown(blocks: IRBlock[]): string {
       const headingText = sanitizeText(block.text)
       // 헤딩 문단의 각주도 문단과 같은 " (주: …)" — 종전엔 헤딩 경로가 footnoteText 를 버려 개요 문단·
       // 헤딩 감지 문단의 주석이 마크다운에서 사라졌다 (정책연구 "2. 미국76)" 주석 76)
-      const note = block.footnoteText ? ` (주: ${block.footnoteText})` : ""
-      if (headingText) lines.push("", `${prefix} ${escapeGfm(headingText + note)}`, "")
+      const noteTable = noteTableMarkdown(block, gfm)
+      const note = block.footnoteText && !noteTable ? ` (주: ${block.footnoteText})` : ""
+      if (headingText) lines.push("", `${prefix} ${escapeGfm(headingText + note)}${noteTable}`, "")
       continue
     }
 
@@ -490,27 +567,35 @@ export function blocksToMarkdown(blocks: IRBlock[]): string {
 
     // 리스트 블록
     if (block.type === "list" && block.text) {
-      const listText = sanitizeText(block.text)
+      let listText = sanitizeText(block.text)
       if (!listText) continue
+      // 균등배분 접기가 번호 뒤 공백까지 지웠으면 되살린다 — "13. 농 업 기 술 센 터" 가 "13.농업기술센터" 가 돼 번호 목록이 아닌 줄로 보고
+      // "1. " 를 또 붙였다(여수 업무계획 목차). 표 칸·문단 글은 접기 그대로 둔다
+      const num = /^(\d{1,3}[.)])\s/.exec(block.text.trim())?.[1]
+      if (num && listText.startsWith(num) && !/^\s/.test(listText.slice(num.length))) listText = `${num} ${listText.slice(num.length)}`
       // 텍스트가 이미 번호로 시작하면 그대로 출력 (원래 번호 보존)
       const alreadyNumbered = block.listType === "ordered" && /^\d+\.\s/.test(listText)
       // 글이 이미 "- " 부호로 시작하는 비번호 항목(PDF 목록 감지는 부호째 둔다)에 "- " 를 또 붙이지 않는다
       const alreadyBulleted = block.listType !== "ordered" && /^-\s/.test(listText)
       const prefix = alreadyNumbered || alreadyBulleted ? "" : block.listType === "ordered" ? "1. " : "- "
       // 각주는 문단과 같은 " (주: …)" — 목록 경로가 footnoteText 를 버려 각주 글이 사라졌다
-      lines.push(`${prefix}${escapeGfm(listText + (block.footnoteText ? ` (주: ${block.footnoteText})` : ""))}`)
+      const noteTable = noteTableMarkdown(block, gfm)
+      const own = prefix ? "" : /^(?:\d+\.|-)\s+/.exec(listText)?.[0] ?? ""
+      lines.push(`${prefix}${own}${escapeItemHead(escapeGfm(listText.slice(own.length) + (block.footnoteText && !noteTable ? ` (주: ${block.footnoteText})` : "")))}${noteTable}`)
       if (block.children) {
         for (const child of block.children) {
           const childPrefix = child.listType === "ordered" ? "1." : "-"
-          lines.push(`  ${childPrefix} ${escapeGfm(child.text || "")}`)
+          lines.push(`  ${childPrefix} ${escapeItemHead(escapeGfm(child.text || ""))}`)
         }
       }
       continue
     }
 
-    if (block.type === "paragraph" && block.text) {
-      let text = sanitizeText(block.text)
-      if (!text) continue
+    if (block.type === "paragraph" && (block.text || block.footnoteText)) {
+      let text = sanitizeText(block.text ?? "")
+      if (!text && !block.footnoteText) continue
+      // 목록 바로 뒤 문단은 빈 줄로 띄운다 — 붙어 있으면 CommonMark 가 마지막 항목의 이어진 글(lazy continuation)로 읽는다
+      if (lines.length && lines[lines.length - 1] !== "") lines.push("")
 
       // 별표 패턴 (기존 호환)
       if (/^\[별표\s*\d+/.test(text)) {
@@ -532,6 +617,7 @@ export function blocksToMarkdown(blocks: IRBlock[]): string {
       // gongmun 리스트 depth 선행 공백 (v4.0.5) — sanitizeText가 선두 공백을 지우므로
       // 텍스트가 아니라 방출 시점에 붙인다. 2칸/단계 = md-runs 리스트 그리드와 동일
       const listIndent = block.listDepth ? "  ".repeat(block.listDepth) : ""
+      const noteTable = noteTableMarkdown(block, gfm)
 
       // 인라인 강조 run-span (왕복 채널 — 자사 생성 파일 + 외래 실속성 복원) → 마커 재방출.
       // 마커 자체는 이스케이프 대상이 아니므로 span 내부 텍스트만 escapeGfm 후 감싼다
@@ -541,7 +627,7 @@ export function blocksToMarkdown(blocks: IRBlock[]): string {
           const href = sanitizeHref(block.href)
           if (href) rendered = `[${rendered}](${href})`
         }
-        if (block.footnoteText) rendered += ` (주: ${block.footnoteText})`
+        if (block.footnoteText) rendered += noteTable || escapeGfm(` (주: ${block.footnoteText})`)
         lines.push(block.quote ? "> " + rendered : listIndent + rendered, "")
         continue
       }
@@ -553,23 +639,26 @@ export function blocksToMarkdown(blocks: IRBlock[]): string {
       }
 
       // 각주가 있으면 괄호로 인라인 삽입
-      if (block.footnoteText) {
+      if (block.footnoteText && !noteTable) {
         text += ` (주: ${block.footnoteText})`
       }
 
-      lines.push(block.quote ? "> " + escapeGfm(text) : listIndent + escapeGfm(text), "")
+      // 여러 줄 인용문(요약 상자 문단 여럿)은 줄마다 "> " — 접두 없는 줄은 md 파서가 인용문에서 떼어 낸다
+      lines.push((block.quote ? escapeGfm(text).split("\n").map(l => "> " + l).join("\n") : listIndent + escapeGfm(text)) + noteTable, "")
     } else if (block.type === "table" && block.table) {
       // 테이블 앞에 빈 줄 보장 (마크다운 렌더링 필수)
       if (lines.length > 0 && lines[lines.length - 1] !== "") {
         lines.push("")
       }
-      // 표 캡션 — 표 위에 강조 문단으로 출력 (v3.0)
-      lines.push(...captionToMarkdown(block.table))
-      const tableMd = tableToMarkdown(block.table)
+      // 표 캡션 — 표 위에 강조 문단으로 출력 (v3.0). 원문에서 표 아래에 있던 캡션(captionBelow)은 표 뒤에
+      const caption = captionToMarkdown(block.table, gfm)
+      if (!block.table.captionBelow) lines.push(...caption)
+      const tableMd = tableToMarkdown(block.table, gfm)
       if (tableMd) {
         lines.push(tableMd)
         lines.push("")
       }
+      if (block.table.captionBelow) lines.push(...caption)
     }
   }
 
@@ -578,14 +667,15 @@ export function blocksToMarkdown(blocks: IRBlock[]): string {
 
 /** 표 캡션 → 마크다운 줄. 캡션 안 표(#55 captionBlocks)는 " / " 평탄화 글 대신 표로 낸다 — 종전엔 IR 에만 있고
  *  마크다운에서 표 구조가 사라졌다(issue1891 공사비 6×5). 글 문단은 종전처럼 강조 문단 */
-function captionToMarkdown(table: IRTable): string[] {
-  if (table.captionBlocks?.some(b => b.type === "table" && b.table)) {
+function captionToMarkdown(table: IRTable, gfm = false): string[] {
+  if (table.captionBlocks?.length) {
     return table.captionBlocks.flatMap(b => {
       if (b.type === "table" && b.table) {
-        const md = tableToMarkdown(b.table)
-        return [...captionToMarkdown(b.table), ...(md ? [md, ""] : [])]
+        const md = tableToMarkdown(b.table, gfm)
+        return [...captionToMarkdown(b.table, gfm), ...(md ? [md, ""] : [])]
       }
-      const t = sanitizeText(b.text ?? "")
+      if (b.type === "image" && b.text) return [blocksToMarkdown([b]), ""]
+      const t = (sanitizeText(visibleText(b)) + noteSuffix(b)).trim()
       return t ? [`**${escapeGfm(t)}**`, ""] : []
     })
   }
@@ -595,19 +685,7 @@ function captionToMarkdown(table: IRTable): string[] {
 
 /** 표 캡션 → HTML 칸 글 (중첩표 캡션). 캡션 안 표는 표로 */
 function captionToHtml(table: IRTable): string {
-  if (table.captionBlocks?.some(b => b.type === "table" && b.table)) {
-    return table.captionBlocks
-      .map(b => {
-        if (b.type === "table" && b.table) {
-          const cap = captionToHtml(b.table)
-          return (cap ? cap + "<br>" : "") + tableToHtml(b.table)
-        }
-        const t = sanitizeText(b.text ?? "")
-        return t ? escapeHtmlCellText(t).replace(/\n/g, "<br>") : ""
-      })
-      .filter(Boolean)
-      .join("<br>")
-  }
+  if (table.captionBlocks?.length) return cellInnerHtml({ text: "", colSpan: 1, rowSpan: 1, blocks: table.captionBlocks })
   const cap = table.caption ? sanitizeText(table.caption) : ""
   return cap ? escapeHtmlCellText(cap).replace(/\n/g, "<br>") : ""
 }
@@ -640,7 +718,7 @@ function hasNestedTables(table: IRTable): boolean {
 export function hasStructuredCellContent(table: IRTable): boolean {
   for (const row of table.cells) {
     for (const cell of row) {
-      if (cell.blocks?.some(b => (b.type === "table" && b.table) || b.type === "separator")) return true
+      if (cell.blocks?.some(b => (b.type === "table" && b.table) || b.type === "separator" || hasNoteTable(b))) return true
     }
   }
   return false
@@ -649,11 +727,35 @@ export function hasStructuredCellContent(table: IRTable): boolean {
 /** 셀 문단 블록의 각주 표기 — 본문 문단과 같은 " (주: …)" (셀 평탄화 text 와 같은 모양).
  *  라운드트립 HTML 표 재현(markdown-units replicateCellInnerHtml)과 공용 */
 export function noteSuffix(b: IRBlock): string {
-  return b.footnoteText && b.text ? ` (주: ${b.footnoteText})` : ""
+  return b.footnoteText ? ` (주: ${b.footnoteText})` : ""
 }
 
-/** 블록의 보이는 글 — 미기입 누름틀 안내문(placeholder span)은 뺀다 (마크다운 방출 전용, IR text 는 그대로) */
-function visibleText(b: IRBlock): string {
+const hasNoteTable = (b: IRBlock): boolean => !!b.footnoteText && !!b.footnoteBlocks?.some(x => x.type === "table" && x.table)
+
+/** HTML 칸의 주석 표 — 글과 표를 따로 이스케이프해 원래 격자와 순서를 남긴다. 왕복 표 재현과 공용. */
+export function noteTableHtml(b: IRBlock): string {
+  if (!hasNoteTable(b)) return ""
+  const inner = cellInnerHtml({ text: "", colSpan: 1, rowSpan: 1, blocks: b.footnoteBlocks })
+  return ` (주: ${inner.replace(/\n/g, "")})`
+}
+
+/**
+ * 주석 안 표(footnoteBlocks, #149)가 있는 문단·제목·목록의 각주 표기 " (주: …)" — 표 자리는 footnoteText 의 " / " 평탄화 글
+ * 대신 한 줄 HTML 표(되돌릴 수 있는 격자), 글은 escapeGfm. 같은 줄이라 문단·라운드트립 유닛 경계가 그대로다.
+ * 표가 없거나 tableFormat "gfm"(HTML 없이)이면 "" — 호출자가 종전 footnoteText 표기를 낸다
+ */
+function noteTableMarkdown(b: IRBlock, gfm: boolean): string {
+  if (gfm || !hasNoteTable(b)) return ""
+  const parts = b.footnoteBlocks!.map(x => {
+    if (x.type !== "table" || !x.table) return escapeGfm(sanitizeText(visibleText(x)))
+    const cap = captionToHtml(x.table)
+    return (cap ? cap + "<br>" : "") + tableToHtml(x.table).replace(/\n/g, "")
+  })
+  return ` (주: ${parts.filter(Boolean).join(" ")})`
+}
+
+/** 블록의 보이는 글 — 미기입 누름틀 안내문(placeholder span)은 뺀다 (렌더·보이는 표 판정용, IR text 는 그대로) */
+export function visibleText(b: IRBlock): string {
   return b.spans?.some(s => s.placeholder) ? b.spans.filter(s => !s.placeholder).map(s => s.text).join("") : (b.text ?? "")
 }
 
@@ -664,7 +766,8 @@ function visibleText(b: IRBlock): string {
  * 셀 줄바꿈 <br> 은 이 뒤에 넣으므로 원문 글자 "<br>"(&lt;br&gt;)와 갈린다. 읽는 쪽은 utils unescapeHtml
  */
 export function escapeHtmlCellText(text: string): string {
-  return escapeHtml(text).replace(/&lt;(\/?)(u|sup|sub)&gt;/g, "<$1$2>")
+  // 태그 모양 원문 글자(IR \<sub>, escapeLiteralTags)는 HTML 에 역슬래시 이스케이프가 없어 &lt;sub&gt; 로 (#122)
+  return escapeHtml(text).replace(/(\\)?&lt;(\/?)(u|sup|sub)&gt;/g, (_, esc, sl, tag) => esc ? `&lt;${sl}${tag}&gt;` : `<${sl}${tag}>`)
 }
 
 /** 셀 내부 콘텐츠 → HTML — blocks(중첩표/다중문단) 있으면 구조 보존 재귀 렌더링 */
@@ -678,8 +781,9 @@ function cellInnerHtml(cell: IRCell): string {
           return (cap ? cap + "<br>" : "") + tableToHtml(b.table)
         }
         if (b.type === "image" && b.text) return `<img src="${escapeHtml(b.text, true)}" alt="image">`
-        const t = sanitizeText(visibleText(b))
-        return t ? escapeHtmlCellText(t + noteSuffix(b)).replace(/\n/g, "<br>") : ""
+        const note = noteTableHtml(b)
+        const t = (sanitizeText(visibleText(b)) + (note ? "" : noteSuffix(b))).trim()
+        return ((t ? escapeHtmlCellText(t).replace(/\n/g, "<br>") : "") + note).trim()
       })
       .filter(Boolean)
       .join("<br>")
@@ -725,10 +829,85 @@ function tableToHtml(table: IRTable): string {
   return lines.join("\n")
 }
 
-function tableToMarkdown(table: IRTable): string {
+/** 셀 문단·이미지의 공통 직렬화 — 1칸·1열로 접혀도 GFM과 같은 내용을 남긴다. */
+export function hasInlineCellBlocks(cell: IRCell): boolean {
+  return !!cell.blocks?.some(b => b.spans?.length || b.footnoteText || (b.type === "image" && b.text))
+}
+
+function cellBlockToMarkdown(b: IRBlock): string {
+  return b.type === "image" && b.text
+    ? `![image](${b.text})`
+    : b.spans?.length ? spansToMarkdown(b.spans) + escapeGfm(noteSuffix(b)) : escapeGfm(sanitizeText(b.text ?? "") + noteSuffix(b))
+}
+
+export function cellToMarkdown(cell: IRCell, separator: string): string {
+  if (!hasInlineCellBlocks(cell)) return escapeGfm(sanitizeText(cell.text))
+  return cell.blocks!
+    .map(cellBlockToMarkdown)
+    .filter(Boolean)
+    .join(separator)
+}
+
+/**
+ * tableFormat "gfm" 표 — 파이프 표 뒤에 셀 안 표를 전위 깊이 우선으로 꺼내 둔다. 셀에는 자식 표 자리에
+ * `<!-- <table parent_id child_id /> -->`, 자식 표 바로 윗줄에 `<!-- <table id parent_id /> -->`.
+ * 맨 줄의 HTML 태그는 CommonMark HTML 블록을 열어 뒤 표를 원문으로 남기고, 셀 안 태그는 HTML 파서가 진짜 표로 열어 — 주석으로 감싼다
+ */
+function tableToGfm(table: IRTable): string {
+  if (table.rows === 0 || table.cols === 0) return ""
+  const nested: { table: IRTable; md: string }[] = []
+  const markerless = new Map<IRCell, string>()
+  // 세로 병합 칸은 덮인 행마다 같은 값을 채운다 — 행 단위로 잘린 청크도 각 행이 자기 값을 갖게. 표지는 시작 칸에만
+  const md = pipeTable(table, cell => gfmCellText(cell, table.markdownId!, nested, markerless), (cell, text) => markerless.get(cell) ?? text)
+  if (!md) return ""
+  const out = [md]
+  for (const child of nested) {
+    out.push("", ...captionToMarkdown(child.table, true), `<!-- <table id="${child.table.markdownId}" parent_id="${table.markdownId}" /> -->`, child.md)
+  }
+  return out.join("\n")
+}
+
+/** gfm 셀 글 — 셀 안 표는 표지로 바꾸고 nested 에 모은다(셀 안 순서). 구분선은 뺀다. 표지와 글 사이는 공백, 문단 사이는 <br>.
+ *  표지를 넣은 칸은 표지를 뺀 글을 markerless 에 남긴다(세로 병합 덮인 행 채움용) */
+function gfmCellText(cell: IRCell, parentId: string, nested: { table: IRTable; md: string }[], markerless: Map<IRCell, string>): string {
+  if (!cell.blocks?.some(b => (b.type === "table" && b.table) || b.type === "separator")) return cellToMarkdown(cell, "<br>")
+  let out = ""
+  let text = ""
+  let hasMarker = false
+  let prevMarker = false
+  for (const b of cell.blocks) {
+    if (b.type === "separator") continue
+    let part: string
+    const marker = b.type === "table" && !!b.table
+    if (marker) {
+      const md = tableToGfm(b.table!)
+      if (!md) continue
+      nested.push({ table: b.table!, md })
+      part = `<!-- <table parent_id="${parentId}" child_id="${b.table!.markdownId}" /> -->`
+    } else {
+      part = cellBlockToMarkdown(b)
+      if (!part) continue
+      text += text ? "<br>" + part : part
+    }
+    out += out ? (marker || prevMarker ? " " : "<br>") + part : part
+    prevMarker = marker
+    hasMarker ||= marker
+  }
+  if (hasMarker) markerless.set(cell, text)
+  return out
+}
+
+function tableToMarkdown(table: IRTable, gfm = false): string {
   if (table.rows === 0 || table.cols === 0) return ""
 
   const { cells, rows: numRows, cols: numCols } = table
+
+  // tableFormat "gfm": 아래에서 HTML 로 가는 표(구조 콘텐츠·renderAsTable·병합)도 파이프 표로.
+  // 자식 표가 있는 루트 표는 바로 윗줄에 부모 없는 id 표지 — 셀 표지의 parent_id 가 가리키는 표가 어느 것인지 드러낸다
+  if (gfm && (hasStructuredCellContent(table) || table.renderAsTable || hasMergedCells(table))) {
+    const md = tableToGfm(table)
+    return md && hasNestedTables(table) ? `<!-- <table id="${table.markdownId}" /> -->\n${md}` : md
+  }
 
   // 구조 콘텐츠(중첩표·구분선)는 항상 HTML (#76 — hasNestedTables 일반화). GFM 은 셀 안 표를 담을 수
   // 없어 1×1·1열 경로가 중첩표를 " / " 평탄화 줄로 뭉갠다 — 수식이 섞였다고 GFM 으로 보내면 표 구조가
@@ -738,6 +917,11 @@ function tableToMarkdown(table: IRTable): string {
   if (hasStructuredCellContent(table)) return tableToHtml(table)
   if (table.renderAsTable) return tableToHtml(table)
   if (hasMergedCells(table)) return tableToHtml(table)
+
+  // 칸 문단·그림은 폭을 접어 1열이 되어도 원래 블록 순서와 표시 글을 유지한다.
+  if (numCols === 1 && cells.some(row => row[0] && hasInlineCellBlocks(row[0]))) {
+    return cells.map(row => cellToMarkdown(row[0], "\n")).filter(Boolean).join("\n")
+  }
 
   // 1행 1열 → 구조화된 텍스트 (빈 셀이면 스킵)
   if (numRows === 1 && numCols === 1) {
@@ -766,6 +950,14 @@ function tableToMarkdown(table: IRTable): string {
       .join("\n")
   }
 
+  return pipeTable(table, cell => cellToMarkdown(cell, "<br>"))
+}
+
+/** 파이프 표 — 병합 칸은 시작 칸에만 값, 덮인 칸은 빈 칸. rowSpanFill 을 주면 세로 병합의 덮인 행(시작 열)에
+ *  그 값을 넣는다(시작 칸 글을 받아 채울 글을 낸다). 가로로 덮인 칸은 그대로 빈 칸 */
+function pipeTable(table: IRTable, cellText: (cell: IRCell) => string, rowSpanFill?: (cell: IRCell, text: string) => string): string {
+  const { cells, rows: numRows, cols: numCols } = table
+
   // 병합 셀: 행/열 병합된 셀은 빈 칸으로
   const display: string[][] = Array.from({ length: numRows }, () => Array(numCols).fill(""))
   const skip = new Set<string>()
@@ -778,15 +970,10 @@ function tableToMarkdown(table: IRTable): string {
       // 왕복 채널 셀 spans (v4.0.4) — 강조 마커 재방출 (문단별, 개행은 <br> 규약).
       // 이미지 블록이 있는 셀도 blocks 순서대로 직렬화 — text 평탄화에 참조가 없어도 `![image](src)` 가 남는다 (#76)
       // 문단 안 줄바꿈(span 글의 \n)도 <br> — 종전엔 blocks 경로만 빠져 GFM 행이 칸 중간에서 끊겼다(issue6143 5×2 → 3×2)
-      display[r][c] = (cell.blocks?.some(b => b.spans || (b.type === "image" && b.text))
-        ? cell.blocks
-          .map(b => b.type === "image" && b.text
-            ? `![image](${b.text})`
-            : b.spans ? spansToMarkdown(b.spans) + escapeGfm(noteSuffix(b)) : escapeGfm(sanitizeText(b.text ?? "") + noteSuffix(b)))
-          .filter(Boolean)
-          .join("<br>")
-        : escapeGfm(sanitizeText(cell.text))
-      ).replace(/\n/g, "<br>").replace(/(?<!\\)\|/g, "\\|") // 코드 span 등 escapeGfm 밖의 파이프만 (이중 이스케이프 방지)
+      const cellMd = (text: string) => text.replace(/\r\n|\r|\n/g, "<br>").replace(/(?<!\\)\|/g, "\\|") // 코드 span 등 escapeGfm 밖의 파이프만 (이중 이스케이프 방지)
+      const text = cellText(cell)
+      display[r][c] = cellMd(text)
+      const fill = rowSpanFill ? cellMd(rowSpanFill(cell, text)) : ""
 
       // colSpan/rowSpan: 병합된 열은 빈 칸으로 유지 (텍스트 중복 방지)
       for (let dr = 0; dr < cell.rowSpan; dr++) {
@@ -794,6 +981,7 @@ function tableToMarkdown(table: IRTable): string {
           if (dr === 0 && dc === 0) continue
           if (r + dr < numRows && c + dc < numCols) {
             skip.add(`${r + dr},${c + dc}`)
+            if (dc === 0) display[r + dr][c] = fill
           }
         }
       }

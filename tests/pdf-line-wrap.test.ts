@@ -5,6 +5,7 @@ import type { IRBlock } from "../src/types.js"
 import { cellTextToString, type TextItem } from "../src/pdf/line-detector.js"
 import { extractPageBlocksFallback } from "../src/pdf/page-blocks.js"
 import { detectClusterTables, type ClusterItem } from "../src/pdf/cluster-detector.js"
+import { joinClusterCellLines } from "../src/pdf/cluster-cell-text.js"
 import type { NormItem } from "../src/pdf/text-line.js"
 
 /** 문서 줄 안 글을 쌓은 어휘 사전 */
@@ -20,6 +21,24 @@ describe("wrapJoiner — 꺾인 자리 붙임/띄움 (hwpx↔pdf 실측 사례)"
     assert.equal(wrapJoiner("법률」 제7조의9", "에 따라 아래와 같이"), "")
     assert.equal(wrapJoiner("‘제1종 전문박물관’", "으로 정식 등록되었으며"), "")
     assert.equal(wrapJoiner("하였", "다. 이에 따라"), "")
+    // 글자 단위 줄 나눔(대규모유통업법 행정예고) — 어절 첫머리에 오지 않는 어미·겹조사
+    assert.equal(wrapJoiner("곱한 금액으로 산정되", "는데, 부과기준율이"), "")
+    assert.equal(wrapJoiner("부과기준율도 필요해", "졌다. 이에 따라"), "")
+    assert.equal(wrapJoiner("제1호부터 제11호", "까지와 같다"), "")
+  })
+
+  it("수 가운데서 꺾인 줄은 붙인다 — 모자란 천 단위 묶음·괄호 안 소수 (공공재정 부정수급 보도자료 \"1,2⏎96억\", \"(23.⏎7개월)\")", () => {
+    assert.equal(wrapJoiner("2025년 1,2", "96억 원으로"), "")
+    assert.equal(wrapJoiner("시·도교육청(23.", "7개월), 중앙"), "")
+    assert.equal(wrapJoiner("총 1,2", "960억"), " ")
+    assert.equal(wrapJoiner("다음과 같다(1.", "2. 이하"), " ")
+    // 괄호 안 날짜에서 꺾여 다음 줄이 "6." 으로 시작해도 항목 번호가 아니다 (생활안전 공모전 "(4.1⏎6.~5.16.)")
+    assert.equal(wrapJoiner("공모전’(4.1", "6.~5.16.) 심사 결과"), "")
+    assert.equal(startsNewItem("공모전’(4.1", "6.~5.16.) 심사 결과"), false)
+    assert.equal(startsNewItem("다음과 같다.", "6. 기타"), true)
+    // 네 자리 연도가 갈린 줄 (공공재정 부정수급 "2023년부터 20⏎25년까지")
+    assert.equal(wrapJoiner("2023년부터 20", "25년까지 공공기관"), "")
+    assert.equal(wrapJoiner("총 30", "25년 동안"), " ")
   })
 
   it("한글 없는 중·일문 꺾임은 붙인다 — 띄어쓰기가 없는 글 (kpipa 계약서 중문·일문, LibreOffice)", () => {
@@ -111,6 +130,55 @@ describe("wrapJoiner — 꺾인 자리 붙임/띄움 (hwpx↔pdf 실측 사례)"
   })
 })
 
+describe("wrapJoiner — 겹조사·계사·접미사·명사+하다 (보도자료 출력 판정 실측)", () => {
+  it("겹조사·계사·-였던 은 홀로 서지 않는다 — 앞 어절에 붙인다", () => {
+    for (const [prev, next] of [["물가 수준", "에서도 상승"], ["공익 신고자", "에게는 보상금"], ["자문단원들", "께서 주신"], ["회원 가입", "보다도 중요한"],
+      ["이중 구조", "이나, 개선"], ["관련 자료", "이다. 이에"], ["대형 사고", "였던 만큼"]]) assert.equal(wrapJoiner(prev, next), "", prev + "⏎" + next)
+  })
+  it("줄 머리로 넘어온 접미사 -화 하다·-량·-성 은 붙인다 (\"성과\" 는 낱말)", () => {
+    for (const [prev, next] of [["계획을 구체", "화할 예정"], ["벼 수확", "량을 늘린"], ["혈압계의 정확", "성을 높인"]]) assert.equal(wrapJoiner(prev, next), "", prev + "⏎" + next)
+    assert.equal(wrapJoiner("이러한", "성과를 바탕으로"), " ")
+  })
+  it("명사 끝 록·자·고 뒤 하다 활용은 붙이고, 어미 -도록·-토록·-고자·인용 -다고 뒤와 조사 \"도\" 뒤는 보조 용언이라 띄운다", () => {
+    for (const [prev, next] of [["회의 내용을 기록", "하고 있다"], ["펀드에 지분투자", "하며, 성장을"]]) assert.equal(wrapJoiner(prev, next), "", prev + "⏎" + next)
+    for (const [prev, next] of [["제출하도록", "하고"], ["포함토록", "하는 것은"], ["늘어나기도", "했다."], ["추진하고자", "한다."], ["개선했다고", "한다."],
+      ["성과를 도출하겠다”고", "하였다."], ["정말 기쁘고, 나도", "할 수 있다"], ["해야", "하며"], ["원칙으로", "하고"]])
+      assert.equal(wrapJoiner(prev, next), " ", prev + "⏎" + next)
+  })
+})
+
+describe("wrapJoiner — 다음 줄을 여는 괄호 (보도자료 출력 판정 실측)", () => {
+  it("두 음절 넘는 한글 낱말 뒤 어절 안에서 닫히는 괄호 풀이는 붙인다", () => {
+    const lex = lexOf("본문 줄")
+    for (const [prev, next] of [["전자공시시스템", "(DART)에 공시"], ["안전신문고 누리집", "(safetyreport.go.kr)이나 앱"], ["‘씨제이", "(CJ)포디플렉스’"]])
+      assert.equal(wrapJoiner(prev, next, lex), "", prev + "⏎" + next)
+  })
+  it("한 음절·조사·서술 끝 뒤, 단위만 든 괄호, 숫자로 여는 괄호, 어절 밖으로 이어지는 덧말은 띄운다", () => {
+    const lex = lexOf("본문 줄")
+    for (const [prev, next] of [["위원으로 위촉함", "(추후 변경"], ["벼 이삭비율", "(%)"], ["만기는 일정기간", "(2년‧3년‧5년"], ["설비용량을", "(현재 기준)"],
+      ["시·도의회 등", "(국회의원)"], ["주간 건축공사", "(추정가격 100억원)"]])
+      assert.equal(wrapJoiner(prev, next, lex), " ", prev + "⏎" + next)
+  })
+})
+
+describe("wrapJoiner — 어절 머리 증거", () => {
+  it("앞 조각 꼬리 + 뒤 조각 두 음절이 줄 안 어절 머리로 나오면 붙인다 (가향담배 보도자료 \"담배⏎제품으로\" ← \"담배제품\")", () => {
+    // 글자 쌍 증거는 갈린다("전자담배 제품을" 띄움 — 꼬리가 "전자담배"라 거부권은 아니다) — 어절 머리만 판정한다
+    const lex = lexOf("가향 담배제품 규제를 강화하고", "일반 전자담배 제품을 포함한다")
+    assert.equal(wrapJoiner("액상형 전자 담배", "제품으로, 청소년 흡연을", lex), "")
+    // 칸 글(세로 이름표 "학⏎위⏎기⏎준")에는 쓰지 않는다
+    assert.equal(wrapJoiner("액상형 전자 담배", "제품으로, 청소년 흡연을", lex, false), " ")
+  })
+  it("같은 꼬리 뒤에 그 음절로 시작하는 어절을 띄어 쓴 적이 있으면 붙이지 않는다 (\"지식재산⏎보호\" ← \"지식재산 보호의\")", () => {
+    const lex = lexOf("소속 지식재산보호협력국장은 말했다", "그리고 지식재산 보호의 중요성이 커졌다")
+    assert.equal(wrapJoiner("효과적인 기술‧지식재산", "보호 전략을 마련", lex), " ")
+  })
+  it("첫 음절만 맞는 다른 복합어는 증거가 아니다 (편람 \"처리⏎방안\" ← \"처리방법\")", () => {
+    const lex = lexOf("이 문서의 처리방법을 따른다", "시설 관리 방침을 정했다")
+    assert.equal(wrapJoiner("민원 처리", "방안에 관한 규정", lex), " ")
+  })
+})
+
 describe("startsNewItem — 줄 머리 새 항목", () => {
   it("글머리표·번호·조항은 새 항목", () => {
     assert.equal(startsNewItem("앞 줄", "○ 통계분야에 대한 지식"), true)
@@ -159,7 +227,44 @@ describe("bodyLineJoins — 본문 꺾임 기하", () => {
     assert.deepEqual(bodyLineJoins([base, line("열었다.", 72, 120, 660)]), ["\n"])
     assert.deepEqual(bodyLineJoins([base, line("열었다.", 72, 120, 684, 14)]), ["\n"])
     assert.deepEqual(bodyLineJoins([base, line("○ 둘째 항목", 72, 200, 684)]), ["\n"])
+    // 문장이 끝난 찬 줄 뒤 다단계 번호 줄은 새 조항 (KS 표준안 "…참조할 수 있다." ⏎ "7.3.4 명명법")
+    assert.deepEqual(bodyLineJoins([line("영어로 된 다양한 상표명 범주에 대한 자세한 내용은 C.2을 참조할 수 있다.", 72, 530, 700), line("7.3.4 명명법", 72, 140, 684)]), ["\n"])
     assert.deepEqual(bodyLineJoins([base, line("열었다.", 72, 120, 684)]), [" "])
+  })
+
+  it("왼쪽 정렬 묶음은 다음 줄 첫 어절이 남은 자리에 못 들어간 줄을 잇고 늘 띄운다", () => {
+    // Chromium 인쇄 왼쪽 정렬 A4 실측 오른끝 — 11pt, 줄 간격 16.5pt, 문단 사이 24.5pt. 찬 줄은 가장 긴 1.1 첫 줄뿐
+    const joins = bodyLineJoins([
+      line("1.1 이 문서는 왼쪽 정렬 문단에서 자동 줄바꿈이 어떻게 처리되는지 확인하기 위해 작성한", 72, 517.3, 700, 11),
+      line("예시 문서이며, 각 항목은 여러 줄에 걸쳐 이어집니다.", 90, 355, 683.5, 11),
+      line("2.1 문서 담당자는 작성한 문서를 검토자에게 전달하고 검토 의견을 반영하여 최종본을", 72, 499.7, 659, 11),
+      line("확정할 책임이 있으며, 확정된 문서는 지정된 보관 장소에 보관합니다.", 90, 435.2, 642.5, 11),
+      line("2.2 검토자는 전달받은 문서의 내용이 관련 기준에 맞는지 확인하고 필요한 경우 수정", 72, 492, 618, 11),
+      line("사항을 기록하여 담당자에게 돌려보내야 합니다.", 90, 330.8, 601.5, 11),
+    ])
+    assert.deepEqual(joins, [" ", "\n", " ", "\n", " "])
+  })
+
+  it("왼쪽 정렬 묶음에서 다단계 번호(\"5.1 \")로 여는 줄은 새 조항이라 잇지 않는다", () => {
+    // SOP 실측: 짧은 줄만 모인 묶음이라 오른끝이 229 — "5 …기계장치"(223) 끝에 "5.1" 이 못 들어간다
+    const joins = bodyLineJoins([
+      line("5 사용 원자재 또는 기계장치", 70, 223, 700, 11),
+      line("5.1 채취용기(1.5L 유리병)", 90, 229, 681, 11),
+      line("5.2 배수용 물통", 90, 176, 662, 11),
+    ])
+    // 둘째 자리("5.1 …" → "5.2 …")는 묶음에서 가장 넓은 찬 줄이라 기존 full 판정이 잇는다 — 이 규칙의 몫이 아니다
+    assert.equal(joins[0], "\n")
+  })
+
+  it("양쪽 정렬 묶음의 덜 찬 줄은 문단 끝줄이라 잇지 않는다 (ODL 188 \"e.g., H6.\" ⏎ \"Model merging.\")", () => {
+    const joins = bodyLineJoins([
+      line("et al., 2021). We utilize these datasets as benchmarks for", 72, 290, 700),
+      line("evaluation and also report the average scores for the", 72, 290, 688),
+      line("six tasks in the table below and in the appendix, e.g., H6.", 72, 280, 676),
+      line("Model merging. Model merging methods such as Yadav", 72, 290, 664),
+      line("et al. (2023) can boost model performance without further", 72, 290, 652),
+    ])
+    assert.deepEqual(joins, [" ", " ", "\n", " "])
   })
 })
 
@@ -190,6 +295,20 @@ describe("cellTextToString — 칸 상자가 있으면 꺾임을 기하·어휘�
     // 칸 상자 없는 호출(과소분할 재구성)은 종전 조각 규칙
     assert.equal(cellTextToString(items), "기준을")
   })
+
+  it("줄 끝 아이템 뒤에 공백 글리프가 찍힌 꺾임은 어절 경계다 — 어휘 증거가 있어도 붙이지 않는다", () => {
+    const lex = lexOf("가 재일학도의용군인 나")
+    const items = [
+      ti("-", 63.1, 608, 5.6), ti("보국수훈자,", 224.8, 608, 55.7), ti("재", 285.7, 608, 10.8),
+      ti("일학도의용군인,", 71.8, 594, 77.1), ti("특별공로자의", 231.7, 594, 64.8),
+      ti("배우자", 71.8, 580, 32.4),
+    ]
+    items[1].hasSpaceBefore = true
+    items[2].hasSpaceBefore = true
+    items[2].spaceAfter = true
+    items[4].hasSpaceBefore = true
+    assert.equal(cellTextToString(items, { box, lex }), "- 보국수훈자, 재\n일학도의용군인, 특별공로자의\n배우자")
+  })
 })
 
 function ni(text: string, x: number, y: number, w: number, hasSpaceBefore = false): NormItem {
@@ -209,6 +328,32 @@ describe("extractPageBlocksFallback — 꺾인 본문 줄을 한 문단으로", 
     const blocks = extractPageBlocksFallback(items, 1, false, false)
     assert.equal(blocks.length, 1, JSON.stringify(blocks.map(b => b.text)))
     assert.equal(blocks[0].text, "○ 가점을 받아 합격하는 사람의 수는 선발 인원을 산정하는 경우 소수점 이하를 버리고 그 결과가 같거나 적은 경우에는 그러하지 아니하다.")
+    // 줄 끝 "산정" 뒤에 공백 글리프가 찍혔으면 원문이 띄운 자리다 — "하는" 을 붙이는 형태 규칙보다 앞선다
+    const spaced = items.map(it => (it.text === "산정" ? { ...it, spaceAfter: true } : it))
+    assert.equal(extractPageBlocksFallback(spaced, 1, false, false)[0].text,
+      "○ 가점을 받아 합격하는 사람의 수는 선발 인원을 산정 하는 경우 소수점 이하를 버리고 그 결과가 같거나 적은 경우에는 그러하지 아니하다.")
+  })
+})
+
+describe("extractPageBlocksFallback — 줄 끝 공백 없음과 다음 줄 괄호 (공백을 찍는 쪽)", () => {
+  const make = (end: boolean | undefined, fullFirst = true): NormItem[] => {
+    const first = [ni("이번", 75, 700, 20), ni("협약은", 100, 700, 30, true), ni("국제", 135, 700, 20, true), ni("공적개발원조", 160, 700, fullFirst ? 60 : 40, true)]
+    if (end !== undefined) first[3] = { ...first[3], spaceAfter: end }
+    return [...first,
+      ni("(ODA)", 75, 684, 25), ni("사업의", 105, 684, 30, true), ni("하나로", 140, 684, 30, true), ni("추진하며", 175, 684, 45, true),
+      ni("올해", 75, 668, 20), ni("마무리한다.", 100, 668, 50, true)]
+  }
+  const text = (items: NormItem[]) => extractPageBlocksFallback(items, 1, false, false).map(b => b.text).join("\n")
+  it("오른끝까지 찬 한글 줄이 공백 없이 끝나고 다음 줄이 괄호로 열면 붙인다 (\"공적개발원조⏎(ODA)\")", () => {
+    assert.equal(text(make(false)), "이번 협약은 국제 공적개발원조(ODA) 사업의 하나로 추진하며 올해 마무리한다.")
+  })
+  it("공백을 찍는지 모르는 쪽(표시 없음)이나 덜 찬 줄은 종전대로 띄운다", () => {
+    assert.ok(text(make(undefined)).includes("공적개발원조 (ODA)"))
+    assert.ok(!text(make(false, false)).includes("공적개발원조(ODA)"))
+  })
+  it("한글·숫자로 여는 괄호는 원문도 띄운 곳이 섞여 붙이지 않는다 (\"강력탈취⏎(상쾌한향)\")", () => {
+    const items = make(false).map(it => (it.text === "(ODA)" ? { ...it, text: "(상쾌한향)" } : it))
+    assert.ok(text(items).includes("공적개발원조 (상쾌한향)"))
   })
 })
 
@@ -229,6 +374,43 @@ describe("클러스터 표 칸 글 — 같은 줄 아이템은 공백 아이템�
   })
 })
 
+describe("클러스터 표 칸 글 — 이어지는 행이 어절 가운데서 꺾였으면 붙인다 (SO-SUEOP 틀 표 \"남⏎편이\")", () => {
+  const ci = (text: string, x: number, y: number, w: number, hasSpaceBefore = false, spaceAfter?: boolean): ClusterItem =>
+    ({ text, x, y, w, h: 10, fontSize: 10, fontName: "T", hasSpaceBefore, spaceAfter })
+  const lex = lexOf("남편이 돌아왔다", "남편이 마루에 누웠다")
+  // 괘선 없는 2열 표 — 내용 칸의 꺾인 줄은 행 하나로 잡혀 앞 행 칸에 붙는다(후처리 1). wide 면 다른 행이 열 오른끝을 더 밀어 "남" 줄이 덜 찬다
+  const make = (sp?: boolean, wide = false) => [
+    ci("명령", 50, 700, 20), ci("설명", 250, 700, 20),
+    ci("rm", 50, 680, 12), ci("단일", 250, 680, 20), ci("파일을", 275, 680, 30, true), ci("지운", 310, 680, 20, true), ci("다", 330, 680, 10), ci(".", 340, 680, 3),
+    ci("cp", 50, 660, 12), ci("새벽에", 250, 660, 30), ci("깨어보니", 285, 660, 40, true), ci("남", 330, 660, 13, true, sp),
+    ci("편이", 250, 640, 20), ci("마루에", 275, 640, 30, true), ci("누워", 310, 640, 20, true),
+    ci("mv", 50, 620, 12), ci("파일", 250, 620, 20), ci("이름을", 275, 620, 30, true), ci("바꾼다.", 310, 620, wide ? 60 : 33, true),
+  ]
+  const cell = (items: ClusterItem[]) => detectClusterTables(items, 1, undefined, lex)[0].table.cells[2][1].text
+  it("열 오른끝까지 찬 줄이 공백 글리프 없이 끝나면 어절 판정으로 붙인다", () => {
+    assert.equal(cell(make()), "새벽에 깨어보니 남편이 마루에 누워")
+  })
+  it("줄 끝 공백 글리프가 찍혔거나 열 오른끝에 못 미친 줄은 띄운다", () => {
+    assert.equal(cell(make(true)), "새벽에 깨어보니 남 편이 마루에 누워")
+    assert.equal(cell(make(undefined, true)), "새벽에 깨어보니 남 편이 마루에 누워")
+  })
+  it("열 왼끝에서 먼 줄(가운데 맞춘 \"부      칙\")은 오른끝에 닿아도 꺾임이 아니다", () => {
+    const lines = [
+      { text: "칙", left: 319, right: 333, fontSize: 14, firstCharW: 14 },
+      { text: "이 규칙은 공포한 날부터 시행한다.", left: 71, right: 250, fontSize: 14, firstCharW: 14 },
+    ]
+    assert.equal(joinClusterCellLines(lines, { x1: 71, x2: 333 }, lexOf("부칙이 정한다")), "칙 이 규칙은 공포한 날부터 시행한다.")
+  })
+  it("밑줄이 줄 경계에서 끊기면 붙이지 않는다 (신구조문 대비표 \"…계약의 체\" 와 다른 글상자 \"결\")", () => {
+    const line = (text: string, left: number, right: number) => ({ text, left, right, fontSize: 14, firstCharW: 14 })
+    const lex = lexOf("계약의 체결을 약정한다")
+    assert.equal(joinClusterCellLines([line("<u>라. 조건부지분전환계약의 체</u>", 331, 509), line("결", 349, 363)], { x1: 317, x2: 509 }, lex),
+      "<u>라. 조건부지분전환계약의 체</u> 결")
+    assert.equal(joinClusterCellLines([line("<u>라. 조건부지분전환계약의 체</u>", 331, 509), line("<u>결</u>", 349, 363)], { x1: 317, x2: 509 }, lex),
+      "<u>라. 조건부지분전환계약의 체</u><u>결</u>")
+  })
+})
+
 describe("joinPageBreakWraps — 쪽 끝 문단이 다음 쪽 첫 문단으로 꺾여 넘어감", () => {
   /** 쪽 끝 문단(끝줄 기하 기록)·다음 쪽 첫 문단 */
   function pages(lastLineRight: number, nextText: string): IRBlock[] {
@@ -243,6 +425,13 @@ describe("joinPageBreakWraps — 쪽 끝 문단이 다음 쪽 첫 문단으로 �
     joinPageBreakWraps(blocks)
     assert.equal(blocks.length, 2)
     assert.equal(blocks[1].text, "모습을 보여준다. 아이들은 인공지능을 미래의 동반자로 그려냈다.")
+  })
+  it("앞 쪽 끝줄 끝에 공백 글리프가 찍혔으면 어휘·형태 규칙이 붙여도 띄운다 (markTrailingSpaceGlyphs)", () => {
+    const blocks = pages(530, "들은 인공지능을 미래의 동반자로 그려냈다.")
+    PARA_LAST_LINE.set(blocks[1].bbox!, { right: 530, width: 458, fontSize: 10, spaceAfter: true })
+    joinPageBreakWraps(blocks)
+    assert.equal(blocks.length, 2)
+    assert.equal(blocks[1].text, "모습을 보여준다. 아이 들은 인공지능을 미래의 동반자로 그려냈다.")
   })
   it("끝줄이 안 찼거나 다음 쪽이 새 항목이면 두 문단 그대로", () => {
     const short = pages(300, "들은 인공지능을")
@@ -262,7 +451,7 @@ describe("joinPageBreakWraps — 쪽 끝 문단이 다음 쪽 첫 문단으로 �
     slide[1].text = "PART 02·공무원업무의벽\t13/39"
     joinPageBreakWraps(slide)
     assert.equal(slide.length, 3)
-    // 다음 쪽 첫 블록 글자 크기가 1pt 라도 다르면 제목·캡션 (15 → 16)
+    // 다음 쪽 첫 블록 글자 크기가 1pt 라도 다르고 짧은 제목꼴이면 제목·캡션 (15 → 16)
     const bigger = pages(530, "세부 행사 일정")
     bigger[2].style = { fontSize: 11 }
     joinPageBreakWraps(bigger)
@@ -370,4 +559,20 @@ it("keeps an uncertain Latin line-end hyphen boundary unless the intact compound
 it("preserves hyphenated terms embedded in Korean prose", () => {
   assert.equal(wrapJoiner("안전 규격의 fire-", "resistant 용어"), "")
   assert.equal(wrapJoiner("해상도 (high-", "definition television)"), "")
+})
+
+describe("bodyLineJoins — 줄 둘뿐인 묶음의 넓은 줄 간격", () => {
+  // 11pt 본문, 줄 간격 28pt(255%) — 묶음 안에 견줄 다른 줄쌍이 없다
+  const two = [
+    { text: "可通过书面协议延长", left: 72, right: 516, y: 600, fontSize: 11 },
+    { text: "合同期限。若无相关书面延长协议，", left: 72, right: 300, y: 572, fontSize: 11 },
+  ]
+  it("쪽 줄 흐름의 본문 간격이 같으면 꺾임으로 잇는다", () => {
+    const lex = new WrapLexicon()
+    for (let k = 0; k < 6; k++) lex.addPitch(11, 28)
+    assert.notEqual(bodyLineJoins(two, lex)[0], "\n")
+  })
+  it("근거가 없으면 종전대로 2em 넘는 간격은 문단 경계", () => {
+    assert.equal(bodyLineJoins(two)[0], "\n")
+  })
 })

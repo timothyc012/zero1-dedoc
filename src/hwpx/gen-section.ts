@@ -8,8 +8,8 @@
  */
 
 import { type ResolvedGongmun, levelIndent, mmToHwpunit, needsGaejosikAssets, usesReportFonts } from "./gongmun.js"
-import { stripChapterNumber, gaejosikSizes, GAEJOSIK_BASE_WIDTH } from "./gaejosik.js"
-import { buildGaejosikCover, buildGaejosikToc, buildGaejosikChapter, buildGaejosikBodyTitle, resetGjTableIds } from "./gen-gaejosik.js"
+import { stripChapterNumber, gaejosikSizes, gaejosikBodyWidth, GAEJOSIK_BASE_WIDTH } from "./gaejosik.js"
+import { type GaejosikSummaryPlan, buildGaejosikSummary, buildGaejosikCover, coverMetaBlocks, buildGaejosikToc, buildGaejosikChapter, buildGaejosikBodyTitle, resetGjTableIds } from "./gen-gaejosik.js"
 import {
   NS_SECTION, NS_PARA,
   CHAR_NORMAL, CHAR_BOLD, CHAR_QUOTE, CHAR_H1, PARA_NORMAL, PARA_QUOTE, PARA_CODE, PARA_LIST,
@@ -26,7 +26,7 @@ import {
 import { type MdBlock, generateParagraph, generateRuns } from "./md-runs.js"
 import { measureTextWidth } from "./text-metrics.js"
 import { type GongmunFitPlan, type GongmunListPlan, variantMapper, precomputeGongmunList } from "./gen-gongmun-fit.js"
-import { generateTable, generateHtmlTableXml, DATA_TABLE_INSET, resetTableIds, type GongmunTableStyle } from "./gen-table.js"
+import { generateTable, generateHtmlTableXml, placeTotalRow, resolveTotalRow, DATA_TABLE_INSET, resetTableIds, type GongmunTableStyle } from "./gen-table.js"
 import { TableBfRegistry } from "./gen-table-bf.js"
 import { type ProfileRemap } from "./gen-profile.js"
 import { buildApprovalTable, buildEndMark, hasEndMark, buildTitleBox, resetExtraTableIds } from "./gen-gongmun-extra.js"
@@ -140,6 +140,8 @@ interface SectionCtx {
   dfIds: DocframeIds | null
   /** 단계별 위계 타이포 charPr (levels 옵션, v4.12.3) — null이면 없음 */
   levelIds: LevelCharIds | null
+  /** 개조식 요약 상자 — 생성기가 charPr 를 발급한 계획. null이면 없음 */
+  gjSummary: GaejosikSummary | null
   /** 이미지 placeholder 레지스트리 (v4.0.5) — null이면 종전 alt 텍스트 폴백 */
   images: ImageRegistry | null
   /** 파생 플래그·스타일 */
@@ -158,6 +160,8 @@ interface SectionCtx {
   chapterNo: number
   h2Seq: number
   coverH1Idx: number
+  /** 표지가 받은 날짜·기관명 문단 blockIdx (coverMetaBlocks) — 본문에서 뺀다 */
+  coverMetaIdxs: Set<number>
   titleBoxH1Idx: number
   pressH1Idx: number
   /** 개조식 장 목록 SSOT — 목차·본문 로마 장헤더가 공유하는 heading blockIdx 배열 (P1-3) */
@@ -167,6 +171,9 @@ interface SectionCtx {
   orderedCounters: Record<number, number>
   prevWasOrdered: boolean
 }
+
+/** 개조식 요약 상자 계획 + 생성기가 발급한 charPr id */
+export interface GaejosikSummary { plan: GaejosikSummaryPlan; charPrId: number }
 
 // ─── 프리앰블 (보고정보·결재란·두문·표지·목차·제목박스) ─
 
@@ -178,6 +185,7 @@ function buildPreamble(blocks: MdBlock[], ctx: SectionCtx): void {
   const { gongmun, dfIds, bfReg, tableStyle, richAssets, gjBodyW } = ctx
   const preamble: string[] = []
   let hasFrontPages = false // 표지·목차 등 본문과 페이지가 분리되는 전면부 존재 여부
+  let bodyTitled = false // 본문 첫 쪽 제목 상자를 실었는지 (개조식 요약 상자가 그 뒤에 붙는다)
   // 보고정보 행 — 최상단 우측 (실측 t1: 보고일시·보고자·연락처가 문서 첫 줄)
   if (gongmun?.reportInfo && dfIds) {
     preamble.push(buildReportInfo(gongmun, dfIds))
@@ -202,7 +210,14 @@ function buildPreamble(blocks: MdBlock[], ctx: SectionCtx): void {
       gongmun!.pageNumbers ? xml.replace(/<hp:run charPrIDRef="(\d+)">/, `<hp:run charPrIDRef="$1">${pageHidingCtrl(hideHeader)}`) : xml
     if (gongmun.cover && h1Idx >= 0) {
       coverTitle = (blocks[h1Idx].text || "").trim()
-      const coverPart = buildGaejosikCover(coverTitle, gongmun, gjBodyW)
+      const meta = coverMetaBlocks(blocks, h1Idx, gongmun)
+      const cover = {
+        ...gongmun.cover,
+        date: meta.dateText ?? gongmun.cover.date,
+        org: meta.org !== undefined ? (blocks[meta.org].text || "").trim() : gongmun.cover.org,
+      }
+      for (const i of [meta.date, meta.org]) if (i !== undefined) ctx.coverMetaIdxs.add(i)
+      const coverPart = buildGaejosikCover(coverTitle, { ...gongmun, cover }, gjBodyW)
       coverPart[0] = hide(coverPart[0], true)
       preamble.push(...coverPart)
       ctx.coverH1Idx = h1Idx
@@ -224,7 +239,15 @@ function buildPreamble(blocks: MdBlock[], ctx: SectionCtx): void {
     // 본문 첫 페이지 제목 반복 박스 (실측 GT3 표④·GT12) — 표지/목차 뒤 새 페이지 선두
     if (gongmun.bodyTitleBox && coverTitle && hasFrontPages) {
       preamble.push(buildGaejosikBodyTitle(coverTitle, gongmun, gjBodyW).replace(/^<hp:p /, `<hp:p pageBreak="1" `))
+      bodyTitled = true
     }
+  }
+  if (ctx.gjSummary && bfReg) {
+    // 개조식 요약 상자 — 본문 첫 쪽 제목 상자 바로 뒤. 제목 상자와 한 조각으로 붙여 아래 쪽나눔 판정이 제목 상자의 쪽나눔을 본다.
+    // 제목 상자 없이 전면부만 있으면 상자가 새 쪽을 연다
+    const box = buildGaejosikSummary(ctx.gjSummary.plan, ctx.gjSummary.charPrId, bfReg, gjBodyW)
+    if (bodyTitled) preamble[preamble.length - 1] += `\n  ${box}`
+    else preamble.push(hasFrontPages ? box.replace(/^<hp:p /, `<hp:p pageBreak="1" `) : box)
   }
   if (gongmun && !ctx.gaejosik && ctx.coverH1Idx < 0 && bfReg && (gongmun.preset === "report" || gongmun.preset === "plan" || gongmun.preset === "notice")) {
     // 1페이지형 제목박스 (실측 GT2/GT6/GT7: 색상바+제목+gradient바) — 첫 h1을 박스로
@@ -469,7 +492,10 @@ function renderListItem(block: MdBlock, blockIdx: number, ctx: SectionCtx): stri
     ctx.prevWasOrdered = false
   }
   const indentPrefix = "  ".repeat(indent)
-  return generateParagraph(indentPrefix + marker + (block.text || ""), PARA_LIST)
+  // 마커는 서식 없는 run 으로 따로 둔다 (공문서 markedParagraph 와 같은 방식) — 본문에 이어 붙여
+  // 인라인 파싱하면 '*' 마커가 본문의 **굵게**·*기울임* 과 짝지어져 글머리가 사라지고 별표가 남는다
+  const markerRun = `<hp:run charPrIDRef="${CHAR_NORMAL}"><hp:t>${escapeTextXml(indentPrefix + marker)}</hp:t></hp:run>`
+  return `<hp:p paraPrIDRef="${PARA_LIST}" styleIDRef="0">${markerRun}${generateRuns(block.text || "")}</hp:p>`
 }
 
 function renderHr(ctx: SectionCtx): string {
@@ -486,7 +512,9 @@ function renderTable(block: MdBlock, ctx: SectionCtx): string {
   ctx.opener.emitCarrier(ctx.paraXmls)
   // 프로필 대응은 takeProfile(행·열+앵커 매칭, 순번은 앵커 없을 때 폴백) —
   // parse 가 방출하지 않는 표(1×1 제목박스 등)가 있어도 서식이 밀리지 않는다.
-  return generateTable(block.rows, ctx.theme, ctx.tableStyle, ctx.remap, ctx.tableSeq++, ctx.images)
+  // 공문 프리셋(개조식·보도자료 — v5 엔진 밖)도 합계 행 위치를 같은 규칙으로, 범용 생성은 원고 그대로
+  const rows = ctx.gongmun ? placeTotalRow(block.rows, resolveTotalRow(ctx.gongmun.totalRow, !!ctx.remap)) : block.rows
+  return generateTable(rows, ctx.theme, ctx.tableStyle, ctx.remap, ctx.tableSeq++, ctx.images)
 }
 
 function renderHtmlTable(block: MdBlock, ctx: SectionCtx): string {
@@ -543,6 +571,7 @@ export function blocksToSectionXml(
   images: ImageRegistry | null = null,
   page: ResolvedPage | null = null,
   levelIds: LevelCharIds | null = null,
+  gjSummary: GaejosikSummary | null = null,
 ): string {
   // 문서 생성마다 전역 표 id 카운터 리셋 — 같은 프로세스 연속 생성에도 결정적 출력
   resetTableIds(); resetGjTableIds(); resetExtraTableIds()
@@ -550,7 +579,7 @@ export function blocksToSectionXml(
   const measured = !!gongmun && usesReportFonts(gongmun.preset)
   const richAssets = !!gongmun && needsGaejosikAssets(gongmun)
   const ctx: SectionCtx = {
-    theme, gongmun, gongmunList, fit, chartParts, bfReg, remap, dfIds, images, levelIds,
+    theme, gongmun, gongmunList, fit, chartParts, bfReg, remap, dfIds, images, levelIds, gjSummary,
     gaejosik: gongmun?.preset === "gaejosik",
     measured, richAssets,
     vBase: charVariantBase(richAssets, !!gongmun),
@@ -573,7 +602,7 @@ export function blocksToSectionXml(
         }
       : null,
     // 개조식 장식표(표지·목차·장헤더·제목박스) 폭 스케일용 본문폭 — margins 오버라이드 대응
-    gjBodyW: gongmun ? mmToHwpunit(210 - gongmun.margins.left - gongmun.margins.right) : GAEJOSIK_BASE_WIDTH,
+    gjBodyW: gongmun ? gaejosikBodyWidth(gongmun.margins) : GAEJOSIK_BASE_WIDTH,
     chamMap: (id: number) => (id === CHAR_BOLD ? GJ_CHAR_CHAM_BOLD : id),
     opener: new SectionOpener(gongmun, page),
     paraXmls: [],
@@ -583,6 +612,7 @@ export function blocksToSectionXml(
     chapterNo: 0,
     h2Seq: 0, // h2 말머리 'number' 모드 아라비아 순번 (QA-2)
     coverH1Idx: -1,
+    coverMetaIdxs: new Set(),
     titleBoxH1Idx: -1,
     pressH1Idx: -1,
     gjChapterIdxs: [],
@@ -597,6 +627,7 @@ export function blocksToSectionXml(
 
   for (let blockIdx = 0; blockIdx < blocks.length; blockIdx++) {
     const block = blocks[blockIdx]
+    if (ctx.coverMetaIdxs.has(blockIdx)) continue // 표지가 받은 날짜·기관명 — 목록 번호도 세지 않는다
 
     // 순서 있는 list_item이 아니면 카운터 전부 리셋 (연속되지 않은 목록은 다시 1부터)
     if (block.type !== "list_item" || !block.ordered) {
@@ -612,7 +643,7 @@ export function blocksToSectionXml(
       case "paragraph": xml = renderParagraph(block, blockIdx, ctx); break
       case "code_block": xml = renderCodeBlock(block, blockIdx, ctx); break
       case "equation": xml = renderEquation(block, blockIdx, ctx); break
-      case "blockquote": xml = renderBlockquote(block, ctx); break
+      case "blockquote": xml = blockIdx === ctx.gjSummary?.plan.quoteIdx ? "" : renderBlockquote(block, ctx); break
       case "list_item": xml = renderListItem(block, blockIdx, ctx); break
       case "hr": xml = renderHr(ctx); break
       case "table": xml = renderTable(block, ctx); break

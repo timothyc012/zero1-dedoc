@@ -16,6 +16,13 @@ import { homedir, platform } from "node:os"
 import { stdin, stdout } from "node:process"
 import { promisify } from "node:util"
 import { getAccessRoot, isOfflineMode } from "./shared/offline.js"
+import { VERSION } from "./utils.js"
+
+/** 등록하는 npx 패키지 지정 — 지금 버전으로 고정한다. 고정하지 않으면 클라이언트를 켤 때마다 npm 최신판을 받아 실행해,
+ *  npm 계정·토큰이 탈취되면 등록한 모든 PC 에서 바로 코드가 돈다. 개발 빌드(버전 미상)만 고정 없이 */
+export function npxPackageSpec(version = VERSION): string {
+  return /^\d+\.\d+\.\d+$/.test(version) ? `kordoc@${version}` : "kordoc"
+}
 
 interface ClientConfig {
   readonly name: string

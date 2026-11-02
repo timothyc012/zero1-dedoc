@@ -35,6 +35,36 @@ describe("occludedTextItems", () => {
     const args = [[glyphs("Other")], [[OPS.rectangle], [0, 0, 595, 842]], [], [glyphs("Body")]]
     assert.equal(occludedTextItems([header, body], fn, args).size, 0)
   })
+  it("clips Form fills to the Form BBox", () => {
+    const outside = item("Outside", 10, 10, 40), inside = item("Inside", 110, 110, 30)
+    const fn = [OPS.showText, OPS.paintFormXObjectBegin, OPS.constructPath, OPS.fill, OPS.paintFormXObjectEnd]
+    const args = [[glyphs("OutsideInside")], [null, [100, 100, 200, 200]], [[OPS.rectangle], [0, 0, 300, 300]], [], []]
+    assert.deepEqual([...occludedTextItems([outside, inside], fn, args)], [inside])
+  })
+
+  it("transforms the Form BBox and intersects it with the parent clip", () => {
+    const outside = item("Outside", 130, 110, 30), inside = item("Inside", 180, 110, 20)
+    const fn = [OPS.showText, OPS.constructPath, OPS.clip, OPS.endPath, OPS.paintFormXObjectBegin, OPS.constructPath, OPS.fill, OPS.paintFormXObjectEnd]
+    const args = [[glyphs("OutsideInside")], [[OPS.rectangle], [170, 0, 100, 300]], [], [], [[2, 0, 0, 1, 100, 100], [10, 0, 80, 100]], [[OPS.rectangle], [-100, -100, 400, 400]], [], []]
+    assert.deepEqual([...occludedTextItems([outside, inside], fn, args)], [inside])
+  })
+
+  it("restores the outer clip after nested Forms and the page clip after leaving them", () => {
+    const outer = item("Outer", 110, 110, 30), page = item("Page", 10, 10, 30)
+    const fn = [OPS.showText, OPS.paintFormXObjectBegin, OPS.paintFormXObjectBegin, OPS.paintFormXObjectEnd,
+      OPS.constructPath, OPS.fill, OPS.paintFormXObjectEnd, OPS.constructPath, OPS.fill]
+    const args = [[glyphs("OuterPage")], [null, [100, 100, 200, 200]], [null, [150, 150, 200, 200]], [],
+      [[OPS.rectangle], [0, 0, 300, 300]], [], [], [[OPS.rectangle], [0, 0, 60, 60]], []]
+    assert.deepEqual([...occludedTextItems([outer, page], fn, args)], [outer, page])
+  })
+
+  it("does not approximate a skewed Form clip with its bounding rectangle", () => {
+    const outside = item("Outside", 105, 190, 10)
+    const fn = [OPS.showText, OPS.paintFormXObjectBegin, OPS.constructPath, OPS.fill, OPS.paintFormXObjectEnd]
+    const args = [[glyphs("Outside")], [[1, 0, 1, 1, 100, 100], [0, 0, 100, 100]], [[OPS.rectangle], [-200, -200, 600, 600]], [], []]
+    assert.equal(occludedTextItems([outside], fn, args).size, 0)
+  })
+
 })
 
 describe("chapter number heading", () => {

@@ -347,3 +347,141 @@ describe("미지원 LaTeX 누출 봉합 (v4.0.6 회귀) — 맨 알파벳 누출
     assert.ok(rt("\\begin{align} a &= b \\\\ c &= d \\end{align}").includes("eqalign"), "align→eqalign 렌더 보존")
   })
 })
+
+describe("인라인 수식 opt-in (#150 — inlineMath)", () => {
+  const ISSUE_MD = "본문 $x^2+1$ 끝\n\n| 식 | 값 |\n| --- | --- |\n| $x^2+1$ | 2 |\n\n$$x^2+1$$"
+  const sectionOf = async (buf: ArrayBuffer | Uint8Array) =>
+    (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text").then(flatSec)
+  const eqCount = (section: string) => (section.match(/<hp:equation /g) ?? []).length
+  const scripts = (section: string) => [...section.matchAll(/<hp:script>([^<]*)<\/hp:script>/g)].map(m => m[1])
+
+  it("이슈 재현 — 본문 인라인 1·표 셀 인라인 1·블록 1, 수식 객체 3개가 제자리에", async () => {
+    const section = await sectionOf(await markdownToHwpx(ISSUE_MD, { inlineMath: true }))
+    assert.equal(eqCount(section), 3, section)
+    assert.deepEqual(scripts(section), ["x ^{2}+1", "x ^{2}+1", "x ^{2}+1"])
+    // 본문: 같은 문단 안 글 run 사이에 treatAsChar 수식
+    assert.match(section, /<hp:t>본문 <\/hp:t><\/hp:run><hp:run charPrIDRef="\d+"><hp:equation [^>]*>(?:(?!<\/hp:equation>)[\s\S])*?<hp:pos treatAsChar="1"[\s\S]*?<\/hp:equation><\/hp:run><hp:run charPrIDRef="\d+"><hp:t> 끝<\/hp:t>/)
+    // 표 셀 안
+    assert.ok([...section.matchAll(/<hp:tc[\s\S]*?<\/hp:tc>/g)].some(m => m[0].includes("<hp:equation ")), "표 셀 안 수식")
+    assert.ok(!section.includes("$"), "달러 기호가 글로 남지 않는다")
+    const ids = [...section.matchAll(/<hp:equation id="(\d+)"/g)].map(m => m[1])
+    assert.equal(new Set(ids).size, 3, `equation id 중복 없음: ${ids}`)
+  })
+
+  it("기본(꺼짐)은 종전과 바이트 동일 — 인라인 $…$ 는 글자 유지", async () => {
+    const base = await sectionOf(await markdownToHwpx(ISSUE_MD))
+    assert.equal(await sectionOf(await markdownToHwpx(ISSUE_MD, { inlineMath: false })), base)
+    assert.equal(eqCount(base), 1, "블록 수식만")
+    assert.ok(base.includes("<hp:t>본문 $x^2+1$ 끝</hp:t>"), base)
+  })
+
+  it("보수 판정 — 이스케이프·공백 경계·닫는 $ 뒤 숫자·인라인 코드·$$ 는 수식 아님", async () => {
+    for (const md of [
+      "가격은 $5 이고 할인가는 $10 이다",
+      "이스케이프 \\$x\\$ 는 글자",
+      "공백 경계 $ 5 $ 는 글자",
+      "앞 공백 $ x$ 뒤 공백 $x $ 는 글자",
+      "닫는 뒤 숫자 $x$5 는 글자",
+      "코드 `$x$` 는 글자",
+      "본문 중간 $$x$$ 는 글자",
+      "US$ 100",
+    ]) {
+      const section = await sectionOf(await markdownToHwpx(md, { inlineMath: true }))
+      assert.equal(eqCount(section), 0, `${md} → ${section}`)
+      assert.equal(section, await sectionOf(await markdownToHwpx(md)), `켜도 꺼짐과 동일: ${md}`)
+    }
+  })
+
+  it("수식 안 _·* 와 백슬래시 명령은 강조·이스케이프에 먹히지 않는다", async () => {
+    const section = await sectionOf(await markdownToHwpx(
+      "값 $x_1 * y_1$ 그리고 **굵게 $a \\le b$** 와 $\\frac{1}{2}$ 끝", { inlineMath: true }))
+    assert.deepEqual(scripts(section), ["x _{1} * y _{1}", "a LEQ b", "{1} over {2}"])
+  })
+
+  it("이스케이프 문자 뒤 'm숫자'·링크 대상 안 $ 는 수식 센티널로 오인하지 않는다", async () => {
+    const a = await sectionOf(await markdownToHwpx("면적 $a^2$ (단위 \\[m2\\])", { inlineMath: true }))
+    assert.deepEqual(scripts(a), ["a ^{2}"])
+    assert.ok(a.includes("(단위 [m2])"), a)
+    const b = await sectionOf(await markdownToHwpx("$x$ 와 \\*m0\\*", { inlineMath: true }))
+    assert.deepEqual(scripts(b), ["x"])
+    assert.ok(b.includes(" 와 *m0*"), b)
+    const c = await sectionOf(await markdownToHwpx("[사이트 $a$](http://x.com/$a$b)", { inlineMath: true }))
+    assert.deepEqual(scripts(c), ["a"], "앵커 안 수식만")
+    assert.ok(c.includes("http://x.com/$a$b"), c)
+  })
+
+  it("공문서 v5 제목처럼 평문으로 쓰는 자리는 $…$ 를 글자로 보존 (LaTeX 원문만 남지 않게)", async () => {
+    const md = "# 제목\n\n## 소제목 $y$\n\n- 본문"
+    const on = await sectionOf(await markdownToHwpx(md, { gongmun: { preset: "보고서" }, inlineMath: true }))
+    assert.ok(on.includes("소제목 $y$"), on)
+  })
+
+  it("왕복 — 생성 HWPX 를 다시 파싱하면 인라인 수식이 $…$ 로 돌아온다 (\\$ 아님)", async () => {
+    const parsed = await parseHwpx(await markdownToHwpx(ISSUE_MD, { inlineMath: true }))
+    assert.equal(parsed.success, true)
+    if (!parsed.success) return
+    const md = parsed.markdown
+    assert.ok(!md.includes("\\$"), md)
+    // 되읽은 LaTeX 의 토큰 사이 공백은 블록 수식 왕복과 같은 규약(hmlToLatex) — 공백을 걷고 비교
+    const body = /^본문 \$([^$]+)\$ 끝$/.exec(compact(md.split("\n").find(l => l.includes("본문"))!))
+    assert.ok(body, md)
+    assert.equal(noSpace(body![1]), "x^{2}+1")
+    const row = md.split("\n").find(l => /\|\s*2\s*\|/.test(l))!
+    assert.equal(noSpace(row), "|$x^{2}+1$|2|", row)
+  })
+
+  it("공문서 v5 경로(보고서)도 같은 옵션으로 인라인 수식을 만든다", async () => {
+    const section = await sectionOf(await markdownToHwpx("# 제목\n\n## 개요\n\n- 산식 $a+b$ 적용", { gongmun: { preset: "보고서" }, inlineMath: true }))
+    assert.deepEqual(scripts(section), ["a+b"])
+  })
+
+  it("CLI generate --inline-math", async () => {
+    const { spawnSync } = await import("node:child_process")
+    const { mkdtempSync, writeFileSync, readFileSync, rmSync } = await import("node:fs")
+    const { tmpdir } = await import("node:os")
+    const { join } = await import("node:path")
+    const { fileURLToPath } = await import("node:url")
+    const CLI = fileURLToPath(new URL("../src/cli.ts", import.meta.url))
+    const dir = mkdtempSync(join(tmpdir(), "kordoc-inline-math-"))
+    try {
+      const md = join(dir, "식.md")
+      writeFileSync(md, ISSUE_MD)
+      const run = (out: string, extra: string[]) => {
+        const r = spawnSync(process.execPath, ["--import", "tsx", CLI, "generate", md, "-o", out, "--plain", "--silent", ...extra], { encoding: "utf-8", timeout: 60000 })
+        assert.equal(r.status, 0, r.stderr)
+      }
+      run(join(dir, "on.hwpx"), ["--inline-math"])
+      run(join(dir, "off.hwpx"), [])
+      assert.equal(eqCount(await sectionOf(readFileSync(join(dir, "on.hwpx")))), 3)
+      assert.equal(eqCount(await sectionOf(readFileSync(join(dir, "off.hwpx")))), 1)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("MCP generate_document inline_math", async () => {
+    const { mkdtemp, readFile, rm } = await import("node:fs/promises")
+    const { tmpdir } = await import("node:os")
+    const { join } = await import("node:path")
+    const { registerGenerateTools } = await import("../src/mcp/tools-generate.js")
+    const dir = await mkdtemp(join(tmpdir(), "kordoc-mcp-inline-math-"))
+    const previousRoot = process.env.KORDOC_ROOT
+    try {
+      process.env.KORDOC_ROOT = dir
+      let callback: any
+      registerGenerateTools({ tool(name: string, ...args: any[]) {
+        if (name === "generate_document") callback = args.at(-1)
+      } } as any)
+      for (const [inline_math, want] of [[true, 3], [undefined, 1]] as const) {
+        const output = join(dir, `out-${want}.hwpx`)
+        const result = await callback({ markdown: ISSUE_MD, output_path: output, ...(inline_math ? { inline_math } : {}) })
+        assert.ok(!result.isError, JSON.stringify(result))
+        assert.equal(eqCount(await sectionOf(await readFile(output))), want)
+      }
+    } finally {
+      if (previousRoot === undefined) delete process.env.KORDOC_ROOT
+      else process.env.KORDOC_ROOT = previousRoot
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+})

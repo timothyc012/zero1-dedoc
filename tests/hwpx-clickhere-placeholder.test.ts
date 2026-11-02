@@ -9,6 +9,7 @@ import assert from "node:assert/strict"
 import JSZip from "jszip"
 import { parseHwpxDocument } from "../src/hwpx/parser.js"
 import { fillHwpx } from "../src/form/filler-hwpx.js"
+import { markdownToHwpx, patchHwpx } from "../src/index.js"
 
 const SEC_NS = `xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"`
 
@@ -30,6 +31,34 @@ async function build(body: string): Promise<ArrayBuffer> {
   return zip.generateAsync({ type: "arraybuffer" })
 }
 const parse = async (body: string) => parseHwpxDocument(await build(body))
+
+describe("HWPX 누름틀이 든 문단의 강조 표지", () => {
+  const HEAD = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head"><hh:refList>` +
+    `<hh:charProperties itemCnt="2"><hh:charPr id="0" height="1000"></hh:charPr><hh:charPr id="1" height="1000"><hh:bold/></hh:charPr></hh:charProperties>` +
+    `</hh:refList></hh:head>`
+  const withHeader = async (body: string): Promise<ArrayBuffer> => {
+    const zip = await JSZip.loadAsync(await build(body))
+    zip.file("Contents/header.xml", HEAD)
+    return zip.generateAsync({ type: "arraybuffer" })
+  }
+  const field = (runs: string, dirty: "0" | "1") => `<hp:ctrl><hp:fieldBegin id="7" type="CLICK_HERE" name="f" editable="1" dirty="${dirty}" zorder="-1" fieldid="9">` +
+    `<hp:parameters cnt="3" name=""><hp:integerParam name="Prop">9</hp:integerParam>` +
+    `<hp:stringParam name="Command" xml:space="preserve">Clickhere:set:48:Direction:wstring:7:본문 입력하기 HelpState:wstring:0:  </hp:stringParam>` +
+    `<hp:stringParam name="Direction">본문 입력하기</hp:stringParam></hp:parameters></hp:fieldBegin></hp:ctrl></hp:run>` +
+    runs + `<hp:run charPrIDRef="0"><hp:ctrl><hp:fieldEnd beginIDRef="7" fieldid="9"/></hp:ctrl>`
+
+  it("채운 누름틀(보도자료 본문 칸) 안 굵은 글도 표지를 낸다 — 필드 매개변수는 보이는 글이 아니다", async () => {
+    const runs = `<hp:run charPrIDRef="0"><hp:t>△</hp:t></hp:run><hp:run charPrIDRef="1"><hp:t>한우</hp:t></hp:run><hp:run charPrIDRef="0"><hp:t>는 사료를 충분히 공급한다.</hp:t></hp:run>`
+    const r = await parseHwpxDocument(await withHeader(para(field(runs, "1"))))
+    assert.ok(r.markdown.includes("△**한우**는 사료를 충분히 공급한다."), r.markdown)
+  })
+
+  it("덜 채운 누름틀(안내문)이 든 문단은 종전대로 — 안내문은 인쇄 안 되는 글로 뺀다", async () => {
+    const runs = `<hp:run charPrIDRef="1"><hp:t>본문 입력하기</hp:t></hp:run>`
+    const r = await parseHwpxDocument(await withHeader(para(`<hp:t>머리 </hp:t>` + field(runs, "0"))))
+    assert.ok(!r.markdown.includes("본문 입력하기"), r.markdown)
+  })
+})
 
 describe("HWPX 미기입 누름틀 안내문 — IR 에 표시, 마크다운에서 뺀다", () => {
   it("dirty=0 + 값이 안내문 그대로: 블록 글엔 남고 마크다운에는 없다", async () => {
@@ -90,5 +119,52 @@ describe("HWPX 미기입 누름틀 안내문 — IR 에 표시, 마크다운에�
     const r = await parse(para(tbl))
     assert.ok(r.markdown.includes("<table>") && r.markdown.includes("일자"), r.markdown)
     assert.ok(!r.markdown.includes("0000.00.00."), r.markdown)
+  })
+})
+
+describe("patch — 미기입 누름틀 자리에 쓴 값은 누름틀에 채운다 (한글에서 눌러 입력한 것과 같은 꼴)", () => {
+  async function form(): Promise<Uint8Array> {
+    const zip = await JSZip.loadAsync(await markdownToHwpx("머리 문단\n\n성명 자리\n\n끝 문단"))
+    const xml = await zip.file("Contents/section0.xml")!.async("string")
+    assert.ok(xml.includes("<hp:t>성명 자리</hp:t>"))
+    zip.file("Contents/section0.xml", xml.replace("<hp:t>성명 자리</hp:t>", `<hp:t>성명 : </hp:t>${clickHere("여기에 입력", "여기에 입력", "0")}`))
+    return zip.generateAsync({ type: "uint8array" })
+  }
+  const markdown = async (d: Uint8Array) => (await parseHwpxDocument(d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength) as ArrayBuffer, { layoutTables: "keep" })).markdown
+
+  it("라벨 옆에 쓴 값은 안내문 대신 누름틀 안(라벨 run)에 넣고 dirty=1", async () => {
+    const src = await form()
+    const md = await markdown(src)
+    assert.ok(md.includes("성명 :") && !md.includes("여기에 입력"), md)
+    const r = await patchHwpx(src, md.replace("성명 :", "성명 : 홍길동"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.ok((await markdown(r.data!)).includes("성명 : 홍길동"))
+    const xml = await (await JSZip.loadAsync(r.data!)).file("Contents/section0.xml")!.async("string")
+    assert.match(xml, /<hp:t>성명 : <\/hp:t><hp:ctrl><hp:fieldBegin [^>]*dirty="1"[^>]*>.*?<\/hp:fieldBegin><\/hp:ctrl><hp:t>홍길동<\/hp:t><hp:ctrl><hp:fieldEnd /s)
+    assert.ok(!xml.includes("여기에 입력</hp:t>"))
+  })
+
+  it("누름틀만 든 표 칸(마크다운에선 빈칸)에 쓴 값도 누름틀에 채운다", async () => {
+    const zip = await JSZip.loadAsync(await markdownToHwpx("| 성명 | 칸값 |\n| --- | --- |\n| 직업 | 회사원 |"))
+    const xml = await zip.file("Contents/section0.xml")!.async("string")
+    assert.ok(xml.includes("<hp:t>칸값</hp:t>"))
+    zip.file("Contents/section0.xml", xml.replace("<hp:t>칸값</hp:t>", clickHere("여기에 입력", "여기에 입력", "0")))
+    const src = await zip.generateAsync({ type: "uint8array" })
+    const md = await markdown(src)
+    const edited = md.replace(/\| 성명 \|\s*\|/, "| 성명 | 홍길동 |")
+    assert.notEqual(edited, md, md)
+    const r = await patchHwpx(src, edited)
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.ok((await markdown(r.data!)).includes("| 성명 | 홍길동 |"))
+    const out = await (await JSZip.loadAsync(r.data!)).file("Contents/section0.xml")!.async("string")
+    assert.match(out, /<hp:fieldBegin [^>]*dirty="1"[^>]*>.*?<\/hp:fieldBegin><\/hp:ctrl><hp:t>홍길동<\/hp:t><hp:ctrl><hp:fieldEnd /s)
+  })
+
+  it("누름틀과 떨어진 자리를 고치면 누름틀은 그대로 둔다", async () => {
+    const src = await form()
+    const r = await patchHwpx(src, (await markdown(src)).replace("머리 문단", "머리 문단 고침"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    const xml = await (await JSZip.loadAsync(r.data!)).file("Contents/section0.xml")!.async("string")
+    assert.ok(xml.includes("<hp:t>여기에 입력</hp:t>") && xml.includes('dirty="0"'))
   })
 })

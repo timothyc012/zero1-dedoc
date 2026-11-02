@@ -74,7 +74,7 @@ function tableRecData(rows: number, cols: number): Buffer {
 
 /** 빈 DocInfo 골격 */
 function emptyDocInfo(): HwpDocInfo {
-  return { charShapes: [], paraShapes: [], styles: [], binData: [], numberings: [], bullets: [] }
+  return { charShapes: [], paraShapes: [], styles: [], binData: [], numberings: [], bullets: [], borderEdges: [] }
 }
 
 function parse(buffers: Buffer[], docInfo: HwpDocInfo | null = null, doc = createHwp5DocState()) {
@@ -209,6 +209,29 @@ describe("표 캡션/셀 구분 (TABLE 전후 LIST_HEADER)", () => {
     assert.equal(table.cells[0][0].isHeader, true) // widthRef bit2 = 제목 셀
     assert.equal(table.cells[0][1].text, "금액")
     assert.equal(table.cells[0][1].isHeader, undefined)
+  })
+
+  it("캡션 속성(문단 리스트 머리 8바이트 뒤 UINT32)의 낮은 두 비트 3 = 표 아래 캡션 → captionBelow, 마크다운은 표 뒤에", () => {
+    const capHeader = (dir: number) => { const b = Buffer.alloc(20); b.writeUInt32LE(dir, 8); return b }
+    const doc = (dir: number) => parse([
+      rec(TAG_PARA_HEADER, 0, paraHeaderData()),
+      rec(TAG_CTRL_HEADER, 1, Buffer.from(" lbt", "ascii")),
+      rec(TAG_LIST_HEADER, 2, capHeader(dir)),
+      rec(TAG_PARA_HEADER, 2, paraHeaderData()),
+      rec(TAG_PARA_TEXT, 3, utf16("※ 자료: 통계청")),
+      rec(TAG_TABLE, 2, tableRecData(1, 2)),
+      rec(TAG_LIST_HEADER, 2, cellListHeaderData(0, 0)),
+      rec(TAG_PARA_HEADER, 2, paraHeaderData()),
+      rec(TAG_PARA_TEXT, 3, utf16("항목")),
+      rec(TAG_LIST_HEADER, 2, cellListHeaderData(1, 0)),
+      rec(TAG_PARA_HEADER, 2, paraHeaderData()),
+      rec(TAG_PARA_TEXT, 3, utf16("금액")),
+    ]).blocks.find(b => b.type === "table")!.table!
+    assert.equal(doc(3).captionBelow, true)
+    assert.equal(doc(0x23).captionBelow, true, "방향은 낮은 두 비트만")
+    assert.equal(doc(2).captionBelow, undefined)
+    const md = blocksToMarkdown([{ type: "table", table: doc(3) }])
+    assert.ok(md.indexOf("금액") < md.indexOf("자료: 통계청"), md)
   })
 })
 

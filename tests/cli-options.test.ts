@@ -7,7 +7,7 @@
 
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { spawn } from "node:child_process"
+import { spawn, spawnSync } from "node:child_process"
 import { assertProcessExit, runNodeSync } from "./helpers/cli-startup-process.js"
 import { mkdtempSync, writeFileSync, existsSync, statSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -31,6 +31,24 @@ test("plugin-1: fill 서브커맨드 뒤 -o 가 루트에 흡수되지 않고 �
     assert.ok(existsSync(out), "fill … -o 결과 파일이 생성되어야 함")
     assert.ok(statSync(out).size > 0, "결과 파일이 비어있지 않아야 함")
     assert.equal(result.stdout.length, 0, "결과가 stdout(HWPX 바이너리 덤프)으로 새지 않아야 함")
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test("fill -j 는 UTF-8 BOM 으로 시작하는 JSON 도 읽는다 (Windows 메모장·PowerShell 저장본)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "kordoc-fill-bom-"))
+  try {
+    const out = join(dir, "out.hwpx")
+    const vals = join(dir, "vals.json")
+    writeFileSync(vals, "﻿" + JSON.stringify({ 성명: "홍길동" }))
+    const r = spawnSync(
+      process.execPath,
+      ["--import", "tsx", CLI, "fill", DUMMY, "-j", vals, "-o", out],
+      { encoding: "utf-8", timeout: 30000 },
+    )
+    assert.equal(r.status, 0, `exit 0 이어야 함 — stderr: ${r.stderr}`)
+    assert.ok(existsSync(out), "결과 파일이 생성되어야 함")
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

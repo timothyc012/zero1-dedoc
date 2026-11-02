@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  pom.xml 이 아닌 이름 — 정부 GitLab 미러의 저장소 보안 검사(OSV-Scanner·Trivy)는 pom.xml 을 보면 Maven Central 에서
+  전이 의존성을 받아 풀려고 하는데, 그 서버는 해외로 나가지 못해 검사가 매달리고 push 가 120초 만에 502 로 끊겼다.
+  (examples/consumer/consumer-pom.xml 과 같은 사정.) 의존성 취약점은 GitHub CI(java-sdk 잡)가 OSV-Scanner 로 이 파일을 명시해 검사한다.
+  실행: mvn -f sdk/java/kordoc-pom.xml verify
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>app.gomdori.kordoc</groupId>
+  <artifactId>kordoc</artifactId>
+  <version>0.1.0</version>
+  <packaging>jar</packaging>
+
+  <name>kordoc Java SDK</name>
+  <description>Parse Korean documents (HWP, HWPX, PDF, DOCX, XLSX …) through a resident kordoc engine worker</description>
+  <url>https://github.com/chrisryugj/kordoc</url>
+  <licenses>
+    <license>
+      <name>MIT</name>
+      <url>https://github.com/chrisryugj/kordoc/blob/main/LICENSE</url>
+    </license>
+  </licenses>
+  <developers>
+    <developer>
+      <name>chrisryugj</name>
+      <url>https://github.com/chrisryugj</url>
+    </developer>
+    <developer>
+      <name>Byeory Jeong</name>
+      <url>https://github.com/VerifiedIdiot</url>
+    </developer>
+  </developers>
+  <scm>
+    <url>https://github.com/chrisryugj/kordoc/tree/main/sdk/java</url>
+  </scm>
+
+  <properties>
+    <maven.compiler.release>17</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <jackson.version>2.22.3</jackson.version>
+    <junit.version>6.1.3</junit.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>${jackson.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <resources>
+      <!-- MIT 고지를 jar 에 싣는다 (META-INF/LICENSE) -->
+      <resource>
+        <directory>${project.basedir}</directory>
+        <includes>
+          <include>LICENSE</include>
+        </includes>
+        <targetPath>META-INF</targetPath>
+      </resource>
+    </resources>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.16.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.6.0</version>
+        <configuration>
+          <!-- 실제 엔진·합성 문서 위치는 환경변수로 (KORDOC_CLI, KORDOC_NODE, KORDOC_SDK_FIXTURES) -->
+          <trimStackTrace>false</trimStackTrace>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.5.1</version>
+        <configuration>
+          <archive>
+            <manifestEntries>
+              <Automatic-Module-Name>app.gomdori.kordoc</Automatic-Module-Name>
+            </manifestEntries>
+          </archive>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-source-plugin</artifactId>
+        <version>3.4.0</version>
+        <executions>
+          <execution>
+            <id>attach-sources</id>
+            <goals>
+              <goal>jar-no-fork</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-install-plugin</artifactId>
+        <version>3.2.0</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>

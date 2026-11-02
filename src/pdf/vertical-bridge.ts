@@ -170,6 +170,9 @@ export function bridgeSkippedRowVerticals(
     if (!ruled(g.lo) || !ruled(g.hi)) continue
     const rowItems = items.filter(it => { const cy = it.y + (it.h || it.fontSize) / 2; return cy > g.lo && cy < g.hi })
     if (rowItems.length === 0 || rowItems.some(it => xs.some(x => it.x < x - 1 && it.x + it.w > x + 1))) continue
+    // 끊긴 열 사이 칸마다 글이 있어야 줄무늬 행이다 — 빈 칸이 끼면 여러 열을 합친 칸(예산 "합 계" 행)이 선 없이 놓인 것
+    const sx = [...xs].sort((p, q) => p - q)
+    if (sx.slice(1).some((x, k) => !rowItems.some(it => { const cx = it.x + it.w / 2; return cx > sx[k] && cx < x }))) continue
     for (const o of band) added.push({ x1: o.x, y1: o.spanLo, x2: o.x, y2: o.spanHi, lineWidth: 0.5 })
   }
   return added.length ? [...verticals, ...added] : verticals

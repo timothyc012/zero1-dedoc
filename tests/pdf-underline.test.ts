@@ -55,6 +55,25 @@ describe("markUnderlineItems — 기본 매칭", () => {
 })
 
 describe("markUnderlineItems — 표 괘선 오탐 방어", () => {
+  it("긴 셀 테두리 안쪽에서 반복되는 본문 밑줄은 행 괘선이 아니다", () => {
+    const items = [item("개정 첫째 조문", 115, 700, 184), item("개정 둘째 조문", 115, 675, 184), item("개정 셋째 조문", 115, 650, 184)]
+    const rules = [hline(115, 299, 698), hline(115, 299, 673), hline(115, 299, 648)]
+    const found = markUnderlineItems(items, rules, [vline(100, 600, 730), vline(300, 600, 730)])
+    assert.equal(found.length, 3)
+    for (const i of items) assert.equal(i.underline, true)
+  })
+
+  it("긴 셀에서도 테두리에 닿는 가로선은 표 괘선으로 지킨다", () => {
+    const items = [item("셀 텍스트", 115, 700, 184)]
+    assert.deepEqual(markUnderlineItems(items, [hline(100, 300, 698)], [vline(100, 600, 730), vline(300, 600, 730)]), [])
+    assert.equal(items[0].underline, undefined)
+  })
+
+  it("여러 셀을 가로지르는 선은 안쪽 테두리 증거로 밑줄을 복원하지 않는다", () => {
+    const items = [item("긴 제목", 115, 700, 184)]
+    assert.deepEqual(markUnderlineItems(items, [hline(115, 299, 698)], [vline(100, 600, 730), vline(200, 600, 730), vline(300, 600, 730)]), [])
+  })
+
   it("수직선이 접촉하는 수평선(셀 하변)은 미마킹", () => {
     const items = [item("셀 텍스트", 100, 700, 80)]
     const verticals = [vline(98, 690, 715), vline(182, 690, 715)]
@@ -94,6 +113,13 @@ describe("markUnderlineItems — 표 괘선 오탐 방어", () => {
     assert.equal(items[0].underline, undefined)
   })
 
+  it("긴 표 칸 안의 라운드 배지도 상변짝 방어를 유지한다", () => {
+    const items = [item("일반", 500, 700, 24)]
+    const rules = [hline(495, 530, 698), hline(495, 530, 712)]
+    assert.deepEqual(markUnderlineItems(items, rules, [vline(400, 600, 750), vline(550, 600, 750)]), [])
+    assert.equal(items[0].underline, undefined)
+  })
+
   it("위쪽에 폭이 크게 다른 선(표 하변 등)이 있어도 밑줄은 유지", () => {
     const items = [item("개정 문구", 100, 700, 80)]
     const rules = [hline(98, 182, 698), hline(50, 550, 715)]
@@ -124,6 +150,13 @@ describe("wrapUnderlineRuns — <u> 래핑", () => {
     wrapUnderlineRuns(items)
     assert.equal(items[0].text, "<u>앞구간</u>")
     assert.equal(items[1].text, "<u>뒷구간</u>")
+  })
+
+  it("OCR 글은 밑줄 표지 없이 평문 (래스터 괘선이 로고 글 밑에 닿아도)", () => {
+    const items = [{ ...item("FamilyMart", 100, 700, 60), fontName: "ocr" }]
+    items[0].underline = true
+    wrapUnderlineRuns(items)
+    assert.equal(items[0].text, "FamilyMart")
   })
 
   it("마킹 없는 아이템은 건드리지 않는다", () => {

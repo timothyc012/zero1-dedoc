@@ -16,6 +16,12 @@ describe("parseFormatProfileJson — 프로필 JSON 경계 검증", () => {
     const parsed = parseFormatProfileJson(JSON.stringify(profile))
     assert.equal(parsed.tables.length, profile.tables.length)
   })
+  it("UTF-8 BOM 으로 시작하는 프로필 JSON 도 읽는다 (Windows 메모장·PowerShell 저장본)", async () => {
+    const buf = await markdownToHwpx("| 구분 | 금액 |\n| --- | --- |\n| 세입 | 100 |\n")
+    const profile = await hwpxToProfile(buf)
+    const parsed = parseFormatProfileJson("﻿" + JSON.stringify(profile))
+    assert.equal(parsed.tables.length, profile.tables.length)
+  })
   it("손편집 오타 JSON은 위치·사유와 함께 거부", () => {
     assert.throws(() => parseFormatProfileJson('{"tables":[{"rows":0}]}'), /스키마 불일치.*table_index/)
     assert.throws(() => parseFormatProfileJson("not json"), /JSON 파싱 실패/)

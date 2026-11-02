@@ -1,0 +1,1099 @@
+{
+  "schema": "kordoc-hwpx-r3-independent-four-originals/v1",
+  "revision": "last-anchor-guard",
+  "fullBenchmarkExecuted": false,
+  "referenceChanged": true,
+  "baselinePopulation": {
+    "docs": 2286,
+    "tables": 9865
+  },
+  "sourceSHA256": {
+    "src/table/layout-frames.ts": "fed21cf801306b0450b1ff5afbbca5b8e95b9faaaa78989d7524fd0dec4875eb",
+    "src/types.ts": "1e3b849083013276751b3e3c9d797dfdf213b718479d4a79520b1932f680c6da",
+    "src/table/builder.ts": "2b619b60e77dee9b9b9ab2b561a9502f8215a3dc57db7fb343eefdbe0f9d9ff0",
+    "bench/ref/hwpx-ref.mjs": "66567fd5ece148978dfea3d73b024460bf69f5c777fe55680595ecfd3d55f020",
+    "bench/ref/visible-tables.mjs": "cfb40e248bea9c7fe4d06b2f8ab3a93a479f2aec98e053444043015dab450daa",
+    "bench/lib/table-score.mjs": "045eacd817b708791fd9d18c571a7bf158bf8b8055bb5abe2bef0d73d7dc86e5",
+    "bench/lib/normalize.mjs": "6395d4ca11893ef66b28f81f496801ba90256795d677570a63762d01dc86fefa",
+    "bench/ref/policy.mjs": "2179756bb4d9de6b7b2f0a158019c14d6cc4ad850b56f7287c1cf1f1aba664b4"
+  },
+  "documents": [
+    {
+      "file": "licbyl/17337363_주민투표관리규칙_인영신고서.hwpx",
+      "inputSHA256": "b06e6d9fe1e288c5dba199872aedee73458cc9b81302b1905fd3cdc962d3b695",
+      "inputUnchanged": true,
+      "baselineTables": 1,
+      "currentTables": 2,
+      "originalReferenceTables": 2,
+      "currentReferenceTables": 2,
+      "exactTables": 2,
+      "cellExactRate": 1,
+      "contentNED": 1,
+      "htmlTableCount": 1
+    },
+    {
+      "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+      "inputSHA256": "8b4c0d0e834ccca8d4f9b9f73843dbb33130b3bcf8a6761b71d651375900df0c",
+      "inputUnchanged": true,
+      "baselineTables": 46,
+      "currentTables": 59,
+      "originalReferenceTables": 59,
+      "currentReferenceTables": 59,
+      "exactTables": 59,
+      "cellExactRate": 1,
+      "contentNED": 1,
+      "htmlTableCount": 20
+    },
+    {
+      "file": "rhwp/3-09월_교육_통합_2023.hwpx",
+      "inputSHA256": "9ff4ba0f8530621c0ad89be3bc563135cc88f75052949e4d444cfcd715375340",
+      "inputUnchanged": true,
+      "baselineTables": 2,
+      "currentTables": 2,
+      "originalReferenceTables": 2,
+      "currentReferenceTables": 2,
+      "exactTables": 2,
+      "cellExactRate": 1,
+      "contentNED": 1,
+      "htmlTableCount": 1
+    },
+    {
+      "file": "rhwp/3-10월_교육_통합_2022.hwpx",
+      "inputSHA256": "f37246219339c8900b19f3da65afc105fbf6823afe5f2bb357a7e4c2b14b0314",
+      "inputUnchanged": true,
+      "baselineTables": 3,
+      "currentTables": 3,
+      "originalReferenceTables": 3,
+      "currentReferenceTables": 3,
+      "exactTables": 3,
+      "cellExactRate": 1,
+      "contentNED": 1,
+      "htmlTableCount": 1
+    }
+  ],
+  "cases": [
+    {
+      "file": "licbyl/17337363_주민투표관리규칙_인영신고서.hwpx",
+      "refIdx": 1,
+      "sourceId": "1877434265",
+      "sourceVisibleBand": [
+        1,
+        1
+      ],
+      "originalDims": [
+        3,
+        6
+      ],
+      "originalReferenceDims": [
+        -1,
+        -1
+      ],
+      "referenceDims": [
+        1,
+        1
+      ],
+      "irDims": [
+        1,
+        1
+      ],
+      "refCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ]
+      ],
+      "irCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ]
+      ],
+      "exact": true,
+      "serializedHtmlCellCount": 1,
+      "kind": "restored-empty-input",
+      "sourceCell": {
+        "row": 1,
+        "col": 2,
+        "span": [
+          1,
+          1
+        ],
+        "borderFill": "16"
+      },
+      "renderAsTable": true,
+      "serializedHtml": "<table>\n<tr><th></th></tr>\n</table>"
+    },
+    {
+      "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+      "refIdx": 22,
+      "sourceId": "1951656453",
+      "sourceVisibleBand": [
+        1,
+        1
+      ],
+      "originalDims": [
+        4,
+        2
+      ],
+      "originalReferenceDims": [
+        -1,
+        -1
+      ],
+      "referenceDims": [
+        1,
+        1
+      ],
+      "irDims": [
+        1,
+        1
+      ],
+      "refCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ]
+      ],
+      "irCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ]
+      ],
+      "exact": true,
+      "serializedHtmlCellCount": 1,
+      "kind": "restored-empty-input",
+      "sourceCell": {
+        "row": 1,
+        "col": 1,
+        "span": [
+          1,
+          1
+        ],
+        "borderFill": "9"
+      },
+      "renderAsTable": true,
+      "serializedHtml": "<table>\n<tr><th></th></tr>\n</table>"
+    },
+    {
+      "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+      "refIdx": 23,
+      "sourceId": "1951656465",
+      "sourceVisibleBand": [
+        3,
+        3
+      ],
+      "originalDims": [
+        7,
+        3
+      ],
+      "originalReferenceDims": [
+        -1,
+        -1
+      ],
+      "referenceDims": [
+        1,
+        1
+      ],
+      "irDims": [
+        1,
+        1
+      ],
+      "refCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ]
+      ],
+      "irCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ]
+      ],
+      "exact": true,
+      "serializedHtmlCellCount": 1,
+      "kind": "restored-empty-input",
+      "sourceCell": {
+        "row": 3,
+        "col": 2,
+        "span": [
+          1,
+          1
+        ],
+        "borderFill": "9"
+      },
+      "renderAsTable": true,
+      "serializedHtml": "<table>\n<tr><th></th></tr>\n</table>"
+    },
+    {
+      "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+      "refIdx": 24,
+      "sourceId": "1951656465",
+      "sourceVisibleBand": [
+        6,
+        6
+      ],
+      "originalDims": [
+        7,
+        3
+      ],
+      "originalReferenceDims": [
+        -1,
+        -1
+      ],
+      "referenceDims": [
+        1,
+        1
+      ],
+      "irDims": [
+        1,
+        1
+      ],
+      "refCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ]
+      ],
+      "irCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ]
+      ],
+      "exact": true,
+      "serializedHtmlCellCount": 1,
+      "kind": "restored-empty-input",
+      "sourceCell": {
+        "row": 6,
+        "col": 2,
+        "span": [
+          1,
+          1
+        ],
+        "borderFill": "9"
+      },
+      "renderAsTable": true,
+      "serializedHtml": "<table>\n<tr><th></th></tr>\n</table>"
+    },
+    {
+      "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+      "refIdx": 25,
+      "sourceId": "1951656468",
+      "sourceVisibleBand": [
+        2,
+        2
+      ],
+      "originalDims": [
+        22,
+        4
+      ],
+      "originalReferenceDims": [
+        -1,
+        -1
+      ],
+      "referenceDims": [
+        1,
+        1
+      ],
+      "irDims": [
+        1,
+        1
+      ],
+      "refCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ]
+      ],
+      "irCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ]
+      ],
+      "exact": true,
+      "serializedHtmlCellCount": 1,
+      "kind": "restored-empty-input",
+      "sourceCell": {
+        "row": 2,
+        "col": 2,
+        "span": [
+          1,
+          1
+        ],
+        "borderFill": "9"
+      },
+      "renderAsTable": true,
+      "serializedHtml": "<table>\n<tr><th></th></tr>\n</table>"
+    },
+    {
+      "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+      "refIdx": 29,
+      "sourceId": "1951656479",
+      "sourceVisibleBand": [
+        3,
+        3
+      ],
+      "originalDims": [
+        13,
+        3
+      ],
+      "originalReferenceDims": [
+        -1,
+        -1
+      ],
+      "referenceDims": [
+        1,
+        1
+      ],
+      "irDims": [
+        1,
+        1
+      ],
+      "refCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ]
+      ],
+      "irCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ]
+      ],
+      "exact": true,
+      "serializedHtmlCellCount": 1,
+      "kind": "restored-empty-input",
+      "sourceCell": {
+        "row": 3,
+        "col": 2,
+        "span": [
+          1,
+          1
+        ],
+        "borderFill": "9"
+      },
+      "renderAsTable": true,
+      "serializedHtml": "<table>\n<tr><th></th></tr>\n</table>"
+    },
+    {
+      "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+      "refIdx": 30,
+      "sourceId": "1951656479",
+      "sourceVisibleBand": [
+        6,
+        6
+      ],
+      "originalDims": [
+        13,
+        3
+      ],
+      "originalReferenceDims": [
+        -1,
+        -1
+      ],
+      "referenceDims": [
+        1,
+        1
+      ],
+      "irDims": [
+        1,
+        1
+      ],
+      "refCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ]
+      ],
+      "irCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ]
+      ],
+      "exact": true,
+      "serializedHtmlCellCount": 1,
+      "kind": "restored-empty-input",
+      "sourceCell": {
+        "row": 6,
+        "col": 2,
+        "span": [
+          1,
+          1
+        ],
+        "borderFill": "9"
+      },
+      "renderAsTable": true,
+      "serializedHtml": "<table>\n<tr><th></th></tr>\n</table>"
+    },
+    {
+      "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+      "refIdx": 31,
+      "sourceId": "1951656479",
+      "sourceVisibleBand": [
+        9,
+        9
+      ],
+      "originalDims": [
+        13,
+        3
+      ],
+      "originalReferenceDims": [
+        -1,
+        -1
+      ],
+      "referenceDims": [
+        1,
+        1
+      ],
+      "irDims": [
+        1,
+        1
+      ],
+      "refCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ]
+      ],
+      "irCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ]
+      ],
+      "exact": true,
+      "serializedHtmlCellCount": 1,
+      "kind": "restored-empty-input",
+      "sourceCell": {
+        "row": 9,
+        "col": 2,
+        "span": [
+          1,
+          1
+        ],
+        "borderFill": "9"
+      },
+      "renderAsTable": true,
+      "serializedHtml": "<table>\n<tr><th></th></tr>\n</table>"
+    },
+    {
+      "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+      "refIdx": 32,
+      "sourceId": "1951656479",
+      "sourceVisibleBand": [
+        12,
+        12
+      ],
+      "originalDims": [
+        13,
+        3
+      ],
+      "originalReferenceDims": [
+        -1,
+        -1
+      ],
+      "referenceDims": [
+        1,
+        1
+      ],
+      "irDims": [
+        1,
+        1
+      ],
+      "refCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ]
+      ],
+      "irCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ]
+      ],
+      "exact": true,
+      "serializedHtmlCellCount": 1,
+      "kind": "restored-empty-input",
+      "sourceCell": {
+        "row": 12,
+        "col": 2,
+        "span": [
+          1,
+          1
+        ],
+        "borderFill": "9"
+      },
+      "renderAsTable": true,
+      "serializedHtml": "<table>\n<tr><th></th></tr>\n</table>"
+    },
+    {
+      "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+      "refIdx": 36,
+      "sourceId": "1951656718",
+      "sourceVisibleBand": [
+        4,
+        4
+      ],
+      "originalDims": [
+        19,
+        3
+      ],
+      "originalReferenceDims": [
+        -1,
+        -1
+      ],
+      "referenceDims": [
+        1,
+        1
+      ],
+      "irDims": [
+        1,
+        1
+      ],
+      "refCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ]
+      ],
+      "irCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ]
+      ],
+      "exact": true,
+      "serializedHtmlCellCount": 1,
+      "kind": "restored-empty-input",
+      "sourceCell": {
+        "row": 4,
+        "col": 2,
+        "span": [
+          1,
+          1
+        ],
+        "borderFill": "9"
+      },
+      "renderAsTable": true,
+      "serializedHtml": "<table>\n<tr><th></th></tr>\n</table>"
+    },
+    {
+      "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+      "refIdx": 37,
+      "sourceId": "1951656718",
+      "sourceVisibleBand": [
+        11,
+        11
+      ],
+      "originalDims": [
+        19,
+        3
+      ],
+      "originalReferenceDims": [
+        -1,
+        -1
+      ],
+      "referenceDims": [
+        1,
+        1
+      ],
+      "irDims": [
+        1,
+        1
+      ],
+      "refCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ]
+      ],
+      "irCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ]
+      ],
+      "exact": true,
+      "serializedHtmlCellCount": 1,
+      "kind": "restored-empty-input",
+      "sourceCell": {
+        "row": 11,
+        "col": 2,
+        "span": [
+          1,
+          1
+        ],
+        "borderFill": "9"
+      },
+      "renderAsTable": true,
+      "serializedHtml": "<table>\n<tr><th></th></tr>\n</table>"
+    },
+    {
+      "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+      "refIdx": 38,
+      "sourceId": "1951656718",
+      "sourceVisibleBand": [
+        15,
+        15
+      ],
+      "originalDims": [
+        19,
+        3
+      ],
+      "originalReferenceDims": [
+        -1,
+        -1
+      ],
+      "referenceDims": [
+        1,
+        1
+      ],
+      "irDims": [
+        1,
+        1
+      ],
+      "refCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ]
+      ],
+      "irCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ]
+      ],
+      "exact": true,
+      "serializedHtmlCellCount": 1,
+      "kind": "restored-empty-input",
+      "sourceCell": {
+        "row": 15,
+        "col": 2,
+        "span": [
+          1,
+          1
+        ],
+        "borderFill": "9"
+      },
+      "renderAsTable": true,
+      "serializedHtml": "<table>\n<tr><th></th></tr>\n</table>"
+    },
+    {
+      "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+      "refIdx": 39,
+      "sourceId": "1951656718",
+      "sourceVisibleBand": [
+        18,
+        18
+      ],
+      "originalDims": [
+        19,
+        3
+      ],
+      "originalReferenceDims": [
+        -1,
+        -1
+      ],
+      "referenceDims": [
+        1,
+        1
+      ],
+      "irDims": [
+        1,
+        1
+      ],
+      "refCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ]
+      ],
+      "irCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ]
+      ],
+      "exact": true,
+      "serializedHtmlCellCount": 1,
+      "kind": "restored-empty-input",
+      "sourceCell": {
+        "row": 18,
+        "col": 2,
+        "span": [
+          1,
+          1
+        ],
+        "borderFill": "9"
+      },
+      "renderAsTable": true,
+      "serializedHtml": "<table>\n<tr><th></th></tr>\n</table>"
+    },
+    {
+      "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+      "refIdx": 51,
+      "sourceId": "1951656733",
+      "sourceVisibleBand": [
+        1,
+        1
+      ],
+      "originalDims": [
+        3,
+        2
+      ],
+      "originalReferenceDims": [
+        -1,
+        -1
+      ],
+      "referenceDims": [
+        1,
+        1
+      ],
+      "irDims": [
+        1,
+        1
+      ],
+      "refCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ]
+      ],
+      "irCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ]
+      ],
+      "exact": true,
+      "serializedHtmlCellCount": 1,
+      "kind": "restored-empty-input",
+      "sourceCell": {
+        "row": 1,
+        "col": 1,
+        "span": [
+          1,
+          1
+        ],
+        "borderFill": "9"
+      },
+      "renderAsTable": true,
+      "serializedHtml": "<table>\n<tr><th></th></tr>\n</table>"
+    },
+    {
+      "file": "rhwp/3-09월_교육_통합_2023.hwpx",
+      "refIdx": 0,
+      "sourceId": "1315236357",
+      "sourceVisibleBand": [
+        0,
+        1
+      ],
+      "originalDims": [
+        2,
+        2
+      ],
+      "originalReferenceDims": [
+        2,
+        1
+      ],
+      "referenceDims": [
+        2,
+        2
+      ],
+      "irDims": [
+        2,
+        2
+      ],
+      "refCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ],
+        [
+          0,
+          1,
+          1,
+          1
+        ],
+        [
+          1,
+          0,
+          1,
+          1
+        ],
+        [
+          1,
+          1,
+          1,
+          1
+        ]
+      ],
+      "irCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ],
+        [
+          0,
+          1,
+          1,
+          1
+        ],
+        [
+          1,
+          0,
+          1,
+          1
+        ],
+        [
+          1,
+          1,
+          1,
+          1
+        ]
+      ],
+      "exact": true,
+      "serializedHtmlCellCount": 0,
+      "kind": "preserved-equation-column",
+      "sourceScripts": [
+        {
+          "row": 0,
+          "col": 0,
+          "scripts": [
+            "z"
+          ]
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "scripts": [
+            "rm P (0 LEQ Z LEQ it z)"
+          ]
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "scripts": [
+            "1.0",
+            "1.1",
+            "1.2",
+            "1.3"
+          ]
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "scripts": [
+            "0.3413",
+            "0.3643",
+            "0.3849",
+            "0.4032"
+          ]
+        }
+      ],
+      "parserRightColumn": [
+        "$rm P (0 \\leq Z \\leq it z)$",
+        "$0.3413$\n$0.3643$\n$0.3849$\n$0.4032$"
+      ],
+      "serializedFormat": "GFM",
+      "serializedMarkdown": "| $z$ | $rm P (0 \\leq Z \\leq it z)$ |\n| --- | --- |\n| $1.0$ $1.1$<br>$1.2$<br>$1.3$ | $0.3413$<br>$0.3643$<br>$0.3849$<br>$0.4032$ |"
+    },
+    {
+      "file": "rhwp/3-10월_교육_통합_2022.hwpx",
+      "refIdx": 1,
+      "sourceId": "1123281636",
+      "sourceVisibleBand": [
+        0,
+        1
+      ],
+      "originalDims": [
+        2,
+        2
+      ],
+      "originalReferenceDims": [
+        2,
+        1
+      ],
+      "referenceDims": [
+        2,
+        2
+      ],
+      "irDims": [
+        2,
+        2
+      ],
+      "refCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ],
+        [
+          0,
+          1,
+          1,
+          1
+        ],
+        [
+          1,
+          0,
+          1,
+          1
+        ],
+        [
+          1,
+          1,
+          1,
+          1
+        ]
+      ],
+      "irCells": [
+        [
+          0,
+          0,
+          1,
+          1
+        ],
+        [
+          0,
+          1,
+          1,
+          1
+        ],
+        [
+          1,
+          0,
+          1,
+          1
+        ],
+        [
+          1,
+          1,
+          1,
+          1
+        ]
+      ],
+      "exact": true,
+      "serializedHtmlCellCount": 0,
+      "kind": "preserved-equation-column",
+      "sourceScripts": [
+        {
+          "row": 0,
+          "col": 0,
+          "scripts": [
+            "z"
+          ]
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "scripts": [
+            "rm P (0 LEQ Z LEQ it z)"
+          ]
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "scripts": [
+            "0.5",
+            "1.0",
+            "1.5",
+            "2.0"
+          ]
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "scripts": [
+            "0.1915",
+            "0.3413",
+            "0.4332",
+            "0.4772"
+          ]
+        }
+      ],
+      "parserRightColumn": [
+        "$rm P (0 \\leq Z \\leq it z)$",
+        "$0.1915$\n$0.3413$\n$0.4332$\n$0.4772$"
+      ],
+      "serializedFormat": "GFM",
+      "serializedMarkdown": "| $z$ | $rm P (0 \\leq Z \\leq it z)$ |\n| --- | --- |\n| $0.5$ $1.0$<br>$1.5$<br>$2.0$ | $0.1915$<br>$0.3413$<br>$0.4332$<br>$0.4772$ |"
+    }
+  ],
+  "summary": {
+    "originalDocuments": 4,
+    "focusTables": 66,
+    "exactTables": 66,
+    "restoredBlankCases": 14,
+    "restoredBlankIrCells": 14,
+    "restoredBlankHtmlCells": 14,
+    "preservedMathCases": 2
+  }
+}

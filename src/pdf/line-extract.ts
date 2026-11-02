@@ -39,7 +39,7 @@ const HIDDEN_FILL_TOL = 0.5
 export function extractLines(
   fnArray: Uint32Array | number[],
   argsArray: unknown[][],
-): { horizontals: LineSegment[]; verticals: LineSegment[]; clipRects: ClipRect[]; fillRects: ClipRect[]; hiddenBoxes: ClipRect[]; shortH: LineSegment[]; shortV: LineSegment[] } {
+): { horizontals: LineSegment[]; verticals: LineSegment[]; clipRects: ClipRect[]; fillRects: ClipRect[]; hiddenBoxes: ClipRect[]; shortH: LineSegment[]; shortV: LineSegment[]; nonRules: Set<LineSegment> } {
   const horizontals: LineSegment[] = []
   const verticals: LineSegment[] = []
   // MIN_LINE_LENGTH 미만 획 조각 — 칸 클립 격자가 없는 쪽에서 같은 좌표 조각 사슬로 이어 붙일 후보 (chainShortSegments, page-blocks)
@@ -59,6 +59,14 @@ export function extractLines(
   // 채움·획 불투명도(ExtGState ca·CA) — 0 이면 그려도 보이지 않는다
   let fillAlpha = 1, strokeAlpha = 1
   const alphaStack: Array<[number, number]> = []
+  // 칸 테두리 선이 아닌 선 — 선 격자·클립 판정은 종전대로 쓰고 칸 테두리 가시성(cell-edges)만 뺀다.
+  //  ① 흰(0xFFFFFF) 획·채움 — 흰 바탕에 안 보인다. 한컴은 흰 테두리 칸 변도 흰 획으로 긋는다(규제영향분석서 10쪽 y=503.09 흰 획
+  //    99.07~132.77). 흰 획이 먼저 그은 검은 선을 덮어 지우는 경우는 가리지 않는다
+  //  ② 두꺼운(THIN_FILL_MAX 넘는) 채움 영역의 윤곽 — 칸 음영 배경이다. 한컴은 음영 칸을 m/l 사각형 채움으로 칠해(정책브리핑 지진 대응
+  //    보도자료 붙임 1 "개 회 식" 행 242,242,242) 그 변이 칸 좌우 세로선으로 읽혔다. HWPX 는 채우기만 있고 테두리 "없음"인 칸이다
+  let strokeColor = 0
+  const strokeColorStack: number[] = []
+  const nonRules = new Set<LineSegment>()
   /** 보이지 않는(ca=0) 채움 사각형 — 슬라이드 제작기가 글상자마다 까는 틀 (text-box-table) */
   const hiddenBoxes: ClipRect[] = []
   /** 지금까지 칠한 사각형 채움 (색별) */
@@ -154,6 +162,7 @@ export function extractLines(
       for (const r of pathRects) painted.push(r)
       paintedFills.set(fillColor, painted)
     }
+    const areaFill = fromFill && (pathRects.length > 0 || thickPath(currentPath))
     pathRects = []
     pathRectSegs = []
     if (!isStroke) {
@@ -164,6 +173,9 @@ export function extractLines(
     }
     pendingClip = false
     const effWidth = lineWidth * ctmScale()
+    const outs = [horizontals, verticals, shortH, shortV, thinShortH, thinShortV]
+    const white = (fromFill ? fillColor : strokeColor) === 0xffffff
+    const from = white || areaFill ? outs.map(o => o.length) : undefined
     currentPath.forEach((seg, k) => {
       const role = segRole[k]
       if (role === "hidden") return
@@ -175,6 +187,8 @@ export function extractLines(
       }
       classifyAndAdd(seg, effWidth, horizontals, verticals, fromFill, fromFill ? undefined : { h: shortH, v: shortV })
     })
+    // 채움 영역 윤곽은 얇은 채움 괘선(thinFill·짧은 조각 thinShort)을 빼고
+    if (from) outs.forEach((o, k) => { for (let n = from[k]; n < o.length; n++) if (white || (k < 2 && !thinFill.has(o[n]))) { nonRules.add(o[n]); if (white) WHITE_EDGES.add(o[n]) } })
     currentPath = []
   }
 
@@ -190,12 +204,14 @@ export function extractLines(
       case OPS.save:
         ctmStack.push(ctm.slice())
         colorStack.push(fillColor)
+        strokeColorStack.push(strokeColor)
         alphaStack.push([fillAlpha, strokeAlpha])
         break
 
       case OPS.restore:
         ctm = ctmStack.pop() ?? [1, 0, 0, 1, 0, 0]
         fillColor = colorStack.pop() ?? 0
+        strokeColor = strokeColorStack.pop() ?? 0
         ;[fillAlpha, strokeAlpha] = alphaStack.pop() ?? [1, 1]
         break
 
@@ -216,6 +232,11 @@ export function extractLines(
         fillColor = (c[0] << 16) | (c[1] << 8) | c[2]
         break
       }
+      case OPS.setStrokeRGBColor: {
+        const c = args as unknown as ArrayLike<number>
+        strokeColor = (c[0] << 16) | (c[1] << 8) | c[2]
+        break
+      }
 
       case OPS.transform:
       case OPS.paintFormXObjectBegin: {
@@ -225,6 +246,7 @@ export function extractLines(
         if (op === OPS.paintFormXObjectBegin) {
           ctmStack.push(ctm.slice())
           colorStack.push(fillColor)
+          strokeColorStack.push(strokeColor)
           alphaStack.push([fillAlpha, strokeAlpha])
           const m = (args as unknown[])[0]
           if (!Array.isArray(m) || m.length < 6) break
@@ -243,6 +265,7 @@ export function extractLines(
       case OPS.paintFormXObjectEnd:
         ctm = ctmStack.pop() ?? [1, 0, 0, 1, 0, 0]
         fillColor = colorStack.pop() ?? 0
+        strokeColor = strokeColorStack.pop() ?? 0
         ;[fillAlpha, strokeAlpha] = alphaStack.pop() ?? [1, 1]
         break
 
@@ -351,11 +374,45 @@ export function extractLines(
     }
   }
 
+  const gradient = gradientBands(horizontals, verticals)
   return {
-    horizontals: chainShortSegments(horizontals, thinShortH, "h", l => thinFill.has(l)),
-    verticals: chainShortSegments(verticals, thinShortV, "v", l => thinFill.has(l)),
-    clipRects, fillRects, hiddenBoxes, shortH, shortV,
+    horizontals: chainShortSegments(horizontals.filter(l => !gradient.has(l)), thinShortH, "h", l => thinFill.has(l)),
+    verticals: chainShortSegments(verticals.filter(l => !gradient.has(l)), thinShortV, "v", l => thinFill.has(l)),
+    clipRects, fillRects, hiddenBoxes, shortH, shortV, nonRules,
   }
+}
+
+/** 그러데이션 띠로 보는 채움 변 겹수 — 이중선·삼중선 채움 괘선(변 4~6개)보다 많아야 한다 */
+const GRADIENT_MIN_EDGES = 8
+/** 이웃 변 간격 상한 (pt) — 그러데이션 띠는 0.4~0.5pt 두께로 맞붙는다 */
+const GRADIENT_PITCH = 1
+
+/**
+ * 그러데이션 채움 띠 — 한글 PDF 는 그러데이션 배경을 0.4pt 남짓한 채움 띠 수백 개를 맞붙여 칠한다(대광위 보도자료 참고
+ * "목표" 상자: 폭 848pt 띠 240개, 클립으로 오른쪽 칸만 보임). 띠 변이 모두 가로선으로 잡혀 클립 밖 빈 틈 열까지 가로질러,
+ * 그 열의 행 경계가 보이는 선이 되어 빈 여백 행이 접히지 않았다(1×3 이 3×3, layout-frames). 같은 폭의 채움 변이 1pt 간격
+ * 안으로 8개 넘게 이어지면 괘선이 아니라 면이다
+ */
+function gradientBands(horizontals: LineSegment[], verticals: LineSegment[]): Set<LineSegment> {
+  const out = new Set<LineSegment>()
+  for (const [lines, dir] of [[horizontals, "h"], [verticals, "v"]] as const) {
+    const pos = (l: LineSegment) => (dir === "h" ? l.y1 : l.x1)
+    const span = (l: LineSegment) => (dir === "h" ? `${Math.round(l.x1)}|${Math.round(l.x2)}` : `${Math.round(l.y1)}|${Math.round(l.y2)}`)
+    const groups = new Map<string, LineSegment[]>()
+    for (const l of lines) if (l.fromFill) { const k = span(l); const g = groups.get(k); if (g) g.push(l); else groups.set(k, [l]) }
+    for (const g of groups.values()) {
+      if (g.length < GRADIENT_MIN_EDGES) continue
+      g.sort((a, b) => pos(a) - pos(b))
+      let run = [g[0]]
+      const flush = () => { if (run.length >= GRADIENT_MIN_EDGES) for (const l of run) out.add(l) }
+      for (let i = 1; i < g.length; i++) {
+        if (pos(g[i]) - pos(g[i - 1]) <= GRADIENT_PITCH) run.push(g[i])
+        else { flush(); run = [g[i]] }
+      }
+      flush()
+    }
+  }
+  return out
 }
 
 // ─── 짧은 괘선 조각 잇기 ──────────────────────────────
@@ -427,6 +484,17 @@ export interface ClipRect { x1: number; y1: number; x2: number; y2: number }
 const CLIP_MIN_W = 4
 const CLIP_MIN_H = 2
 
+/** 경로 전체 bbox 의 짧은 변이 THIN_FILL_MAX 를 넘는가 — 두꺼운 채움 영역(칸 음영)과 채움으로 그은 얇은 괘선을 가른다 */
+function thickPath(path: Array<{ x1: number; y1: number; x2: number; y2: number }>): boolean {
+  if (!path.length) return false
+  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity
+  for (const s of path) {
+    x1 = Math.min(x1, s.x1, s.x2); x2 = Math.max(x2, s.x1, s.x2)
+    y1 = Math.min(y1, s.y1, s.y2); y2 = Math.max(y2, s.y1, s.y2)
+  }
+  return Math.min(x2 - x1, y2 - y1) > THIN_FILL_MAX
+}
+
 /** 현재 경로가 축 정렬 사각형(3~5 세그먼트, 전부 수평/수직)이면 bbox 를 등록 */
 function captureClipRect(path: Array<{ x1: number; y1: number; x2: number; y2: number }>, out: ClipRect[], minW = CLIP_MIN_W, minH = CLIP_MIN_H): void {
   if (path.length < 3 || path.length > 5) return
@@ -490,6 +558,7 @@ function classifyAndAdd(
 export function preprocessLines(
   horizontals: LineSegment[],
   verticals: LineSegment[],
+  nonRules?: Set<LineSegment>,
 ): { horizontals: LineSegment[]; verticals: LineSegment[] } {
   // 1. 굵은 선 필터링 (배경 채움 사각형, 장식 테두리 등)
   let h = horizontals.filter(l => l.lineWidth <= MAX_LINE_WIDTH)
@@ -500,8 +569,17 @@ export function preprocessLines(
   v = dropShadingStacks(v, "v")
 
   // 2. 근접 평행 선 병합 (인쇄 잔상, 이중선)
-  h = mergeParallelLines(h, "h")
-  v = mergeParallelLines(v, "v")
+  h = mergeParallelLines(h, "h", nonRules, v)
+  v = mergeParallelLines(v, "v", nonRules)
+
+  // 보이는 획과 합쳐지지 않은 흰 윤곽이 보이는 세로·가로선을 둘 이상 가로지르면 행 배경 — 괘선이 아님
+  if (nonRules) {
+    const visH = h.filter(l => !nonRules.has(l)), visV = v.filter(l => !nonRules.has(l))
+    const crossH = (w: LineSegment) => visV.filter(c => c.x1 > w.x1 + 1 && c.x1 < w.x2 - 1 && Math.min(c.y1, c.y2) < w.y1 - 2 && Math.max(c.y1, c.y2) > w.y1 + 2).length
+    const crossV = (w: LineSegment) => visH.filter(c => c.y1 > Math.min(w.y1, w.y2) + 1 && c.y1 < Math.max(w.y1, w.y2) - 1 && Math.min(c.x1, c.x2) < w.x1 - 2 && Math.max(c.x1, c.x2) > w.x1 + 2).length
+    h = h.filter(l => !(WHITE_EDGES.has(l) && nonRules.has(l) && crossH(l) >= 2))
+    v = v.filter(l => !(WHITE_EDGES.has(l) && nonRules.has(l) && crossV(l) >= 2))
+  }
 
   return { horizontals: h, verticals: v }
 }
@@ -752,12 +830,14 @@ export function closeOpenTableEdges(
   return synthesized.length ? [...verticals, ...synthesized] : verticals
 }
 
+/** 흰 채움·흰 획 윤곽 — 흰 바탕에 보이지 않는 변(nonRules 가운데 흰 것) */
+const WHITE_EDGES = new WeakSet<LineSegment>()
 
 /**
  * 근접 평행 선 병합 — 같은 방향의 가까운 선을 하나로 합침.
  * 이중선, 인쇄 잔상, PDF 렌더링 미세 차이로 인한 중복 선 제거.
  */
-function mergeParallelLines(lines: LineSegment[], dir: "h" | "v"): LineSegment[] {
+function mergeParallelLines(lines: LineSegment[], dir: "h" | "v", nonRules?: Set<LineSegment>, perp?: LineSegment[]): LineSegment[] {
   if (lines.length <= 1) return lines
 
   // 수평선: y로 정렬, 수직선: x로 정렬
@@ -790,6 +870,27 @@ function mergeParallelLines(lines: LineSegment[], dir: "h" | "v"): LineSegment[]
       const minLen = Math.min(prevEnd - prevStart, currEnd - currStart)
 
       if (overlap > minLen * 0.3) {
+        // A visible stroke sharing a background edge remains visible after merging.
+        const bgPrev = !!nonRules?.has(prev) && !nonRules.has(curr), bgCurr = !!nonRules?.has(curr) && !nonRules.has(prev)
+        const whPrev = bgPrev && WHITE_EDGES.has(prev), whCurr = bgCurr && WHITE_EDGES.has(curr)
+        if (bgPrev) nonRules!.delete(prev)
+        // 흰 윤곽이 보이는 가로 획보다 길게 뻗어 그 바깥에서 보이는 세로선을 둘 이상 지나면 행 배경이 넓은 것 —
+        // 합쳐도 보이는 획 범위만(들여쓰기 빈 열까지 괘선이 늘어나지 않게)
+        const clip = (w: LineSegment, o: LineSegment) => {
+          if (dir !== "h" || !perp) return false
+          let n = 0
+          for (const c of perp) {
+            if (nonRules!.has(c) || Math.min(c.y1, c.y2) >= w.y1 - 2 || Math.max(c.y1, c.y2) <= w.y1 + 2) continue
+            if ((c.x1 > w.x1 + 1 && c.x1 < o.x1 - 1) || (c.x1 > o.x2 + 1 && c.x1 < w.x2 - 1)) n++
+          }
+          return n >= 2
+        }
+        if (whPrev && clip(prev, curr)) {
+          prev.x1 = curr.x1; prev.x2 = curr.x2; prev.y1 = prev.y2 = curr.y1
+          prev.lineWidth = curr.lineWidth
+          continue
+        }
+        if (whCurr && clip(curr, prev)) continue
         // 병합: 범위 확장, lineWidth는 최대값 유지
         if (dir === "h") {
           prev.x1 = Math.min(prev.x1, curr.x1)
@@ -831,4 +932,3 @@ export function filterPageBorderLines(
     ),
   }
 }
-

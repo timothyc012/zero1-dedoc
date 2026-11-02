@@ -15,6 +15,7 @@ import { createXmlParser, findChildByLocalName } from "./parser-shared.js"
 import { toArrayBuffer } from "../utils.js"
 import { normalizeAnchor, normalizeRowAnchor } from "./gen-profile.js"
 import type { FormatProfile, TableProfile, CellProfile, BorderFillDef, BorderDef, CharPrDef } from "./gen-profile.js"
+import { readZipEntry } from "./parser-shared.js"
 
 /** localName(접두사 제거)으로 자손 요소 전부 — 문서 순서 보존 */
 function elemsByLocal(root: Element | Document, name: string): Element[] {
@@ -84,7 +85,8 @@ function parseCharPrs(headerDoc: Document, hangulFonts: Map<string, string>): Ma
     if (color) def.textColor = color
     if (cp.getAttribute("bold") === "1") def.bold = true
     if (cp.getAttribute("italic") === "1") def.italic = true
-    if (findChildByLocalName(cp, "underline")) def.underline = true
+    // 판별자는 type: 한컴은 밑줄 없는 charPr 에도 <hh:underline type="NONE"> 을 넣는다 (파서 styles.ts 와 같은 규칙: BOTTOM 만)
+    if (findChildByLocalName(cp, "underline")?.getAttribute("type") === "BOTTOM") def.underline = true
     const fontRef = findChildByLocalName(cp, "fontRef")
     const hangul = fontRef?.getAttribute("hangul")
     if (hangul) {
@@ -261,7 +263,7 @@ export async function hwpxToProfile(input: ArrayBuffer | Buffer): Promise<Format
 
   const headerFile = zip.file("Contents/header.xml") ?? zip.file(/[Hh]eader\.xml$/)?.[0]
   let headerXml = "<root/>"
-  if (headerFile) headerXml = await headerFile.async("text")
+  if (headerFile) headerXml = await readZipEntry(headerFile, "text")
   const headerDoc = parser.parseFromString(headerXml, "text/xml") as unknown as Document
   const borderFills = parseBorderFills(headerDoc)
   const charPrs = parseCharPrs(headerDoc, parseHangulFonts(headerDoc))
@@ -273,7 +275,7 @@ export async function hwpxToProfile(input: ArrayBuffer | Buffer): Promise<Format
   const tables: TableProfile[] = []
   let tableIndex = 0
   for (const f of sectionFiles) {
-    const doc = parser.parseFromString(await f.async("text"), "text/xml") as unknown as Document
+    const doc = parser.parseFromString(await readZipEntry(f, "text"), "text/xml") as unknown as Document
     for (const tbl of elemsByLocal(doc, "tbl")) {
       if (!isTopLevelTable(tbl)) continue
       tables.push(parseTable(tbl, tableIndex++, borderFills, charPrs))

@@ -132,11 +132,14 @@ export function buildHwp5RenderStyles(records: HwpRecord[]): RenderStyles {
     const rel = d[28] || 100
     const attr = d.readUInt32LE(46)
     const color = d.length >= 56 ? colorHex(d.readUInt32LE(52)) : null
+    // 음영 색 @60 (글자색 52·밑줄색 56 다음, HWPX shadeColor 와 짝 문서 대조로 일치) — 흰색은 HWPX 와 같이 생략
+    const shade = d.length >= 64 ? colorHex(d.readUInt32LE(60)) : null
     charPr.set(id, {
       height: Math.max(100, Math.round(d.readInt32LE(42) * rel / 100)),
       bold: (attr & 2) !== 0, italic: (attr & 1) !== 0, underline: ((attr >>> 2) & 3) !== 0,
       ratio: d[14] || 100, spacing: d.readInt8(21),
       ...(color && color !== "#000000" ? { color } : {}),
+      ...(shade && shade !== "#FFFFFF" ? { shade } : {}),
       ...(face ? { fontFamily: hwpFaceToCssStack(face), face } : {}),
     })
   }
@@ -160,7 +163,9 @@ export function buildHwp5RenderStyles(records: HwpRecord[]): RenderStyles {
   const borderFill: RenderStyles["borderFill"] = new Map()
   let bi = 0
   for (const r of records) if (r.tagId === TAG_BORDER_FILL) borderFill.set(String(++bi), borderFillOf(r.data))
-  return { charPr, paraAlign, paraGeom, borderFill }
+  // "쪽 번호" 스타일 글자 모양 — 한컴은 쪽 번호를 이 글꼴로 찍는다(HWPX 와 같다)
+  const pnStyle = parseDocInfo(records).styles.find(st => [st.name, st.nameKo].some(n => n === "쪽 번호" || n === "Page Number"))
+  return { charPr, paraAlign, paraGeom, borderFill, ...(pnStyle ? { pageNumCharPr: String(pnStyle.charShapeId) } : {}) }
 }
 
 // ─── BodyText → section DOM(XML) ───────────────────
@@ -268,7 +273,10 @@ function paragraphXml(records: HwpRecord[], i: number, j: number, level: number,
   }
 
   // 슬롯 모델(record.ts appendParaText 와 동일): 문자 1 · 문자형 제어 1 · 인라인/확장 제어 8. charShape 경계에서 run 교체
-  let out = `<hp:p paraPrIDRef="${paraShapeId}" styleIDRef="0">`
+  // 문단 나눔 종류(PARA_HEADER offset 11): bit2 쪽 나누기·bit3 단 나누기 — HWPX pageBreak·columnBreak 와 같은 뜻(쪽 감지가 쓴다)
+  const divideSort = hdr.data.length >= 12 ? hdr.data.readUInt8(11) : 0
+  const breaks = `${divideSort & 0x04 ? ` pageBreak="1"` : ""}${divideSort & 0x08 ? ` columnBreak="1"` : ""}`
+  let out = `<hp:p paraPrIDRef="${paraShapeId}" styleIDRef="0"${breaks}>`
   let shapeIdx = 0
   let run: string[] = []
   let textBuf = ""
@@ -356,13 +364,23 @@ const CELL_VALIGN = ["TOP", "CENTER", "BOTTOM", "TOP"]
 /** 표 컨트롤 → hp:tbl (셀 = TABLE 레코드 뒤 LIST_HEADER + 같은 level 의 문단들, parser.ts parseTableControl 과 같은 분할) */
 function tableXml(records: HwpRecord[], c: CtrlRef, level: number, ctx: Hwp5SectionXmlContext, depth: number): string {
   const common = objCommon(records[c.idx].data)
+  const cellLevel = level + 2
   let tableIdx = -1
-  for (let k = c.start; k < c.end; k++) if (records[k].tagId === TAG_TABLE && records[k].data.length >= 18) { tableIdx = k; break }
+  for (let k = c.start; k < c.end; k++) if (records[k].tagId === TAG_TABLE && records[k].level === cellLevel && records[k].data.length >= 18) { tableIdx = k; break }
   if (tableIdx < 0) return "<hp:ctrl/>"
   const t = records[tableIdx].data
   const rows = t.readUInt16LE(4), cols = t.readUInt16LE(6)
   const inMargin = `<hp:inMargin left="${t.readUInt16LE(10)}" right="${t.readUInt16LE(12)}" top="${t.readUInt16LE(14)}" bottom="${t.readUInt16LE(16)}"/>`
-  const cellLevel = level + 2
+  let caption = ""
+  for (let k = c.start; k < tableIdx; k++) {
+    const r = records[k]
+    if (r.tagId !== TAG_LIST_HEADER || r.level !== cellLevel || r.data.length < 22) continue
+    // TABLE 앞 직계 문단 리스트는 캡션이다. 캡션 안의 중첩표는 아래 paragraphsXml에서 처리한다.
+    const d = r.data, side = ["LEFT", "RIGHT", "TOP", "BOTTOM"][d.readUInt32LE(8) & 3]
+    const paras = paragraphsXml(records, k + 1, tableIdx, cellLevel, ctx, depth + 1)
+    caption = `<hp:caption side="${side}" width="${d.readUInt32LE(12)}" gap="${d.readUInt16LE(16)}" lastWidth="${d.readUInt32LE(18)}"><hp:subList>${paras}</hp:subList></hp:caption>`
+    break
+  }
   let cells = ""
   let k = tableIdx + 1
   while (k < c.end) {
@@ -383,16 +401,21 @@ function tableXml(records: HwpRecord[], c: CtrlRef, level: number, ctx: Hwp5Sect
   }
   if (!cells) return "<hp:ctrl/>"
   const id = ctx.tableIds.get(c.idx)
-  return `<hp:tbl${id ? ` id="${id}"` : ""} textWrap="${common.wrap}" rowCnt="${rows}" colCnt="${cols}" cellSpacing="0">${common.posXml}${inMargin}<hp:tr>${cells}</hp:tr></hp:tbl>`
+  // 표 속성 bit 0~1 = 쪽 경계에서 나눔(0 나누지 않음·1 TABLE·2 CELL), bit 2 = 제목 행 반복 (짝 HWPX 표 385개 전부 일치)
+  const tattr = t.readUInt32LE(0)
+  const pageBreak = ["NONE", "TABLE", "CELL", "CELL"][tattr & 3]
+  return `<hp:tbl${id ? ` id="${id}"` : ""} textWrap="${common.wrap}" pageBreak="${pageBreak}" repeatHeader="${(tattr >>> 2) & 1}" rowCnt="${rows}" colCnt="${cols}" cellSpacing="0">${common.posXml}${inMargin}${caption}<hp:tr>${cells}</hp:tr></hp:tbl>`
 }
 
 function cellXml(records: HwpRecord[], lh: number, end: number, cellLevel: number, ctx: Hwp5SectionXmlContext, depth: number): string {
   const d = records[lh].data
   if (d.length < 34) return ""
-  const attr = d.readUInt32LE(2)
+  // 문단 리스트 헤더 = 문단 수 UINT16 · 미상 UINT16 · 속성 UINT32(오프셋 4) — 세로 정렬 bit 5~6, 제목 칸 bit 18
+  // (짝 HWPX 대조: 칸 1,469개 세로 정렬·제목 칸 전부 일치. 종전엔 오프셋 2 를 읽어 모든 칸이 위 정렬이었다)
+  const attr = d.readUInt32LE(4)
   const vAlign = CELL_VALIGN[(attr >>> 5) & 3]
   const paras = paragraphsXml(records, lh + 1, end, cellLevel, ctx, depth + 1)
-  return `<hp:tc borderFillIDRef="${d.readUInt16LE(32)}"><hp:subList vertAlign="${vAlign}">${paras}</hp:subList>` +
+  return `<hp:tc borderFillIDRef="${d.readUInt16LE(32)}" header="${(attr >>> 18) & 1}"><hp:subList vertAlign="${vAlign}">${paras}</hp:subList>` +
     `<hp:cellAddr colAddr="${d.readUInt16LE(8)}" rowAddr="${d.readUInt16LE(10)}"/><hp:cellSpan colSpan="${Math.max(1, d.readUInt16LE(12))}" rowSpan="${Math.max(1, d.readUInt16LE(14))}"/>` +
     `<hp:cellSz width="${d.readUInt32LE(16)}" height="${d.readUInt32LE(20)}"/><hp:cellMargin left="${d.readUInt16LE(24)}" right="${d.readUInt16LE(26)}" top="${d.readUInt16LE(28)}" bottom="${d.readUInt16LE(30)}"/></hp:tc>`
 }

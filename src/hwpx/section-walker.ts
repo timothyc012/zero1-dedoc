@@ -3,13 +3,14 @@
  *
  * walkSection ↔ walkParagraphChildren ↔ extractParagraphInfo ↔ handleShape ↔
  * extractDrawTextBlocks가 상호재귀하는 클러스터라 한 파일로 유지한다 —
- * 더 쪼개면 인위적 경계에 순환 import만 생김.
+ * 더 쪼개면 인위적 경계에 순환 import만 생김. 클러스터를 다시 부르지 않는 말단 판독 도우미만 section-nodes.ts 에 둔다.
  */
 
+import { collectImageRefs, DELETABLE_OBJECT_TAGS, extractImageRef, findDescendant, findTopLevelTbls, inIndependentDeletionStory, markDeletedObjects, userShapeComment } from "./section-shape.js"
 import { KordocError, sanitizeHref, stripDtd } from "../utils.js"
-import { wrapScript, tidyScriptTags } from "../script-tags.js"
-import { convertTableToText, escapeLiteralDollar, MAX_COLS, MAX_ROWS } from "../table/builder.js"
-import type { IRBlock, IRCell, IRSpan, IRTable, InlineStyle, ParseWarning } from "../types.js"
+import { escapeLiteralTags, wrapScript, tidyScriptTags } from "../script-tags.js"
+import { captionedText, convertTableToText, escapeLiteralDollar, MAX_COLS, MAX_ROWS } from "../table/builder.js"
+import type { IRBlock, IRCell, IRSpan, IRTable, InlineStyle, MemoNote, ParseWarning } from "../types.js"
 import { hmlToLatex } from "./equation.js"
 import {
   clampSpan,
@@ -23,12 +24,15 @@ import {
   type TableState,
   type WalkCtx,
 } from "./parser-shared.js"
+import { findKordocMarkedCell, hasPageAutoNum, hasObjectDescendant, isInlineTbl, formButtonText, PH_OPEN, PH_CLOSE, clickHereGuide, extractHyperlinkHref, isInDeletedRange, runHasOnlyText, withPrefixSpan, stripPlaceholderMarks } from "./section-nodes.js"
 import type { HwpxStyleMap } from "./styles.js"
 import { resolveParaHeading } from "./para-heading.js"
+import { takeTocLeaders, TOC_ENTRY_BLOCKS, TOC_LEADER } from "../toc-entry.js"
 import { completeTable } from "./table-build.js"
 import { detectHwpxSectionPages } from "./page-boundary.js"
 import { noteAttrsOf, noteAutoNumOf, noteRefMark, readSectionNoteFormats } from "./notes.js"
 import { extractRunSpans, gongmunDepthFromIndent, KORDOC_PARA_QUOTE, spanModeOf } from "./run-spans.js"
+import { composeText } from "../shared/pua.js"
 
 // ─── 섹션 XML 파싱 ──────────────────────────────────
 
@@ -68,31 +72,6 @@ export function parseSectionXml(xml: string, styleMap?: HwpxStyleMap, warnings?:
   return blocks
 }
 
-/** pic/shape 요소에서 이미지 참조 경로 추출 (binaryItemIDRef 또는 href) — MAX_XML_DEPTH 가드 */
-function extractImageRef(el: Element, depth: number = 0): string | null {
-  if (depth > MAX_XML_DEPTH) return null
-  // HWPX: <hp:imgRect> 또는 <hp:img> 내 binaryItemIDRef 속성
-  // 또는 하위에서 img 관련 속성 탐색
-  const children = el.childNodes
-  if (!children) return null
-  for (let i = 0; i < children.length; i++) {
-    const child = children[i] as Element
-    if (child.nodeType !== 1) continue
-    const tag = (child.tagName || child.localName || "").replace(/^[^:]+:/, "")
-    if (tag === "imgRect" || tag === "img" || tag === "imgClip") {
-      const ref = child.getAttribute("binaryItemIDRef") || child.getAttribute("href") || ""
-      if (ref) return ref
-    }
-    // lineShape > imgRect 같은 중첩 구조
-    const nested = extractImageRef(child, depth + 1)
-    if (nested) return nested
-  }
-  // 직접 속성 체크
-  const directRef = el.getAttribute("binaryItemIDRef") || ""
-  if (directRef) return directRef
-  return null
-}
-
 function walkSection(
   node: Node, blocks: IRBlock[],
   tableCtx: TableState | null, tableStack: TableState[],
@@ -105,6 +84,7 @@ function walkSection(
   for (let i = 0; i < children.length; i++) {
     const el = children[i] as Element
     if (el.nodeType !== 1) continue
+    if (ctx.shared.track.deletedObjects.has(el)) continue
 
     const tag = el.tagName || el.localName || ""
     const localTag = tag.replace(/^[^:]+:/, "")
@@ -120,24 +100,27 @@ function walkSection(
           if (chan) {
             if (chan.kind === "heading" && chan.text) {
               blocks.push({ type: "heading", level: chan.level, text: chan.text, pageNumber: ctx.page })
+            } else if (chan.kind === "quote" && chan.text) {
+              blocks.push({ type: "paragraph", text: chan.text, quote: true, pageNumber: ctx.page })
             }
             break
           }
         }
         if (tableCtx) tableStack.push(tableCtx)
         const newTable: TableState = { rows: [], currentRow: [], cell: null, sourceId: el.getAttribute("id") ?? undefined }
-        walkSection(el, blocks, newTable, tableStack, ctx, depth + 1)
+        inIndependentDeletionStory(ctx.shared.track, () => walkSection(el, blocks, newTable, tableStack, ctx, depth + 1))
         tableCtx = completeTable(newTable, tableStack, blocks, ctx)
         break
       }
 
       // 표/도표 캡션 — IRTable.caption으로 보존 (v3.0, 기존 무음 드롭 수정)
       case "caption": {
-        const cap = collectSubListContent(el, ctx)
+        const cap = inIndependentDeletionStory(ctx.shared.track, () => collectSubListContent(el, ctx))
         if (cap.text) {
           if (tableCtx) {
             tableCtx.caption = (tableCtx.caption ? tableCtx.caption + "\n" : "") + cap.text
             if (cap.hasStructure) (tableCtx.captionBlocks ??= []).push(...cap.blocks)
+            if (el.getAttribute("side") === "BOTTOM") tableCtx.captionBelow = true
           } else {
             // 활성 표 컨텍스트 밖의 캡션 — 무음 드롭 대신 문단으로 보존 (#46)
             blocks.push({ type: "paragraph", text: cap.text, pageNumber: ctx.page })
@@ -161,6 +144,8 @@ function walkSection(
         if (tableCtx) {
           tableCtx.cell = { text: "", colSpan: 1, rowSpan: 1 }
           if (el.getAttribute("header") === "1" || el.getAttribute("header") === "true") tableCtx.cell.isHeader = true
+          const edges = ctx.styleMap?.borderEdges.get(el.getAttribute("borderFillIDRef") ?? "")
+          if (edges) tableCtx.cell.edges = edges
           walkSection(el, blocks, tableCtx, tableStack, ctx, depth + 1)
           if (tableCtx.cell) {
             tableCtx.currentRow.push(tableCtx.cell)
@@ -193,7 +178,7 @@ function walkSection(
         // 실제 페이지 갱신 (#66) — 프리패스 맵은 top-level 문단만 담아 중첩 문단은 자연 상속
         const paraPg = ctx.paraPage?.get(el)
         if (paraPg !== undefined && ctx.pageBase !== undefined) ctx.page = ctx.pageBase + paraPg + 1
-        const { text: rawText, href, footnote, style, segments, placeholderSpans } = extractParagraphInfo(el, ctx.styleMap, ctx)
+        const { text: rawText, href, footnote, footnoteBlocks, style, segments, placeholderSpans, tocEntry } = extractParagraphInfo(el, ctx.styleMap, ctx)
         let text = rawText
         let headingLevel: number | undefined
         // 자동번호/글머리표/개요 접두 재현 (v3.0). 텍스트 유무와 무관하게 호출 —
@@ -202,7 +187,9 @@ function walkSection(
         const ph = resolveParaHeading(el, ctx)
         if (text) {
           if (ph?.prefix) text = ph.prefix + " " + text
-          headingLevel = ph?.headingLevel
+          // 목차 항목은 개요 문단 모양을 빌려도 제목이 아니다 (#121)
+          headingLevel = tocEntry ? undefined : ph?.headingLevel
+          if (tocEntry) for (const line of text.split("\n")) if (line.trim()) ctx.shared.tocTexts.add(line.trim())
         }
         // 인라인 표 포함 문단 (#49/#50) — 문단 텍스트를 통째로 먼저 push하면 원문에서
         // 표가 앞설 때 순서가 역전된다. 표 경계 조각을 walkParagraphChildren의 onTbl
@@ -230,6 +217,7 @@ function walkSection(
               if (style) block.style = style
               if (href) block.href = href
               if (footnote) block.footnoteText = footnote
+              if (footnoteBlocks) block.footnoteBlocks = footnoteBlocks
             }
             if (cell) {
               // IRCell.text 평탄화는 blocks 순서를 따라야 한다 (#52, 타입 계약). 종전엔
@@ -250,6 +238,7 @@ function walkSection(
           if (footnote && cell) {
             cell.text += (cell.text ? "\n" : "") + `(주: ${footnote})`
             if (lastCellBlock) lastCellBlock.footnoteText = footnote
+            if (lastCellBlock && footnoteBlocks) lastCellBlock.footnoteBlocks = footnoteBlocks
           }
           break
         }
@@ -263,6 +252,7 @@ function walkSection(
             cell.paraSeen = true
             const cellBlock: IRBlock = { type: "paragraph", text, pageNumber: ctx.page }
             if (footnote) cellBlock.footnoteText = footnote
+            if (footnoteBlocks) cellBlock.footnoteBlocks = footnoteBlocks
             // 왕복 채널 — 셀 문단도 인라인 강조 span 복원 (v4.0.4: 최상위 한정 확장,
             // v4.0.5: gongmun·외래 확장). GFM 셀 방출이 마커를 재방출하고 generateRuns가
             // 되읽는다. 자사 default 외에는 혼합 가드 — 전체 볼드 셀은 헤더행·라벨열의
@@ -289,9 +279,11 @@ function walkSection(
             }
             const block: IRBlock = { type: headingLevel ? "heading" : "paragraph", text, pageNumber: ctx.page }
             if (headingLevel) block.level = headingLevel
+            if (tocEntry) TOC_ENTRY_BLOCKS.add(block)
             if (style) block.style = style
             if (href) block.href = href
             if (footnote) block.footnoteText = footnote
+            if (footnoteBlocks) block.footnoteBlocks = footnoteBlocks
             // 들여쓰기 관찰 슬롯 (v4.0.4) — paraPr hc:left + 양수 hc:intent(첫줄).
             // 마크다운 방출엔 불참 — gongmun 리스트 depth 재유도 등 소비자 몫
             const ind = ctx.styleMap?.paraIndents.get(el.getAttribute("paraPrIDRef") ?? "")
@@ -324,6 +316,13 @@ function walkSection(
               if (spanMode !== "foreign" && el.getAttribute("paraPrIDRef") === KORDOC_PARA_QUOTE) block.quote = true
             }
             if (!headingLevel && !block.spans && placeholderSpans) block.spans = withPrefixSpan(placeholderSpans, ph?.prefix)
+            // 제목 문단의 미기입 누름틀 안내문은 제목·목차 글에서 뺀다 — 제목 갈래는 span 을 안 보므로 "# 여기에 제목을 입력하세요" 가
+            // 나왔다(HWP5 는 안내문 run 을 지운다). 안내문뿐이면 안내문 표시 문단으로 남긴다(마크다운에서 빠지고 IR 글엔 남는다)
+            if (headingLevel && placeholderSpans) {
+              const shown = withPrefixSpan(placeholderSpans.filter(s => !s.placeholder), ph?.prefix).map(s => s.text).join("").trim()
+              if (shown) block.text = shown
+              else { block.type = "paragraph"; delete block.level; block.spans = withPrefixSpan(placeholderSpans, ph?.prefix) }
+            }
             blocks.push(block)
           } else {
             // 표 내부지만 셀 밖(비정상 경로) — 무음 드롭 대신 본문 문단으로 보존
@@ -381,8 +380,11 @@ function walkSection(
  * 도형 캡션은 문단으로 보존한다. 둘 다 없으면 SKIPPED_IMAGE 경고.
  */
 function handleShape(el: Element, sink: IRBlock[], ctx: WalkCtx): void {
-  const imgRef = extractImageRef(el)
-  const drawTextChild = findDescendant(el, "drawText")
+  // 캡션은 삭제 개체만 미리 표시하고, 번호·주석 처리는 원래 글상자→캡션 순서로 수행한다.
+  const capEl = findChildByLocalName(el, "caption")
+  if (capEl) markDeletedObjects(capEl, ctx.shared.track.deletedObjects, ctx.shared.track.deletedImageRefs)
+  const imgRef = extractImageRef(el, 0, ctx.shared.track.deletedObjects)
+  const drawTextChild = findDescendant(el, "drawText", 0, ctx.shared.track.deletedObjects)
 
   if (imgRef) {
     const block: IRBlock = { type: "image", text: imgRef, pageNumber: ctx.page }
@@ -396,7 +398,6 @@ function handleShape(el: Element, sink: IRBlock[], ctx: WalkCtx): void {
     extractDrawTextBlocks(drawTextChild, sink, ctx)
   }
   // 도형 캡션 (그림 캡션 등) — 이미지 아래 문단으로 보존
-  const capEl = findChildByLocalName(el, "caption")
   if (capEl) {
     const capText = collectSubListText(capEl, ctx)
     if (capText) sink.push({ type: "paragraph", text: capText, pageNumber: ctx.page })
@@ -406,17 +407,6 @@ function handleShape(el: Element, sink: IRBlock[], ctx: WalkCtx): void {
     const localTag = (el.tagName || el.localName || "").replace(/^[^:]+:/, "")
     ctx.warnings.push({ page: ctx.page, message: `스킵된 요소: ${localTag}`, code: "SKIPPED_IMAGE" })
   }
-}
-
-/** 도형의 사용자 입력 그림 설명 — 한컴 자동생성 대체텍스트("그림입니다." 등)는 제외 */
-function userShapeComment(el: Element): string | undefined {
-  const commentEl = findChildByLocalName(el, "shapeComment")
-  if (!commentEl) return undefined
-  const text = extractTextFromNode(commentEl)
-  if (!text) return undefined
-  if (/^그림입니다/.test(text)) return undefined
-  if (/^(?:모서리가 둥근 |둥근 )?[^\n]{1,20}입니다\.?$/.test(text)) return undefined
-  return text
 }
 
 /** 도형/중첩 콘텐츠 블록을 셀에 병합 — 텍스트는 cell.text에, 구조는 cell.blocks에 보존 */
@@ -438,62 +428,28 @@ function mergeBlocksIntoCell(cell: CellCtxEx, sink: IRBlock[]): void {
   }
 }
 
-/** kordoc 왕복 채널 판독 결과 — heading 복원 또는 파생물 스킵 */
+/** kordoc 왕복 채널 판독 결과 — heading·요약 인용문 복원 또는 파생물 스킵 */
 interface KordocTableChannel {
-  kind: "heading" | "skip"
+  kind: "heading" | "quote" | "skip"
   level?: number
   text?: string
 }
 
 /**
  * kordoc 생성기의 장식표 왕복 마커 판독 (v4.0.5 P2).
- * 제목 셀 `name="__kordoc_h1~6"` → heading 복원, `__kordoc_toc`/`__kordoc_skip` →
+ * 제목 셀 `name="__kordoc_h1~6"` → heading 복원, `__kordoc_summary` → 제목 뒤 `>` 요약 인용문 복원(개조식·보고서 요약 상자 —
+ * 종전엔 일반 문단으로 풀려 md→hwpx→md→hwpx 에서 상자가 사라졌다), `__kordoc_toc`/`__kordoc_skip` →
  * 파생물(목차·표지 제목 반복)이므로 통째 스킵. 마커 없으면 null(일반 표).
  */
 function kordocTableChannel(tblEl: Element, ctx: WalkCtx): KordocTableChannel | null {
   const found = findKordocMarkedCell(tblEl, 0)
   if (!found) return null
-  const m = found.name.match(/^__kordoc_(?:h([1-6])|(toc|skip))$/)
+  const m = found.name.match(/^__kordoc_(?:h([1-6])|(toc|skip)|(summary))$/)
   if (!m) return null
   if (m[2]) return { kind: "skip" }
   const text = collectSubListText(found.cell, ctx).trim()
+  if (m[3]) return { kind: "quote", text }
   return { kind: "heading", level: Number(m[1]), text }
-}
-
-/** tbl 하위에서 __kordoc_ 마커 셀 탐색 (중첩표 안까지는 내려가지 않음) */
-function findKordocMarkedCell(el: Node, depth: number): { cell: Element; name: string } | null {
-  if (depth > 6) return null
-  const children = el.childNodes
-  if (!children) return null
-  for (let i = 0; i < children.length; i++) {
-    const ch = children[i] as Element
-    if (ch.nodeType !== 1) continue
-    const tag = (ch.tagName || ch.localName || "").replace(/^[^:]+:/, "")
-    if (tag === "tc") {
-      const name = ch.getAttribute("name") || ""
-      if (name.startsWith("__kordoc_")) return { cell: ch, name }
-      continue // 셀 내부(중첩표)는 탐색하지 않음 — 최상위 표의 셀만
-    }
-    if (tag === "tbl" && depth > 0) continue // 중첩표 진입 금지
-    const found = findKordocMarkedCell(ch, depth + 1)
-    if (found) return found
-  }
-  return null
-}
-
-/** 머리말/꼬리말 subList에 페이지 번호 autoNum(numType=PAGE)이 있는지 검사 */
-function hasPageAutoNum(el: Node, depth = 0): boolean {
-  if (depth > 10) return false
-  const children = el.childNodes
-  if (!children) return false
-  for (let i = 0; i < children.length; i++) {
-    const ch = children[i] as Element
-    if (ch.nodeType !== 1) continue
-    const tag = (ch.tagName || ch.localName || "").replace(/^[^:]+:/, "")
-    if (tag === "autoNum" && ch.getAttribute?.("numType") === "PAGE") return true
-    if (hasPageAutoNum(ch, depth + 1)) return true
-  }
-  return false
 }
 
 /** subList 내부 수집 결과 — 평탄화 텍스트와 구조 블록을 병행 제공 (#55) */
@@ -507,7 +463,7 @@ interface SubListContent {
 
 /** caption/header/footer 등의 subList 내부 문단 텍스트 수집 */
 function collectSubListText(el: Node, ctx: WalkCtx, depth = 0): string {
-  return collectSubListContent(el, ctx, depth).text
+  return inIndependentDeletionStory(ctx.shared.track, () => collectSubListContent(el, ctx, depth).text)
 }
 
 /**
@@ -522,7 +478,7 @@ function collectSubListContent(el: Node, ctx: WalkCtx, depth = 0, sep = "\n"): S
   if (!children) return out
   for (let i = 0; i < children.length; i++) {
     const ch = children[i] as Element
-    if (ch.nodeType !== 1) continue
+    if (ch.nodeType !== 1 || ctx.shared.track.deletedObjects.has(ch)) continue
     const tag = (ch.tagName || ch.localName || "").replace(/^[^:]+:/, "")
     if (tag === "p" || tag === "para") {
       let t = extractParagraphInfo(ch, ctx.styleMap, ctx).text
@@ -536,7 +492,7 @@ function collectSubListContent(el: Node, ctx: WalkCtx, depth = 0, sep = "\n"): S
       }
       // 문단 run 안의 중첩표 (hp:p > hp:run > hp:tbl — HWPX 표준 배치)
       const tbls: Element[] = []
-      findTopLevelTbls(ch, tbls)
+      findTopLevelTbls(ch, tbls, ctx.shared.track.deletedObjects)
       for (const tbl of tbls) {
         const built = buildSubListTable(tbl, ctx, depth)
         if (built.text) parts.push(built.text)
@@ -581,7 +537,7 @@ function drawTextParaTexts(para: Element, ctx: WalkCtx): string[] {
     if (!kids) return
     for (let i = 0; i < kids.length; i++) {
       const ch = kids[i] as Element
-      if (ch.nodeType !== 1) continue
+      if (ch.nodeType !== 1 || ctx.shared.track.deletedObjects.has(ch)) continue
       const tag = (ch.tagName || ch.localName || "").replace(/^[^:]+:/, "")
       if (tag === "tbl" || tag === "footNote" || tag === "endNote") continue
       if (tag === "drawText") { if (!inDrawText) visit(ch, depth + 1, true); continue }
@@ -609,25 +565,11 @@ function buildSubListTable(el: Element, ctx: WalkCtx, depth: number): { text: st
   const st: TableState = { rows: [], currentRow: [], cell: null, sourceId: el.getAttribute("id") ?? undefined }
   walkSection(el, sink, st, [], ctx, depth + 1)
   let flat = convertTableToText(st.rows)
-  if (st.caption) flat = st.caption + (flat ? "\n" + flat : "")
+  if (st.caption) flat = captionedText(flat, st.caption, st.captionBelow)
   // completeTable은 부모 표가 없으면 IRTable 블록을 sink에 넣는다 (셀 blocks·제목셀 재부착 포함)
   const built: IRBlock[] = []
   completeTable(st, [], built, ctx)
   return { text: flat, block: built.find(b => b.type === "table") ?? null }
-}
-
-/** 노드 하위의 최상위 tbl 수집 — tbl 내부 미진입 (셀 안 중첩표는 표 워커가 처리) */
-function findTopLevelTbls(el: Node, out: Element[], depth = 0): void {
-  if (depth > MAX_XML_DEPTH) return
-  const kids = el.childNodes
-  if (!kids) return
-  for (let i = 0; i < kids.length; i++) {
-    const ch = kids[i] as Element
-    if (ch.nodeType !== 1) continue
-    const tag = (ch.tagName || ch.localName || "").replace(/^[^:]+:/, "")
-    if (tag === "tbl") { out.push(ch); continue }
-    findTopLevelTbls(ch, out, depth + 1)
-  }
 }
 
 /**
@@ -650,6 +592,7 @@ function walkParagraphChildren(
     for (let i = 0; i < kids.length; i++) {
       const el = kids[i] as Element
       if (el.nodeType !== 1) continue
+      if (ctx.shared.track.deletedObjects.has(el)) continue
       const tag = el.tagName || el.localName || ""
       const localTag = tag.replace(/^[^:]+:/, "")
 
@@ -667,6 +610,8 @@ function walkParagraphChildren(
           if (chan) {
             if (chan.kind === "heading" && chan.text) {
               blocks.push({ type: "heading", level: chan.level, text: chan.text, pageNumber: ctx.page })
+            } else if (chan.kind === "quote" && chan.text) {
+              blocks.push({ type: "paragraph", text: chan.text, quote: true, pageNumber: ctx.page })
             }
             continue
           }
@@ -675,17 +620,20 @@ function walkParagraphChildren(
         // 같은 줄(공백)로 이을지 결정한다 (#52 후속 — 글자취급 표는 앞뒤 텍스트와 한 줄)
         if (tableCtx) tableStack.push(tableCtx)
         const newTable: TableState = { rows: [], currentRow: [], cell: null, inline: isInlineTbl(el), sourceId: el.getAttribute("id") ?? undefined }
-        walkSection(el, blocks, newTable, tableStack, ctx, d + 1)
+        // 지운 표는 deletedObjects 가 걸렀다 — 살아 있는 표는 문단 글 뒤에 걸으므로, 표 뒤에서 시작해 다음 문단으로 이어지는 삭제
+        // 구간의 깊이가 칸 글·캡션까지 비웠다. 칸은 독립 이야기다 (도형 글상자·캡션과 같은 규칙, inIndependentDeletionStory)
+        inIndependentDeletionStory(ctx.shared.track, () => walkSection(el, blocks, newTable, tableStack, ctx, d + 1))
         tableCtx = completeTable(newTable, tableStack, blocks, ctx)
       } else if (localTag === "caption" && !inShape) {
         // ctrl 래핑 표 캡션 — 도형(rect 등) 자체 캡션은 기존 텍스트 추출 경로에 맡긴다.
         // 셀 안이면 표 caption이 아니라 개체 캡션이므로 셀 텍스트로 귀속 (오귀속 방지)
-        const cap = collectSubListContent(el, ctx)
+        const cap = inIndependentDeletionStory(ctx.shared.track, () => collectSubListContent(el, ctx))
         if (cap.text) {
           if (tableCtx?.cell) mergeBlocksIntoCell(tableCtx.cell, [{ type: "paragraph", text: cap.text, pageNumber: ctx.page }])
           else if (tableCtx) {
             tableCtx.caption = (tableCtx.caption ? tableCtx.caption + "\n" : "") + cap.text
             if (cap.hasStructure) (tableCtx.captionBlocks ??= []).push(...cap.blocks)
+            if (el.getAttribute("side") === "BOTTOM") tableCtx.captionBelow = true
           }
           else blocks.push({ type: "paragraph", text: cap.text, pageNumber: ctx.page })
         }
@@ -722,63 +670,12 @@ function walkParagraphChildren(
   return tableCtx
 }
 
-/** 개체 요소 태그 — 빈 문단 보존(#57) 제외 판정용. walkParagraphChildren이 별도 방출하는 것들 */
-const OBJECT_TAGS = new Set(["tbl", "pic", "shape", "drawingObject", "drawText"])
-
-/** 문단 하위에 표·그림·글상자 등 개체가 있는지 — 있으면 "빈 문단"이 아니라 개체 문단 (#57) */
-function hasObjectDescendant(node: Node, depth = 0): boolean {
-  if (depth > MAX_XML_DEPTH) return false
-  const kids = node.childNodes
-  if (!kids) return false
-  for (let i = 0; i < kids.length; i++) {
-    const ch = kids[i] as Element
-    if (ch.nodeType !== 1) continue
-    const tag = (ch.tagName || ch.localName || "").replace(/^[^:]+:/, "")
-    if (OBJECT_TAGS.has(tag)) return true
-    if (hasObjectDescendant(ch, depth + 1)) return true
-  }
-  return false
-}
-
-/**
- * 글자취급(treatAsChar) 인라인 표 여부 — <hp:pos treatAsChar="1"> (#49/#50).
- * inline 표만 같은 줄 텍스트와 문서 순서로 읽는다 (reflow 개체 흐름 모델과 동일 구분)
- */
-function isInlineTbl(tbl: Element): boolean {
-  return findChildByLocalName(tbl, "pos")?.getAttribute("treatAsChar") === "1"
-}
-
-/** 양식 단추 캡션을 그리는 최소 개체 폭 (HWPUNIT) — 상자(≈1,300)에 글자 한 자 이상이 들어갈 때만 한컴이 캡션을 인쇄한다.
- *  폭 1,297 인 선택 상자는 기본 캡션 "선택 상자"가 PDF 에 안 나온다(rhwp issue2470), 폭 4,000 이상은 캡션이 나온다(form-002·서울 결재) */
-const FORM_CAPTION_MIN_WIDTH = 2300
-
-/** 양식 선택 상자(☐/☑)·라디오 단추(○/●)의 보이는 글 — bench/ref/hwpx-ref.mjs 와 같은 규칙 */
-function formButtonText(el: Element, radio: boolean): string {
-  const checked = el.getAttribute("value") === "CHECKED"
-  const mark = radio ? (checked ? "●" : "○") : (checked ? "☑" : "☐")
-  const width = Number(findChildByLocalName(el, "sz")?.getAttribute("width") ?? 0)
-  const caption = (el.getAttribute("caption") ?? "").trim()
-  return caption && width >= FORM_CAPTION_MIN_WIDTH ? `${mark} ${caption}` : mark
-}
-
-/** 자손에서 특정 태그명의 첫 번째 요소 탐색 (최대 깊이 5) */
-function findDescendant(node: Node, targetTag: string, depth = 0): Element | null {
-  if (depth > 5) return null
-  const children = node.childNodes
-  if (!children) return null
-  for (let i = 0; i < children.length; i++) {
-    const child = children[i] as Element
-    if (child.nodeType !== 1) continue
-    const tag = (child.tagName || child.localName || "").replace(/^[^:]+:/, "")
-    if (tag === targetTag) return child
-    const found = findDescendant(child, targetTag, depth + 1)
-    if (found) return found
-  }
-  return null
-}
-
 /** drawText(글상자) 내부의 <p> 요소들에서 텍스트를 추출하여 paragraph 블록 생성 */
 function extractDrawTextBlocks(drawTextNode: Node, blocks: IRBlock[], ctx: WalkCtx): void {
+  inIndependentDeletionStory(ctx.shared.track, () => extractDrawTextStory(drawTextNode, blocks, ctx))
+}
+
+function extractDrawTextStory(drawTextNode: Node, blocks: IRBlock[], ctx: WalkCtx): void {
   const children = drawTextNode.childNodes
   if (!children) return
   for (let i = 0; i < children.length; i++) {
@@ -788,7 +685,7 @@ function extractDrawTextBlocks(drawTextNode: Node, blocks: IRBlock[], ctx: WalkC
     if (tag === "subList" || tag === "p" || tag === "para") {
       // subList 안의 <p>들을 순회
       if (tag === "subList") {
-        extractDrawTextBlocks(child, blocks, ctx)
+        extractDrawTextStory(child, blocks, ctx)
       } else {
         const info = extractParagraphInfo(child, ctx.styleMap, ctx)
         let text = info.text.trim()
@@ -800,6 +697,7 @@ function extractDrawTextBlocks(drawTextNode: Node, blocks: IRBlock[], ctx: WalkC
           const block: IRBlock = { type: "paragraph", text, style: info.style ?? undefined, pageNumber: ctx.page }
           if (info.href) block.href = info.href
           if (info.footnote) block.footnoteText = info.footnote
+          if (info.footnoteBlocks) block.footnoteBlocks = info.footnoteBlocks
           blocks.push(block)
         }
         // 글상자 안 문단에 포함된 표/도형도 재귀 처리 — 조직도용 "글상자 안 표" 보존
@@ -814,6 +712,8 @@ interface ParagraphInfo {
   text: string
   href?: string
   footnote?: string
+  /** 주석 안 표가 있을 때 주석 본문 구조 블록 — IRBlock.footnoteBlocks 로 (#149) */
+  footnoteBlocks?: IRBlock[]
   style?: InlineStyle
   /**
    * 인라인 표 경계로 분할된 텍스트 조각 (#49/#50) — 문단 안에 표가 있을 때만 존재.
@@ -823,95 +723,62 @@ interface ParagraphInfo {
   segments?: string[]
   /** 미기입 누름틀 안내문이 든 문단 — 안내문 조각만 placeholder 표시한 span (마크다운에서 뺀다, IR 글엔 남긴다) */
   placeholderSpans?: IRSpan[]
+  /** 목차 항목(줄마다 글 + 채움 탭 + 쪽 번호) — 제목으로 올리지 않는다 (#121) */
+  tocEntry?: boolean
 }
 
-/** 누름틀 안내문 구간 표지 — 문단 글 정리(공백 붕괴·링크 삽입·절단)를 거친 뒤 span 으로 가른다 */
-const PH_OPEN = "\x1C"
-const PH_CLOSE = "\x1D"
-
-/**
- * 미기입 누름틀의 안내문 — CLICK_HERE 이고 수정 안 됨(dirty≠1)일 때만. 이런 필드의 값 자리 글이 안내문과
- * 같으면 한컴은 화면에만 흐리게 보이고 인쇄하지 않는다(한컴 PDF 실측, HWP5 body.ts 수정 비트 규칙과 같은 판정).
- * 안내문은 stringParam Direction, 없으면 Command 의 "Direction:wstring:<N>:" 뒤 N자.
- */
-function clickHereGuide(fieldBegin: Element): string | undefined {
-  if ((fieldBegin.getAttribute("type") || "").toUpperCase() !== "CLICK_HERE") return undefined
-  if (fieldBegin.getAttribute("dirty") === "1") return undefined
-  const children = findChildByLocalName(fieldBegin, "parameters")?.childNodes
-  if (!children) return undefined
-  let fromCommand: string | undefined
-  for (let i = 0; i < children.length; i++) {
-    const ch = children[i] as Element
-    if (ch.nodeType !== 1) continue
-    const tag = (ch.tagName || ch.localName || "").replace(/^[^:]+:/, "")
-    if (tag !== "stringParam") continue
-    const name = ch.getAttribute("name")
-    if (name === "Direction") return ch.textContent || undefined
-    if (name === "Command") {
-      const cmd = ch.textContent || ""
-      const m = /Direction:wstring:(\d+):/.exec(cmd)
-      if (m) fromCommand = cmd.slice(m.index + m[0].length, m.index + m[0].length + Number(m[1])) || undefined
-    }
-  }
-  return fromCommand
-}
-
-/** fieldBegin이 HYPERLINK면 stringParam name="Path"에서 URL 추출 (살균 포함) */
-function extractHyperlinkHref(fieldBegin: Element): string | undefined {
-  if ((fieldBegin.getAttribute("type") || "").toUpperCase() !== "HYPERLINK") return undefined
-  const params = findChildByLocalName(fieldBegin, "parameters")
-  if (!params) return undefined
-  const children = params.childNodes
-  if (!children) return undefined
-  for (let i = 0; i < children.length; i++) {
-    const ch = children[i] as Element
-    if (ch.nodeType !== 1) continue
-    const tag = (ch.tagName || ch.localName || "").replace(/^[^:]+:/, "")
-    if (tag !== "stringParam" || ch.getAttribute("name") !== "Path") continue
-    let url = (ch.textContent || "").trim()
-    if (!url) continue
-    // 한컴이 중복 스킴을 저장하는 경우 정리 ("http://https://..." → "https://...")
-    url = url.replace(/^https?:\/\/(?=https?:\/\/)/i, "")
-    const safe = sanitizeHref(url)
-    if (safe) return safe
-  }
-  return undefined
-}
-
-/** 변경추적 삭제 구간 내부 여부 */
-function isInDeletedRange(ctx?: WalkCtx): boolean {
-  return (ctx?.shared.track.deleteDepth ?? 0) > 0
-}
-
-/** run 의 자식이 글(hp:t)·조판 캐시뿐인지 — 첨자 감싸기 대상 */
-function runHasOnlyText(run: Element): boolean {
-  const kids = run.childNodes
+/** fieldBegin 이 메모(type MEMO)면 작성자·시각·번호와 메모 글(안쪽 subList 문단) — 붙은 글·문단은 fieldEnd 에서 (#180) */
+function memoOf(fieldBegin: Element, ctx: WalkCtx): Pick<MemoNote, "text" | "author" | "createdAt" | "number"> | undefined {
+  if ((fieldBegin.getAttribute("type") || "").toUpperCase() !== "MEMO") return undefined
+  const params: Record<string, string> = {}
+  const kids = findChildByLocalName(fieldBegin, "parameters")?.childNodes
   for (let i = 0; i < (kids?.length ?? 0); i++) {
-    const k = kids![i] as Element
-    if (k.nodeType !== 1) continue
-    const t = (k.tagName || k.localName || "").replace(/^[^:]+:/, "")
-    if (t !== "t" && t !== "linesegarray") return false
+    const ch = kids![i] as Element
+    if (ch.nodeType === 1 && ch.getAttribute("name")) params[ch.getAttribute("name")!] = (ch.textContent || "").trim()
   }
-  return true
+  // 메모 글 — subList 문단마다 글만 (문단 머리 번호를 풀지 않는다: 본문 번호 카운터를 건드리지 않게)
+  const lines: string[] = []
+  const kids2 = findChildByLocalName(fieldBegin, "subList")?.childNodes
+  for (let i = 0; i < (kids2?.length ?? 0); i++) {
+    const p = kids2![i] as Element
+    if (p.nodeType !== 1 || (p.tagName || p.localName || "").replace(/^[^:]+:/, "") !== "p") continue
+    const t = extractParagraphInfo(p, ctx.styleMap, ctx).text
+    if (t) lines.push(t.replace(/\\([$<])/g, "$1"))
+  }
+  const num = Number(params.Number)
+  const memo: Pick<MemoNote, "text" | "author" | "createdAt" | "number"> = { text: lines.join("\n") }
+  if (params.Author) memo.author = params.Author
+  if (params.CreateDateTime) memo.createdAt = params.CreateDateTime
+  if (params.Number !== undefined && Number.isFinite(num)) memo.number = num
+  return memo
 }
 
 function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: WalkCtx): ParagraphInfo {
   let text = ""
   let href: string | undefined
   let footnote: string | undefined
+  let noteBlocks: IRBlock[] | undefined
+  let noteHasTable = false
   let charPrId: string | undefined
 
   // 하이퍼링크 필드 범위 — fieldBegin/fieldEnd의 텍스트 오프셋을 추적해 필드 extent만
   // 인라인 [anchor](url)로 방출 (HWP5 fieldRanges와 동일 모델). extent를 못 닫으면
   // (문단 경계 걸침 등) 기존 문단 전체 href로 폴백.
   const linkRanges: Array<{ url: string; start: number; end?: number }> = []
-  const openFields: Array<{ rangeIdx?: number; guide?: string; start?: number }> = []
+  type MemoDraft = Pick<MemoNote, "text" | "author" | "createdAt" | "number">
+  const openFields: Array<{ rangeIdx?: number; guide?: string; start?: number; memo?: MemoDraft }> = []
+  const memos: Array<MemoDraft & { raw: string }> = []
   const onFieldBegin = (el: Element) => {
     const url = extractHyperlinkHref(el)
     if (url) {
       linkRanges.push({ url, start: text.length })
       openFields.push({ rangeIdx: linkRanges.length - 1 })
       if (!href) href = url
+    } else if (ctx && (el.getAttribute("type") || "").toUpperCase() === "MEMO") {
+      // 메모 — 같은 문단을 두 번 읽어도 한 번만 (#180)
+      const memo = ctx.shared.memos.seen.has(el) ? undefined : memoOf(el, ctx)
+      ctx.shared.memos.seen.add(el)
+      openFields.push(memo ? { memo, start: text.length } : {})
     } else {
       const guide = clickHereGuide(el)
       openFields.push(guide ? { guide, start: text.length } : {})
@@ -919,10 +786,11 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
   }
   const onFieldEnd = () => {
     const open = openFields.pop()
+    if (open?.memo && open.start !== undefined) memos.push({ ...open.memo, raw: text.slice(open.start) })
     if (open?.rangeIdx !== undefined) linkRanges[open.rangeIdx].end = text.length
     // 미기입 누름틀: 값 자리 글이 안내문 그대로면 표지로 감싼다 (글은 IR 에 남고 마크다운에서만 빠진다)
     if (open?.guide !== undefined && open.start !== undefined) {
-      const value = text.slice(open.start).replace(/\\\$/g, "$")
+      const value = text.slice(open.start).replace(/\\([$<])/g, "$1")
       if (value && (value === open.guide || value.trimEnd() === open.guide)) {
         text = text.slice(0, open.start) + PH_OPEN + text.slice(open.start) + PH_CLOSE
       }
@@ -939,8 +807,14 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
     if (isInDeletedRange(ctx)) return
     const endnote = tag === "endNote" || tag === "en"
     text += noteRefMark(noteAttrsOf(noteEl), endnote ? ctx?.noteFormats?.endnote : ctx?.noteFormats?.footnote)
-    const noteText = ctx ? collectSubListContent(noteEl, ctx, 0, " ").text : extractTextFromNode(noteEl)
+    const sub = ctx ? collectSubListContent(noteEl, ctx, 0, " ") : undefined
+    const noteText = sub ? sub.text : extractTextFromNode(noteEl)
     if (noteText) footnote = (footnote ? footnote + "; " : "") + noteText
+    // 주석 안 표 — 평탄화 글엔 " / " 로 섞여 원문 "/" 와 칸 구분을 가를 수 없다. 구조 블록도 남긴다 (#149)
+    if (sub) {
+      (noteBlocks ??= []).push(...sub.blocks)
+      if (sub.hasStructure) noteHasTable = true
+    }
   }
 
   /** <hp:ctrl> 자식 선별 순회 — 머리말/꼬리말/각주/미주/하이퍼링크/변경추적 (v3.0) */
@@ -951,12 +825,18 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
       const k = kids[j] as Element
       if (k.nodeType !== 1) continue
       const ktag = (k.tagName || k.localName || "").replace(/^[^:]+:/, "")
+      if (isInDeletedRange(ctx) && DELETABLE_OBJECT_TAGS.has(ktag)) {
+        ctx!.shared.track.deletedObjects.add(k)
+        collectImageRefs(k, ctx!.shared.track.deletedImageRefs)
+        continue
+      }
       switch (ktag) {
         // 머리말/꼬리말 — 문서당 1회 수집, 본문 앞/뒤 배치
         // 페이지 번호 크롬(autoNum PAGE + 문자 없는 잔여 텍스트, 예: "- 1 -")은 본문 정보가
         // 아니므로 방출하지 않는다
         case "header": case "footer": {
-          if (!ctx) break
+          // 변경 추적으로 지운 머리말·꼬리말은 내지 않는다 — 안쪽 글은 독립 이야기(collectSubListText)라 바깥 삭제 깊이를 0 으로 두어 되살아났다
+          if (!ctx || isInDeletedRange(ctx)) break
           const t = collectSubListText(k, ctx)
           if (t && hasPageAutoNum(k) && !/\p{L}/u.test(t)) break
           if (t) {
@@ -1023,6 +903,9 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
       // CDATA(4)도 텍스트 — 빠뜨리면 CDATA로 저장된 문단이 통째로 사라진다 (shared/xml.ts isTextNode 참조)
       if (child.nodeType === 3 || child.nodeType === 4) {
         const t = child.textContent || ""
+        // 글자는 hp:t 안에만 있다 — 들여 써 저장한 XML(다른 제작기)의 hp:run 사이 줄바꿈·들여쓰기 공백은 글이 아니다
+        // (issue2019 별지 서식: 낱말마다 run 을 갈라 줄바꿈 공백이 낱말 사이 빈 줄로 나왔다)
+        if (child.nodeType === 3 && !/\S/.test(t) && ((node as Element).localName ?? "").replace(/^[^:]+:/, "") !== "t") continue
         if (isInDeletedRange(ctx)) {
           if (t && ctx && !ctx.shared.track.warned) {
             ctx.shared.track.warned = true
@@ -1030,26 +913,28 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
           }
         } else {
           // \x1E는 인라인 표 경계 마커로 예약 — 원문 혼입 방지 (#49/#50).
-          // 리터럴 $ 는 \$ — $…$ 는 아래 수식 스팬 전용 (escapeLiteralDollar)
-          text += escapeLiteralDollar(t.replace(/\x1E/g, ""))
+          // 리터럴 $ 는 \$ — $…$ 는 아래 수식 스팬 전용 (escapeLiteralDollar), 태그 모양 글자 "<sub>" 는 \<sub> (escapeLiteralTags, #122)
+          text += escapeLiteralTags(escapeLiteralDollar(t.replace(/\x1E/g, "")))
         }
         continue
       }
       if (child.nodeType !== 1) continue
 
       const tag = (child.tagName || child.localName || "").replace(/^[^:]+:/, "")
+      // 현재 위치의 삭제 상태를 기록한다 — 구조 pass 시점에는 deleteEnd를 이미 지난다.
+      if (isInDeletedRange(ctx) && DELETABLE_OBJECT_TAGS.has(tag)) {
+        ctx!.shared.track.deletedObjects.add(child)
+        collectImageRefs(child, ctx!.shared.track.deletedImageRefs)
+        continue
+      }
       switch (tag) {
         case "t": walk(child, depth + 1); break  // 자식 순회 (tab 등 하위 요소 처리)
-        case "tab": {
-          const leader = child.getAttribute("leader")
-          if (leader && leader !== "0") {
-            // 목차 리더 탭 (점선/실선 등) — 뒤에 페이지번호가 오므로 이후 텍스트 무시
-            text += "\x1F"  // 특수 마커: 이후 텍스트 제거용
-          } else {
-            text += "\t"
-          }
-          break
-        }
+        // 탭 — 채움(leader≠0, 목차 점선) 탭도 보통 탭. 채움선은 글이 아니라 내지 않고 뒤 글은 남긴다(PDF tab-leaders 가
+        // 점 채움을 탭 하나로 바꾸고 쪽 번호를 남기는 것과 같다). 종전엔 채움 탭 뒤를 쪽 번호로 보고 잘라, 목차 쪽 번호만이 아니라
+        // 일정표 "사용자 의견조사 ····· '26년 8~9월"(gate-fill 36646162)의 일정, 줄바꿈 뒤 다음 목차 항목
+        // "<참고2> 직종별사업체노동력조사 개요"(rhwp issue6044)까지 사라졌다
+        // (채움 탭은 목차 항목 판정까지 TOC_LEADER 표지로 들고 가다 보통 탭으로 바꾼다 — toc-entry.ts)
+        case "tab": text += /^(?:|0|NONE)$/i.test(child.getAttribute("leader") ?? "") ? "\t" : TOC_LEADER; break
         case "br":
           if ((child.getAttribute("type") || "line") === "line") text += "\n"
           break
@@ -1063,8 +948,14 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
           if (isInlineTbl(child)) text += "\x1E"
           break
 
+        // 글자 겹치기 — 겹친 글은 composeText 속성에 있어 종전엔 통째로 빠졌다(법령 서식 원 번호 ⑯·⑰, 시험지 네모 번호 10)
+        case "compose":
+          if (!isInDeletedRange(ctx)) text += escapeLiteralTags(escapeLiteralDollar(composeText(child.getAttribute("composeText") ?? "", (child.getAttribute("circleType") ?? "CHAR") !== "CHAR")))
+          break
+
         // 양식 선택 상자·라디오 단추 — 한컴이 그리는 상자 기호와 캡션 글 (종전엔 통째로 빠졌다: form-002 "원천기술형"·서울 결재 "부분공개")
-        case "checkBtn": case "radioBtn": text += formButtonText(child, tag === "radioBtn"); break
+        // 지운 구간의 양식 단추·수식은 글처럼 내지 않는다 (최종본)
+        case "checkBtn": case "radioBtn": if (!isInDeletedRange(ctx)) text += formButtonText(child, tag === "radioBtn"); break
 
         // 하이퍼링크
         case "hyperlink": {
@@ -1116,6 +1007,7 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
         // 스크립트가 담겨 있음. hml-equation-parser 로 LaTeX 변환 후 `$...$`
         // 로 래핑. 실패/빈 스크립트면 무시 (대체 텍스트 누출 방지).
         case "equation": {
+          if (isInDeletedRange(ctx)) break
           const script = findChildByLocalName(child, "script")
           const raw = script ? extractTextFromNode(script) : ""
           if (raw.trim()) {
@@ -1146,7 +1038,7 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
           walk(child, depth + 1)
           if (script && linkRanges.length === nLinks && openFields.length === nOpen && runHasOnlyText(child)) {
             const added = text.slice(start)
-            if (added && !/[\x1E\x1F\n$]/.test(added)) text = text.slice(0, start) + wrapScript(added, script)
+            if (added && !/[\x1E\n$]/.test(added)) text = text.slice(0, start) + wrapScript(added, script)
           }
           break
         }
@@ -1158,7 +1050,7 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
   walk(para)
 
   // 하이퍼링크 extent 인라인 적용 — 시작 내림차순 치환(HWP5와 동일), 겹침 금지.
-  // anchor가 줄바꿈·리더마커·대괄호를 품으면 문법이 깨지므로 그 필드는 건너뛴다.
+  // anchor가 줄바꿈·표 경계 마커·대괄호를 품으면 문법이 깨지므로 그 필드는 건너뛴다.
   {
     const applied: Array<[number, number]> = []
     const closed = linkRanges
@@ -1167,18 +1059,20 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
     for (const r of closed) {
       if (applied.some(([s, e]) => r.start < e && r.end! > s)) continue
       const anchor = text.slice(r.start, r.end!)
-      if (!anchor.trim() || /[\n\x1F\x1E\[\]]/.test(anchor)) continue
+      if (!anchor.trim() || /[\n\x1E\[\]]/.test(anchor)) continue
       text = text.slice(0, r.start) + `[${anchor}](${r.url})` + text.slice(r.end!)
       applied.push([r.start, r.end!])
     }
     if (applied.length) href = undefined // 문단 전체 href 중복 방지
   }
 
-  // 목차 리더 마커(\x1F) 이후 텍스트(페이지번호) 제거
-  const leaderIdx = text.indexOf("\x1F")
-  if (leaderIdx >= 0) text = text.substring(0, leaderIdx)
   // run 마다 감싼 첨자 태그 정리(이웃 합치기·공백은 밖으로) — 링크 치환이 글 위치를 다 쓴 뒤
   text = tidyScriptTags(text)
+
+  // 목차 항목(채움 탭 + 쪽 번호 줄) 판정 — 채움 탭 표지는 여기서 보통 탭이 된다 (#121)
+  const toc = takeTocLeaders(text)
+  text = toc.text
+  const tocEntry = toc.tocEntry
 
   const cleanParaText = (raw: string): string => {
     let t = raw.replace(/[ \t]+/g, " ").trim()
@@ -1229,14 +1123,16 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
     }
   }
 
-  return { text: cleanText, href, footnote, style, segments, placeholderSpans }
-}
+  // 메모 — 문단을 넘어가는 메모(끝을 못 만난 것)는 문단 끝까지를 붙은 글로 (#180)
+  for (const open of openFields) if (open.memo && open.start !== undefined) memos.push({ ...open.memo, raw: text.slice(open.start) })
+  if (memos.length && ctx) {
+    const unescape = (s: string): string => s.replace(/\\([$<])/g, "$1")
+    const paragraph = unescape(cleanText)
+    for (const { raw, ...memo } of memos) {
+      const anchor = unescape(stripPlaceholderMarks(raw).replace(/\x1E/g, "").replace(/[ \t]+/g, " ").trim())
+      ctx.shared.memos.list.push({ ...memo, anchor, paragraph, offset: Math.max(0, paragraph.indexOf(anchor)) })
+    }
+  }
 
-/** 자동번호 접두가 붙은 문단이면 접두를 평문 span 으로 앞에 — span 을 이으면 블록 글과 같다 */
-function withPrefixSpan(spans: IRSpan[], prefix?: string): IRSpan[] {
-  return prefix ? [{ text: prefix + " " }, ...spans] : spans
-}
-
-function stripPlaceholderMarks(s: string): string {
-  return s.includes(PH_OPEN) || s.includes(PH_CLOSE) ? s.replace(/[\x1C\x1D]/g, "") : s
+  return { text: cleanText, href, footnote, footnoteBlocks: noteHasTable ? noteBlocks : undefined, style, segments, placeholderSpans, ...(tocEntry ? { tocEntry } : {}) }
 }

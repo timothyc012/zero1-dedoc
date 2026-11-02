@@ -4,6 +4,8 @@ import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { markdownToHwpx } from "../src/hwpx/generator.js"
 import { parse } from "../src/index.js"
+import JSZip from "jszip"
+import { CHAR_BOLD, CHAR_ITALIC, CHAR_NORMAL, PARA_LIST } from "../src/hwpx/gen-ids.js"
 
 describe("markdownToHwpx", () => {
   it("단순 텍스트 → HWPX → 라운드트립", async () => {
@@ -205,6 +207,21 @@ describe("markdownToHwpx", () => {
       assert.ok(result.markdown.includes("3. 안건심의결과"), "연번 보존")
       assert.ok(result.markdown.includes("- 항목 하나"), "대시 마커 보존 (· 변형 금지)")
     }
+  })
+
+  it("'*' 글머리 항목의 강조 — 마커가 본문 강조와 짝지어지지 않음", async () => {
+    // 항목 문단의 run 만 — 섹션 첫 run 에는 colPr 가 붙으므로 앞에 본문 문단을 둔다
+    const runsOf = async (item: string) => {
+      const zip = await JSZip.loadAsync(await markdownToHwpx(`본문\n\n${item}`))
+      const sec = await zip.file("Contents/section0.xml")!.async("string")
+      const para = sec.match(new RegExp(`<hp:p paraPrIDRef="${PARA_LIST}"[^>]*>(.*?)</hp:p>`))![1]
+      return [...para.matchAll(/<hp:run charPrIDRef="(\d+)"><hp:t>([^<]*)<\/hp:t><\/hp:run>/g)].map((m) => [Number(m[1]), m[2]])
+    }
+    assert.deepEqual(await runsOf("* **굵게** 설명"), [[CHAR_NORMAL, "* "], [CHAR_BOLD, "굵게"], [CHAR_NORMAL, " 설명"]])
+    assert.deepEqual(await runsOf("* 항목 *기울임* 끝"), [[CHAR_NORMAL, "* "], [CHAR_NORMAL, "항목 "], [CHAR_ITALIC, "기울임"], [CHAR_NORMAL, " 끝"]])
+    // '-'·번호 마커는 원래도 맞았다 — 같은 모양으로 남는다
+    assert.deepEqual(await runsOf("- **굵게** 설명"), [[CHAR_NORMAL, "- "], [CHAR_BOLD, "굵게"], [CHAR_NORMAL, " 설명"]])
+    assert.deepEqual(await runsOf("2. **굵게** 설명"), [[CHAR_NORMAL, "2. "], [CHAR_BOLD, "굵게"], [CHAR_NORMAL, " 설명"]])
   })
 
   it("빈 마크다운 → 유효한 HWPX (빈 내용)", async () => {

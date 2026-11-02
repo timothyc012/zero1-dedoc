@@ -297,8 +297,10 @@ export function buildChapterBand(roman: string, title: string, ctx: FrameCtx, sp
 
 // ─── 서울 방침서 골격 (bangchim) ───────────────────
 // 정본 「청년취업사관학교 2.0」 추진계획(시장방침 제81호) 실측 — 제목표 2×1 w48758(제목칸 상 0.4·하 0.15mm / 담당칸 상 0.15·하 0.4mm),
-// 제목 HY헤드라인M 26 굵게 가운데 100% + 부제 HY헤드라인M 18 굵게 파랑(#0000FF), 담당 휴먼명조 12 균등배분(왼쪽 300) 160%.
-// 요약박스 1×1 w48758 셀 여백 566, 0.4mm #DFE6F7, 한컴돋움 15 굵게 균등배분(왼쪽 500) 140%.
+// 제목 HY헤드라인M 26 굵게 가운데 120% + 부제 HY헤드라인M 18 굵게 파랑(#0000FF), 담당 휴먼명조 12 균등배분(왼쪽 300) 160%.
+// 요약박스 1×1 w48758 셀 여백 566, 0.4mm #DFE6F7, 한컴돋움 15 굵게 양쪽(왼쪽 500) 140%.
+// 제목 줄간격·요약 정렬은 정본 한 건이 아니라 방침서 16건 문서별 값으로 — 제목표 제목 120% 4·140% 2·100%·150% 각 1(정본 100%),
+// 요약 양쪽 8·균등배분 1(정본)·왼쪽 1 (줄간격은 160·150·140% 가 3·2·2 로 갈려 정본 140% 그대로)
 // 장 상자 1×3 h3014: [번호 3223 — 0.5mm 네 변, HY견명조 19 굵게] [간격 1414 — 왼쪽 0.5mm] [제목 — 위아래 0.5mm, HY견고딕 20, 폭 = 글폭 + 여유]
 
 const MM05: BorderSide = ["0.5 mm", "#000000"]
@@ -309,9 +311,9 @@ export function buildBangchimTitleTable(title: string, subtitle: string | null, 
   const w = ctx.W - 566
   const fit = fitOneLine(title, frame.titleFont, frame.titlePt, w - 2 * 141 - 400, 20)
   const cTitle = reg.char({ font: frame.titleFont, pt: fit.pt, bold: true, ratio: fit.ratio, spacing: fit.spacing })
-  const center = reg.para({ align: "CENTER", lineSp: 100 })
+  const center = reg.para({ align: "CENTER", lineSp: 120 })
   let paras = para(title, center, cTitle)
-  let h = Math.round(fit.pt * 100) + 1400
+  let h = Math.round(fit.pt * 100 * 1.2) + 1400
   if (subtitle) {
     paras += para(subtitle, center, reg.char({ font: frame.titleFont, pt: 18, bold: true, color: BANGCHIM_BLUE }))
     h += 1800
@@ -330,7 +332,7 @@ export function buildBangchimSummary(text: string, ctx: FrameCtx): { xml: string
   const w = ctx.W - 566
   const pad = 566, left = 500
   const avail = w - 2 * pad - left
-  const p = reg.para({ align: "DISTRIBUTE", lineSp: 140, left })
+  const p = reg.para({ align: "JUSTIFY", lineSp: 140, left })
   const c = reg.char({ font: frame.summaryFont, pt: frame.summaryPt, bold: true })
   const bodies = text.split("\n").map((l) => l.trim().replace(/^[□■○ㅇ◦●\-–ㆍ·•]\s*/u, "")).filter(Boolean)
   let lines = 0
@@ -383,6 +385,25 @@ export function buildBangchimSubhead(n: number, title: string, ctx: FrameCtx, be
 }
 
 // ─── 요약 박스 ─────────────────────────────────────
+
+/** 요약 문장 경계 — 한글·닫는 괄호 뒤 마침표·물음표·느낌표 다음에 글이 더 오면 (날짜 "9. 23." 은 숫자 뒤라 아님) */
+const SENTENCE_END = /[가-힣)\]'’"”」』][.?!](?=\s+\S)/g
+/** 목록 부호 "가. 나." — 문두·공백·쉼표 뒤 가나다 한 글자 + 마침표는 문장 끝이 아니다 */
+const LIST_MARK = /(?:^|[\s,])[가나다라마바사아자차카타파하]$/
+
+/**
+ * 요약 상자 검사 — 보고 목적 한 문장(쉼표 허용) 3줄 이내. 실측(서울 실결재 제목 아래 요약 상자 53개): 3줄 이하 98%·
+ * 2줄 75%, 한 문단 84%. 줄 수는 실글꼴 폭표 조판(호출부), 문장 수는 줄을 이은 글의 문장 경계 + 1
+ */
+export function summaryWarnings(text: string, lines: number): string[] {
+  const out: string[] = []
+  if (lines > 3) out.push(`요약박스가 ${lines}줄입니다 — 보고 목적을 한 문장(쉼표 허용) 3줄 이내 "…하고자 함"으로 줄이세요`)
+  // 줄을 이어 센다 — 한 문장을 인용문 두 줄로 나눠 쓴 요약은 한 문장이다
+  const flat = text.split("\n").map((l) => l.trim()).filter(Boolean).join(" ")
+  const sentences = 1 + [...flat.matchAll(SENTENCE_END)].filter((m) => !LIST_MARK.test(flat.slice(0, m.index + 1))).length
+  if (sentences > 1) out.push(`요약박스가 ${sentences}문장입니다 — 보고 목적을 한 문장(쉼표 허용) 3줄 이내 "…하고자 함"으로 묶으세요`)
+  return out
+}
 
 /** 요약박스 문단 좌우 여백(HWPUNIT) — 실측 1000/1000 55% */
 const SUMMARY_PAD = 1000

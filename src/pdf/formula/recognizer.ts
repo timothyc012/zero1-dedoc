@@ -12,7 +12,7 @@
  */
 
 import type { InferenceSession, Tensor } from "onnxruntime-node"
-import type { PreTrainedTokenizer } from "@huggingface/transformers"
+import type { Tokenizer } from "@huggingface/tokenizers"
 import { postProcessLatex } from "./postprocess.js"
 import type { PixelFrame } from "./types.js"
 
@@ -25,7 +25,7 @@ const MFR_PAD_ID = 0
 export interface RecognizeDeps {
   encoder: InferenceSession
   decoder: InferenceSession
-  tokenizer: PreTrainedTokenizer
+  tokenizer: Tokenizer
   ort: typeof import("onnxruntime-node")
 }
 
@@ -116,8 +116,8 @@ export async function recognizeFormula(
     body.push(t)
   }
 
-  // Transformers.js tokenizer.decode 는 skip_special_tokens=true 기본
-  const raw = tokenizer.decode(body, { skip_special_tokens: true })
+  // 특수 토큰을 빼고 디코딩 — 정리(clean_up_tokenization_spaces)는 토크나이저 설정 기본값(예전 Transformers.js decode 와 같다)
+  const raw = tokenizer.decode(body, { skip_special_tokens: true, clean_up_tokenization_spaces: null })
   return postProcessLatex(raw)
 }
 

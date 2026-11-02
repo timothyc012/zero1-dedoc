@@ -16,19 +16,21 @@
 
 import JSZip from "jszip"
 import { blocksToMarkdown } from "../table/builder.js"
+import { unframeLayoutTables } from "../table/layout-frames.js"
 import type { DocumentMetadata, InternalParseResult, IRBlock, OutlineItem, ParseOptions, ParseWarning } from "../types.js"
 import { KordocError, precheckZipSize } from "../utils.js"
 // 테스트 호환성 re-export
 export { precheckZipSize } from "../utils.js"
 import { parsePageRange } from "../page-range.js"
 import { isComFallbackAvailable, isEncryptedHwpx, extractTextViaCom, comResultToParseResult } from "./com-fallback.js"
-import { decryptHwpxInPlace } from "./crypto.js"
-import { applyPageText, createSectionShared, MAX_DECOMPRESS_SIZE, MAX_ZIP_ENTRIES, ZipBombError } from "./parser-shared.js"
+import { decryptHwpxInPlace, lockedHwpxError } from "./crypto.js"
+import { applyPageText, createSectionShared, MAX_DECOMPRESS_SIZE, MAX_ZIP_ENTRIES, readZipEntry, ZipBombError } from "./parser-shared.js"
 import { extractHwpxStyles, detectHwpxHeadings } from "./styles.js"
 import { parseSectionXml } from "./section-walker.js"
 import { extractImagesFromZip } from "./images.js"
 import { extractHwpxMetadata } from "./metadata.js"
 import { extractFromBrokenZip, resolveSectionPaths, readKordocLayout } from "./zip-sections.js"
+import { locateMemoBlocks } from "../memo-notes.js"
 
 export { extractHwpxMetadataOnly } from "./metadata.js"
 
@@ -59,7 +61,7 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
   try {
     zip = await JSZip.loadAsync(buffer)
   } catch {
-    return extractFromBrokenZip(buffer)
+    return extractFromBrokenZip(buffer, options)
   }
 
   // loadAsync 후 실제 엔트리 수 검증 — CD 위조와 무관한 진짜 방어선
@@ -71,7 +73,7 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
   // ── 암호 감지: manifest.xml에 encryption-data가 있으면 비밀번호 복호 → COM fallback ──
   const manifestFile = zip.file("META-INF/manifest.xml")
   if (manifestFile) {
-    const manifestXml = await manifestFile.async("text")
+    const manifestXml = await readZipEntry(manifestFile, "text")
     if (isEncryptedHwpx(manifestXml)) {
       // 비밀번호가 주어졌으면 제자리 복호 — 이후 경로는 평문 문서와 완전히 같다
       if (options?.password) {
@@ -89,14 +91,7 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
         }
         // 메시지에 "DRM"을 넣지 않는다 — classifyError가 DRM_PROTECTED(비밀번호로 못 여는
         // 문서보안)로 분류해, 정작 암호만 주면 열리는 문서를 호출자가 포기하게 만든다.
-        // 배포용 문서(content.hpf hpf:distribution="1")는 열기 암호 없이 보는 문서라 "열기 암호" 안내가 틀린다 —
-        // 정책브리핑 보도자료(156776047 산업활동동향)가 섹션까지 AES-256 으로 암호화된 배포용 HWPX 로 올라온다
-        const hpf = await zip.file("Contents/content.hpf")?.async("text").catch(() => "")
-        throw new KordocError(
-          /\bdistribution="1"/.test(hpf ?? "")
-            ? "배포용으로 암호화된 HWPX 파일입니다 (배포용 복호는 지원하지 않음). 한컴오피스에서 일반 문서로 저장한 뒤 여세요."
-            : "암호로 보호된 HWPX 파일입니다. password 옵션에 열기 암호를 지정하세요.",
-        )
+        throw await lockedHwpxError(zip)
       }
     }
   }
@@ -131,7 +126,7 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
     const file = zip.file(sectionPaths[si])
     if (!file) continue
     try {
-      const xml = await file.async("text")
+      const xml = await readZipEntry(file, "text", decompressed.total)
       decompressed.total += xml.length * 2
       if (decompressed.total > MAX_DECOMPRESS_SIZE) throw new ZipBombError("ZIP 압축 해제 크기 초과 (ZIP bomb 의심)")
       const start = allBlocks.length
@@ -172,17 +167,21 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
   applyPageText(blocks, shared)
 
   // 이미지 블록에서 ZIP 바이너리 추출 — 전체 파싱 시 본문 미참조 BinData(꼬리말 그림·imgBrush 배경)도 스윕
-  const images = await extractImagesFromZip(zip, blocks, decompressed, warnings, !options?.pages)
+  const images = await extractImagesFromZip(zip, blocks, decompressed, warnings, !options?.pages, shared.track.deletedImageRefs)
+
+  // 보이지 않는 틀 표 풀기 (v4.17.0) — 헤딩 감지 전에: 틀에서 나온 문단도 제목 후보
+  const shown = options?.layoutTables === "keep" ? blocks : unframeLayoutTables(blocks, !!options?.keepTrailingEmptyCols)
 
   // 스타일 기반 헤딩 감지
-  detectHwpxHeadings(blocks, styleMap)
+  detectHwpxHeadings(shown, styleMap, shared.tocTexts)
 
   // outline 구축
-  const outline: OutlineItem[] = blocks
+  const outline: OutlineItem[] = shown
     .filter(b => b.type === "heading" && b.level && b.text)
     .map(b => ({ level: b.level!, text: b.text!, pageNumber: b.pageNumber }))
 
-  const markdown = blocksToMarkdown(blocks)
-  return { markdown, blocks, metadata, outline: outline.length > 0 ? outline : undefined, warnings: warnings.length > 0 ? warnings : undefined, images: images.length > 0 ? images : undefined }
+  const markdown = blocksToMarkdown(shown, { tableFormat: options?.tableFormat })
+  const memos = shared.memos.list.length ? locateMemoBlocks(shown, shared.memos.list) : undefined
+  return { markdown, blocks: shown, metadata, outline: outline.length > 0 ? outline : undefined, warnings: warnings.length > 0 ? warnings : undefined, images: images.length > 0 ? images : undefined, memos }
 }
 

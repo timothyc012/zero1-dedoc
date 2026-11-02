@@ -1,6 +1,7 @@
 /** 양식 필드 매칭 공용 유틸 — filler.ts, filler-hwpx.ts에서 공유 */
 
-import { LABEL_KEYWORDS } from "./recognize.js"
+import { LABEL_KEYWORDS, isBlankValue, isDatePlaceholder } from "./recognize.js"
+import type { FormField } from "../types.js"
 
 /**
  * 채울 값 — 문자열이면 같은 라벨 모든 등장에 동일값(단일 양식),
@@ -158,6 +159,34 @@ export class ValueCursor {
     this.nextIdx.set(key, i + 1)
     return v[i]
   }
+
+  /** 스칼라 키를 처음 쓴 칸의 원래 글: 두 번째 이후 등장은 빈 칸·같은 견본 글에만 쓴다 */
+  private firstTarget = new Map<string, string>()
+
+  /** 스칼라 키의 두 번째 이후 등장: 빈 칸이거나 첫 등장과 같은 견본 글일 때만 쓴다 (끝의 수신자 명단·서명란 같은 남의 글 보호) */
+  laterOk(key: string, current: string): boolean {
+    return this.isArray(key) || !this.firstTarget.has(key) || isBlankValue(current) || current.trim() === this.firstTarget.get(key)
+  }
+
+  markFirst(key: string, current: string): void {
+    if (!this.isArray(key) && !this.firstTarget.has(key)) this.firstTarget.set(key, current.trim())
+  }
+}
+
+/** 어노테이션 빈칸 "(한자： )"·"(전화번호:  )": 라벨처럼 보여도 값을 받는 자리 */
+export const ANNOTATION_BLANK_RE = /[(（][^)）]*[:：]\s*[)）]/
+
+/** 남의 라벨 칸(값으로 덮으면 안 되는 칸): 날짜 자리표시가 아닌 키워드 라벨·다른 입력 키의 라벨("허가일자"·"전 공")·①번호 라벨("① 지번").
+ *  두 채우기 경로(filler-hwpx·filler)가 같은 규칙을 쓴다 */
+export function isForeignLabel(text: string, values: ValueCursor): boolean {
+  // 날짜 자리표시는 값 자리 — 문단을 이어 붙인 "년 월 입학" + "년 월 졸업" 은 키워드 "학년" 을 품는다 (#146)
+  if (isDatePlaceholder(text)) return false
+  if (isKeywordLabel(text)) return true
+  const t = text.trim()
+  if (/^[①-⑳]/.test(t) && t.length <= 20) return true
+  if (ANNOTATION_BLANK_RE.test(t)) return false // "(한자： )" 어노테이션 빈칸 칸은 값 자리
+  const n = normalizeLabel(t)
+  return !!n && values.has(n) // 정확 일치만: 접두 매칭이면 값 "수신자 참조" 가 키 "수신자" 의 라벨로 오인된다
 }
 
 /** 라벨 정규화 — 콜론/공백/특수문자 제거, 비교용 */
@@ -233,6 +262,8 @@ export function fillInCellPatterns(
   matchedLabels: Set<string>,
   /** require_unique 2차에서 거부된 라벨 셀 차단 (sfill-2 전략0) — 전략 1~3과 동일 계약 */
   blockedLabels?: Set<string>,
+  /** 어노테이션 빈칸 "(라벨: )" 으로는 채우지 않을 키: 문서에 그 라벨의 제 칸이 따로 있는 스칼라 키 (filler-hwpx directKeys) */
+  annotationSkip?: Set<string>,
 ): { text: string; matches: Array<{ key: string; label: string; value: string }> } | null {
   let text = cellText
   const matches: Array<{ key: string; label: string; value: string }> = []
@@ -288,7 +319,7 @@ export function fillInCellPatterns(
     (match, keyword: string) => {
       const normalizedKw = normalizeLabel(keyword)
       const matchKey = values.available(normalizedKw) ? normalizedKw : undefined
-      if (matchKey === undefined) return match
+      if (matchKey === undefined || annotationSkip?.has(matchKey)) return match
 
       const newValue = values.consume(matchKey)!
       matchedLabels.add(matchKey)
@@ -324,6 +355,12 @@ export interface InlineSegment {
 }
 
 const INLINE_LABEL_RE = /((?:[가-힣A-Za-z]{1,10} )?)([가-힣A-Za-z]{2,10})\s*[:：]/g
+/** 값 끝의 날인 표시("(인)"·"(서명 또는 인)") — 값이 아니라 도장 자리(place_seal 앵커)라 값 범위에서 뺀다. 종전엔 "대표자 : (인)" 을
+ *  채우면 "(인)" 이 값으로 덮여 사라졌다 (#146) */
+const SEAL_TAIL_RE = /[(（]\s*(?:인|서\s*명|날\s*인|서명\s*또는\s*인|인\s*또는\s*서명|서명\s*또는\s*날인)\s*[)）]\s*$/
+/** 균등 배분 라벨("업 체 명 :"·"대 표 자 :"·"상   호:") — 한 글자씩 같은 너비(1~3칸)로 띄운 2~8자. 앞이 글자면 낱말 중간이라 보지 않는다 (#146).
+ *  종전엔 한 칸 띄움만 읽어 서명란 "주   소:"·"상   호:"·"성   명:" 이 매칭되지 않았다 (#151) */
+const SPACED_INLINE_LABEL_RE = /(?<![가-힣A-Za-z]\s?)([가-힣]( {1,3})[가-힣](?:\2[가-힣]){0,6})\s*[:：]/g
 
 /**
  * 인라인 양식 한 줄을 라벨 단위로 분해 — 한 줄에 라벨이 여러 개인 양식
@@ -349,6 +386,13 @@ export function scanInlineSegments(text: string): InlineSegment[] {
       end: INLINE_LABEL_RE.lastIndex,
     })
   }
+  SPACED_INLINE_LABEL_RE.lastIndex = 0
+  while ((m = SPACED_INLINE_LABEL_RE.exec(text)) !== null) {
+    const start = m.index, end = SPACED_INLINE_LABEL_RE.lastIndex
+    if (labels.some(l => l.start < end && start < l.end)) continue
+    labels.push({ label: m[1], start, end })
+  }
+  labels.sort((a, b) => a.start - b.start)
 
   const segments: InlineSegment[] = []
   for (let i = 0; i < labels.length; i++) {
@@ -360,7 +404,23 @@ export function scanInlineSegments(text: string): InlineSegment[] {
     const sep = text.slice(vs, ve).search(/[\n,;]/)
     if (sep !== -1) ve = vs + sep
     if (ve - vs > 100) ve = vs + 100
+    const seal = text.slice(vs, ve).search(SEAL_TAIL_RE)
+    if (seal !== -1) ve = vs + seal
+    const sealAt = ve
     while (ve > vs && /\s/.test(text[ve - 1])) ve--
+    // 서명란 고정 문구(#151): "서약자:      대표      (인)" 처럼 넓은 빈칸 뒤의 글이 날인 앞 넓은 빈칸으로 끝나면 값이 아니라 고정 문구다.
+    // 값 자리는 그 앞(라벨 뒤 첫 빈칸) — 종전엔 "대표" 를 값으로 덮어썼다. 빈 서명란에 채운 "성 명:      홍길동 (인)" 은 날인 앞이 한 칸이라 그대로 값이다
+    if (seal !== -1 && ve > vs && sealAt - ve >= 3) {
+      const gaps = [...text.slice(cur.end, ve).matchAll(/[ \t]{3,}/g)]
+      const gap = gaps[gaps.length - 1]
+      if (gap) {
+        ve = cur.end + gap.index
+        while (ve > cur.end && /\s/.test(text[ve - 1])) ve--
+        vs = cur.end
+        while (vs < ve && /\s/.test(text[vs])) vs++
+        if (vs >= ve) vs = ve = cur.end + (text[cur.end] === " " || text[cur.end] === "\t" ? 1 : 0) // 빈 값: 콜론 뒤 한 칸 다음에 넣는다
+      }
+    }
     segments.push({
       label: cur.label,
       labelStart: cur.start,
@@ -495,4 +555,21 @@ export function resolveUnmatched(
       }
       return k
     })
+}
+
+/** fill --dry-run 에 값을 함께 준 결과 — 키·배열 번호별 값을 쓸 칸(target: 표·행·열). 쓰지 않고 실제 채움을 메모리에서만 돌려 낸다.
+ *  같은 칸을 나중 키가 다시 쓰면 overwrittenBy 로 알린다 (#145) */
+export function fillPlan(values: Record<string, FillInput>, filled: FormField[], unmatched: string[], rejected: string[]) {
+  const inputKey = new Map(Object.keys(values).map(k => [normalizeLabel(k), k]))
+  const seen = new Map<string, number>()
+  const targets = filled.map((f, i) => {
+    const key = (f.key !== undefined && inputKey.get(f.key)) || f.key || f.label
+    const index = seen.get(key) ?? 0
+    seen.set(key, index + 1)
+    const t = f.target
+    const later = t && filled.slice(i + 1).find(g => g.target?.table === t.table && g.target.row === t.row && g.target.col === t.col)
+    const overwrittenBy = later ? ((later.key !== undefined && inputKey.get(later.key)) || later.key || later.label) : undefined
+    return { key, index, label: f.label, value: f.value, target: t ?? null, ...(overwrittenBy ? { overwrittenBy } : {}) }
+  })
+  return { targets, unmatched, ...(rejected.length > 0 ? { rejected } : {}) }
 }

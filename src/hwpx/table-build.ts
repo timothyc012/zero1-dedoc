@@ -3,9 +3,10 @@
  * TableState → IRTable 변환(셀 메타 재부착)과 </tbl> 완료 공통 처리.
  */
 
-import { buildTable, convertTableToText } from "../table/builder.js"
+import { buildTable, captionedText, convertTableToText } from "../table/builder.js"
 import type { IRBlock, IRCell, IRTable } from "../types.js"
 import type { CellCtxEx, TableState, WalkCtx } from "./parser-shared.js"
+import { CELL_EDGES } from "../table/layout-frames.js"
 
 /**
  * TableState → IRTable 변환 — 캡션·셀 blocks(중첩표/이미지)·제목셀을 함께 attach (v3.0).
@@ -15,6 +16,7 @@ import type { CellCtxEx, TableState, WalkCtx } from "./parser-shared.js"
 function buildTableWithCellMeta(state: TableState, keepAnchoredEmptyCols?: boolean, keepEmptyParagraphs?: boolean): IRTable {
   const table = buildTable(state.rows, { keepAnchoredEmptyCols, keepEmptyParagraphs })
   if (state.caption) table.caption = state.caption
+  if (state.caption && state.captionBelow) table.captionBelow = true
   if (state.sourceId) table.sourceId = state.sourceId
   // 캡션 안 중첩표는 구조도 병행 제공 — caption 문자열은 하위 호환 평탄화로 유지 (#55)
   if (state.captionBlocks?.length) table.captionBlocks = state.captionBlocks
@@ -41,6 +43,15 @@ function buildTableWithCellMeta(state: TableState, keepAnchoredEmptyCols?: boole
   }
   const srcCount = state.rows.reduce((s, r) => s + r.length, 0)
   const ordinalReliable = anchors.length === srcCount
+
+  // 보이는 변 — cellAddr 자리의 앵커 칸에 곁정보로 (보이지 않는 틀 표 풀기, v4.17.0)
+  for (const row of state.rows) {
+    for (const src of row as CellCtxEx[]) {
+      if (!src.edges || src.rowAddr === undefined || src.colAddr === undefined) continue
+      const cand = table.cells[src.rowAddr]?.[src.colAddr]
+      if (cand && anchors.includes(cand)) CELL_EDGES.set(cand, src.edges)
+    }
+  }
 
   const claimed = new Set<IRCell>()
   let flatIdx = -1
@@ -112,7 +123,7 @@ export function completeTable(
     cell.hasStructure = true
     // 하위 호환: IRCell.text는 blocks의 평탄화 텍스트를 포함한다
     let flat = convertTableToText(newTable.rows)
-    if (newTable.caption) flat = newTable.caption + (flat ? "\n" + flat : "")
+    if (newTable.caption) flat = captionedText(flat, newTable.caption, newTable.captionBelow)
     if (flat) {
       // 글자취급(treatAsChar="1") 표는 앞뒤 텍스트와 같은 줄에 놓인다 — 인라인 줄이
       // 열려 있으면 공백으로 잇는다 (#52 후속). 블록/float 표(inline=false)나 문단

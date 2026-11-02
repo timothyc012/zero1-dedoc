@@ -2,9 +2,9 @@ import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { parsePdfDocument } from "../src/pdf/parser.js"
-import { getOcrModelProfile, profileSpecs } from "../src/ocr/models.js"
+import { languageModelSpecs, getOcrModelsDir } from "../src/ocr/models.js"
 
 function shortTextPdf(): ArrayBuffer {
   const content = "BT /F1 12 Tf 72 700 Td (abc) Tj ET\n"
@@ -35,12 +35,14 @@ describe("PDF OCR language routing with isolated offline caches", () => {
         process.env.KORDOC_OFFLINE = "1"
         try {
           const language = matching ? requested : requested === "ko" ? "de" : "ko"
-          const profile = getOcrModelProfile(language)
-          mkdirSync(profile.directory, { recursive: true })
+          const dir = getOcrModelsDir()
           // Nonempty placeholders satisfy the presence gate but fail SHA validation.
           // Offline mode forbids downloading; reaching OCR_FAILED proves dispatch
           // without loading ONNX weights or using a GPU.
-          for (const spec of profileSpecs(profile)) writeFileSync(join(profile.directory, spec.filename), "invalid-test-model")
+          for (const spec of languageModelSpecs(language)) {
+            mkdirSync(dirname(join(dir, spec.filename)), { recursive: true })
+            writeFileSync(join(dir, spec.filename), "invalid-test-model")
+          }
           const result = await parsePdfDocument(shortTextPdf(), { ocrLanguage: requested, images: false })
           assert.equal(!!result.warnings?.some(w => w.code === "OCR_FAILED"), matching, JSON.stringify(result.warnings))
           assert.ok(result.markdown.includes("abc"), "failed or disabled OCR must preserve extracted text")

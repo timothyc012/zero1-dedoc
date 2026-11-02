@@ -1,0 +1,804 @@
+{
+  "release": "4.22.3",
+  "baseCommit": "b9643351b801f7b8820a28fb5603503d52d104d4",
+  "implementationCommit": "791339a",
+  "unchangedGroundTruthScorerPopulation": true,
+  "baseline": {
+    "layout": {
+      "ok": {
+        "population": 25581,
+        "matched": 25321
+      },
+      "lines": {
+        "population": 311942,
+        "matched": 311872
+      }
+    },
+    "separate2022": {
+      "ok": {
+        "population": 17173,
+        "matched": 17043
+      },
+      "lines": {
+        "population": 150410,
+        "matched": 150387
+      }
+    },
+    "pdf": {
+      "text": {
+        "pairs": 744,
+        "refChars": 2857682,
+        "recall": 0.99858,
+        "precision": 0.9967,
+        "order": 0.99239,
+        "spaceF1": 0.99019,
+        "parseErrors": 0,
+        "excluded": 22
+      },
+      "table": {
+        "pairs": 708,
+        "refTables": 2331,
+        "reordered": 5,
+        "matchedRate": 0.998713,
+        "exactRate": 0.981124,
+        "cellF1": 0.991673,
+        "cellExactRate": 0.98827,
+        "contentNED": 0.985077,
+        "parseErrors": 0,
+        "nested": {
+          "pairs": 29,
+          "refTables": 101,
+          "reordered": 0,
+          "matchedRate": 1,
+          "exactRate": 1,
+          "cellF1": 1,
+          "cellExactRate": 1,
+          "contentNED": 1
+        }
+      },
+      "annex": {
+        "hwp": {
+          "docs": 272,
+          "recall": 1,
+          "phantom": 1e-05,
+          "order": 1,
+          "tables": 346,
+          "tableExactCount": 346,
+          "tableExact": 1,
+          "cellF1": 1,
+          "eqRef": 11,
+          "eqHit": 11
+        },
+        "pdf": {
+          "docs": 272,
+          "recall": 0.99975,
+          "phantom": 0.00046,
+          "order": 1,
+          "tables": 346,
+          "tableExactCount": 342,
+          "tableExact": 0.98844,
+          "cellF1": 0.99697,
+          "eqRef": 11,
+          "eqHit": 7
+        }
+      }
+    }
+  },
+  "rounds": [
+    {
+      "round": 1,
+      "track": "layout",
+      "layout": {
+        "ok": {
+          "population": 25581,
+          "matched": 25321
+        },
+        "lines": {
+          "population": 311942,
+          "matched": 311872
+        }
+      },
+      "separate2022": {
+        "ok": {
+          "population": 17173,
+          "matched": 17043
+        },
+        "lines": {
+          "population": 150410,
+          "matched": 150387
+        }
+      },
+      "paragraphDelta": [
+        {
+          "set": "original",
+          "population": 25581,
+          "up": 0,
+          "down": 0,
+          "improved": [],
+          "regressed": []
+        },
+        {
+          "set": "-2022",
+          "population": 17173,
+          "up": 0,
+          "down": 0,
+          "improved": [],
+          "regressed": []
+        }
+      ],
+      "pdf": {
+        "text": {
+          "pairs": 744,
+          "refChars": 2857682,
+          "recall": 0.99858,
+          "precision": 0.9967,
+          "order": 0.99239,
+          "spaceF1": 0.99019,
+          "parseErrors": 0,
+          "excluded": 22
+        },
+        "table": {
+          "pairs": 708,
+          "refTables": 2331,
+          "reordered": 5,
+          "matchedRate": 0.998713,
+          "exactRate": 0.981124,
+          "cellF1": 0.991673,
+          "cellExactRate": 0.98827,
+          "contentNED": 0.985077,
+          "parseErrors": 0,
+          "nested": {
+            "pairs": 29,
+            "refTables": 101,
+            "reordered": 0,
+            "matchedRate": 1,
+            "exactRate": 1,
+            "cellF1": 1,
+            "cellExactRate": 1,
+            "contentNED": 1
+          }
+        },
+        "annex": {
+          "hwp": {
+            "docs": 272,
+            "recall": 1,
+            "phantom": 1e-05,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 346,
+            "tableExact": 1,
+            "cellF1": 1,
+            "eqRef": 11,
+            "eqHit": 11
+          },
+          "pdf": {
+            "docs": 272,
+            "recall": 0.99975,
+            "phantom": 0.00046,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 342,
+            "tableExact": 0.98844,
+            "cellF1": 0.99697,
+            "eqRef": 11,
+            "eqHit": 7
+          }
+        }
+      },
+      "exitCodes": {
+        "table": 0,
+        "annex": 0,
+        "text": 0
+      },
+      "manifestSHA256": "1028ab886fec9671e45d84b72e835c770febd9cf29f57df104ed95a1d2bf7cbe"
+    },
+    {
+      "round": 2,
+      "track": "PDF",
+      "layout": {
+        "ok": {
+          "population": 25581,
+          "matched": 25321
+        },
+        "lines": {
+          "population": 311942,
+          "matched": 311872
+        }
+      },
+      "separate2022": {
+        "ok": {
+          "population": 17173,
+          "matched": 17043
+        },
+        "lines": {
+          "population": 150410,
+          "matched": 150387
+        }
+      },
+      "paragraphDelta": [
+        {
+          "set": "original",
+          "population": 25581,
+          "up": 0,
+          "down": 0,
+          "improved": [],
+          "regressed": []
+        },
+        {
+          "set": "-2022",
+          "population": 17173,
+          "up": 0,
+          "down": 0,
+          "improved": [],
+          "regressed": []
+        }
+      ],
+      "pdf": {
+        "text": {
+          "pairs": 744,
+          "refChars": 2857682,
+          "recall": 0.99858,
+          "precision": 0.9967,
+          "order": 0.99239,
+          "spaceF1": 0.99019,
+          "parseErrors": 0,
+          "excluded": 22
+        },
+        "table": {
+          "pairs": 708,
+          "refTables": 2331,
+          "reordered": 5,
+          "matchedRate": 0.998713,
+          "exactRate": 0.981553,
+          "cellF1": 0.991734,
+          "cellExactRate": 0.988398,
+          "contentNED": 0.985405,
+          "parseErrors": 0,
+          "nested": {
+            "pairs": 29,
+            "refTables": 101,
+            "reordered": 0,
+            "matchedRate": 1,
+            "exactRate": 1,
+            "cellF1": 1,
+            "cellExactRate": 1,
+            "contentNED": 1
+          }
+        },
+        "annex": {
+          "hwp": {
+            "docs": 272,
+            "recall": 1,
+            "phantom": 1e-05,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 346,
+            "tableExact": 1,
+            "cellF1": 1,
+            "eqRef": 11,
+            "eqHit": 11
+          },
+          "pdf": {
+            "docs": 272,
+            "recall": 0.99975,
+            "phantom": 0.00046,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 342,
+            "tableExact": 0.98844,
+            "cellF1": 0.99697,
+            "eqRef": 11,
+            "eqHit": 7
+          }
+        }
+      },
+      "exitCodes": {
+        "table": 0,
+        "annex": 0,
+        "text": 0,
+        "odl": 0,
+        "odlbest": 0,
+        "odlfast": 0,
+        "odlocr": 0
+      },
+      "manifestSHA256": "52b5c5f441062a206f354ed33716992480d121472dc133b0ad766138f8a6b4a0"
+    },
+    {
+      "round": 3,
+      "track": "layout",
+      "layout": {
+        "ok": {
+          "population": 25581,
+          "matched": 25322
+        },
+        "lines": {
+          "population": 311942,
+          "matched": 311873
+        }
+      },
+      "separate2022": {
+        "ok": {
+          "population": 17173,
+          "matched": 17044
+        },
+        "lines": {
+          "population": 150410,
+          "matched": 150388
+        }
+      },
+      "paragraphDelta": [
+        {
+          "set": "original",
+          "population": 25581,
+          "up": 1,
+          "down": 0,
+          "improved": [
+            {
+              "file": "pic2.hwpx",
+              "para": "0",
+              "truth": "[0,33,34,34,35,35,36,36]",
+              "before": "[0,34,35,36]",
+              "after": "[0,33,34,34,35,35,36,36]"
+            }
+          ],
+          "regressed": []
+        },
+        {
+          "set": "-2022",
+          "population": 17173,
+          "up": 1,
+          "down": 0,
+          "improved": [
+            {
+              "file": "0181.hwpx",
+              "para": "0",
+              "truth": "[0,33,34,34,35,35,36,36]",
+              "before": "[0,34,35,36]",
+              "after": "[0,33,34,34,35,35,36,36]"
+            }
+          ],
+          "regressed": []
+        }
+      ],
+      "pdf": {
+        "text": {
+          "pairs": 744,
+          "refChars": 2857682,
+          "recall": 0.99858,
+          "precision": 0.9967,
+          "order": 0.99239,
+          "spaceF1": 0.99019,
+          "parseErrors": 0,
+          "excluded": 22
+        },
+        "table": {
+          "pairs": 708,
+          "refTables": 2331,
+          "reordered": 5,
+          "matchedRate": 0.998713,
+          "exactRate": 0.981553,
+          "cellF1": 0.991734,
+          "cellExactRate": 0.988398,
+          "contentNED": 0.985405,
+          "parseErrors": 0,
+          "nested": {
+            "pairs": 29,
+            "refTables": 101,
+            "reordered": 0,
+            "matchedRate": 1,
+            "exactRate": 1,
+            "cellF1": 1,
+            "cellExactRate": 1,
+            "contentNED": 1
+          }
+        },
+        "annex": {
+          "hwp": {
+            "docs": 272,
+            "recall": 1,
+            "phantom": 1e-05,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 346,
+            "tableExact": 1,
+            "cellF1": 1,
+            "eqRef": 11,
+            "eqHit": 11
+          },
+          "pdf": {
+            "docs": 272,
+            "recall": 0.99975,
+            "phantom": 0.00046,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 342,
+            "tableExact": 0.98844,
+            "cellF1": 0.99697,
+            "eqRef": 11,
+            "eqHit": 7
+          }
+        }
+      },
+      "exitCodes": {
+        "table": 0,
+        "annex": 0,
+        "text": 0
+      },
+      "manifestSHA256": "a01b13b74630b74ab4618038390c29dfd6c7c36361cfef5f05dc6df6a13bee69"
+    },
+    {
+      "round": 4,
+      "track": "PDF",
+      "layout": {
+        "ok": {
+          "population": 25581,
+          "matched": 25322
+        },
+        "lines": {
+          "population": 311942,
+          "matched": 311873
+        }
+      },
+      "separate2022": {
+        "ok": {
+          "population": 17173,
+          "matched": 17044
+        },
+        "lines": {
+          "population": 150410,
+          "matched": 150388
+        }
+      },
+      "paragraphDelta": [
+        {
+          "set": "original",
+          "population": 25581,
+          "up": 0,
+          "down": 0,
+          "improved": [],
+          "regressed": []
+        },
+        {
+          "set": "-2022",
+          "population": 17173,
+          "up": 0,
+          "down": 0,
+          "improved": [],
+          "regressed": []
+        }
+      ],
+      "pdf": {
+        "text": {
+          "pairs": 744,
+          "refChars": 2857682,
+          "recall": 0.99858,
+          "precision": 0.9967,
+          "order": 0.99242,
+          "spaceF1": 0.99019,
+          "parseErrors": 0,
+          "excluded": 22
+        },
+        "table": {
+          "pairs": 708,
+          "refTables": 2331,
+          "reordered": 5,
+          "matchedRate": 0.998713,
+          "exactRate": 0.981553,
+          "cellF1": 0.991791,
+          "cellExactRate": 0.989994,
+          "contentNED": 0.987204,
+          "parseErrors": 0,
+          "nested": {
+            "pairs": 29,
+            "refTables": 101,
+            "reordered": 0,
+            "matchedRate": 1,
+            "exactRate": 1,
+            "cellF1": 1,
+            "cellExactRate": 1,
+            "contentNED": 1
+          }
+        },
+        "annex": {
+          "hwp": {
+            "docs": 272,
+            "recall": 1,
+            "phantom": 1e-05,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 346,
+            "tableExact": 1,
+            "cellF1": 1,
+            "eqRef": 11,
+            "eqHit": 11
+          },
+          "pdf": {
+            "docs": 272,
+            "recall": 0.99975,
+            "phantom": 0.00046,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 342,
+            "tableExact": 0.98844,
+            "cellF1": 0.99697,
+            "eqRef": 11,
+            "eqHit": 7
+          }
+        }
+      },
+      "exitCodes": {
+        "odl": 0,
+        "odlbest": 0,
+        "odlfast": 0,
+        "odlocr": 0,
+        "table": 0,
+        "annex": 0,
+        "text": 0
+      },
+      "manifestSHA256": "794815d5489c1013ef2842c2f8bd852959a76fc6738cc1e42ab9bcc6d9626a34"
+    },
+    {
+      "round": 5,
+      "track": "layout",
+      "layout": {
+        "ok": {
+          "population": 25581,
+          "matched": 25323
+        },
+        "lines": {
+          "population": 311942,
+          "matched": 311873
+        }
+      },
+      "separate2022": {
+        "ok": {
+          "population": 17173,
+          "matched": 17045
+        },
+        "lines": {
+          "population": 150410,
+          "matched": 150388
+        }
+      },
+      "paragraphDelta": [
+        {
+          "set": "original",
+          "population": 25581,
+          "up": 1,
+          "down": 0,
+          "improved": [
+            {
+              "file": "HWP5-nopassword-123456.hwpx",
+              "para": "5",
+              "truth": "[0,51,112,162,207]",
+              "before": "[0,51,111,161,206]",
+              "after": "[0,51,112,162,207]"
+            }
+          ],
+          "regressed": []
+        },
+        {
+          "set": "-2022",
+          "population": 17173,
+          "up": 1,
+          "down": 0,
+          "improved": [
+            {
+              "file": "0166.hwpx",
+              "para": "4",
+              "truth": "[0,51,112,162,207]",
+              "before": "[0,51,111,161,206]",
+              "after": "[0,51,112,162,207]"
+            }
+          ],
+          "regressed": []
+        }
+      ],
+      "pdf": {
+        "text": {
+          "pairs": 744,
+          "refChars": 2857682,
+          "recall": 0.99858,
+          "precision": 0.9967,
+          "order": 0.99242,
+          "spaceF1": 0.99019,
+          "parseErrors": 0,
+          "excluded": 22
+        },
+        "table": {
+          "pairs": 708,
+          "refTables": 2331,
+          "reordered": 5,
+          "matchedRate": 0.998713,
+          "exactRate": 0.981553,
+          "cellF1": 0.991791,
+          "cellExactRate": 0.989994,
+          "contentNED": 0.987204,
+          "parseErrors": 0,
+          "nested": {
+            "pairs": 29,
+            "refTables": 101,
+            "reordered": 0,
+            "matchedRate": 1,
+            "exactRate": 1,
+            "cellF1": 1,
+            "cellExactRate": 1,
+            "contentNED": 1
+          }
+        },
+        "annex": {
+          "hwp": {
+            "docs": 272,
+            "recall": 1,
+            "phantom": 1e-05,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 346,
+            "tableExact": 1,
+            "cellF1": 1,
+            "eqRef": 11,
+            "eqHit": 11
+          },
+          "pdf": {
+            "docs": 272,
+            "recall": 0.99975,
+            "phantom": 0.00046,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 342,
+            "tableExact": 0.98844,
+            "cellF1": 0.99697,
+            "eqRef": 11,
+            "eqHit": 7
+          }
+        }
+      },
+      "exitCodes": {
+        "table": 0,
+        "annex": 0,
+        "text": 0
+      },
+      "manifestSHA256": "43e9fcaf9ffb59e25f1b41fd815574bf9fee8bad289e51d4d2dd894da1ca748e"
+    }
+  ],
+  "geometry": {
+    "round1": {
+      "fixture": "rhwp/table-vpos-01.hwpx",
+      "oracle2022": "0183.hwpx",
+      "firstLineReservedHeightHU": [
+        100,
+        4477
+      ],
+      "truthHU": 4477,
+      "textHeightHU": 100,
+      "nextLineVertposHU": 80,
+      "targetParagraphCoordinatesMatch": true
+    },
+    "round3": {
+      "fixture": "rhwp/pic2.hwpx",
+      "oracle2022": "0181.hwpx",
+      "beforeTextpos": [
+        0,
+        34,
+        35,
+        36
+      ],
+      "afterAndTruthTextpos": [
+        0,
+        33,
+        34,
+        34,
+        35,
+        35,
+        36,
+        36
+      ],
+      "targetParagraphCoordinatesMatch": true
+    },
+    "round4": {
+      "fixture": "rhwp/task1716/table_scattered_header_rowbreak.pdf",
+      "pages": [
+        17,
+        18
+      ],
+      "joinedFragmentRows": [
+        81,
+        82
+      ],
+      "expectedRows": 82,
+      "secondSeamPages": [
+        19,
+        20
+      ],
+      "secondSeamJoinedRows": [
+        90,
+        89
+      ],
+      "secondSeamExpectedRows": 89,
+      "entireDocumentExactNotImplied": true
+    }
+  },
+  "verification": {
+    "tests": 4024,
+    "passed": 4015,
+    "skipped": 9,
+    "failed": 0,
+    "typecheck": true,
+    "build": true,
+    "reflowGate": [
+      59,
+      59
+    ],
+    "pagesGate": [
+      10,
+      10
+    ],
+    "ODL": {
+      "docsPerMode": 200,
+      "modes": [
+        "default",
+        "plain+htmlTables",
+        "ocr:true",
+        "ocr:false"
+      ],
+      "rounds": [
+        2,
+        4
+      ]
+    },
+    "guiVisualInspection": false
+  },
+  "provenance": {
+    "commit": "b9643351b801f7b8820a28fb5603503d52d104d4",
+    "release": "4.22.2",
+    "layoutSource": "bench/out/alternating-quality-20261016/round5-final",
+    "pdfSource": "bench/out/release-4.22.2",
+    "odlSource": "bench/out/suite/alternating-20261016-r4-v2",
+    "note": "직전 최종 소스/배포와 동일한 기준. 버전 메타만 변경; 이전 전수 측정 재사용."
+  },
+  "snapshotProof": {
+    "round1": {
+      "baseCommit": "4f41de7",
+      "overrides": {},
+      "sourceFiles": 293,
+      "sourceMatchesReference": true,
+      "manifestSHA256": "1028ab886fec9671e45d84b72e835c770febd9cf29f57df104ed95a1d2bf7cbe",
+      "manifestValidatedAfterMeasurement": true
+    },
+    "round2": {
+      "baseCommit": "2822815",
+      "overrides": {},
+      "sourceFiles": 293,
+      "sourceMatchesReference": true,
+      "manifestSHA256": "52b5c5f441062a206f354ed33716992480d121472dc133b0ad766138f8a6b4a0",
+      "manifestValidatedAfterMeasurement": true
+    },
+    "round3": {
+      "baseCommit": "e0a7db8",
+      "overrides": {},
+      "sourceFiles": 294,
+      "sourceMatchesReference": true,
+      "manifestSHA256": "a01b13b74630b74ab4618038390c29dfd6c7c36361cfef5f05dc6df6a13bee69",
+      "manifestValidatedAfterMeasurement": true
+    },
+    "round4-v2": {
+      "baseCommit": "791339a",
+      "overrides": {
+        "src/render/para-model.ts": "181e52f"
+      },
+      "sourceFiles": 294,
+      "sourceMatchesReference": true,
+      "manifestSHA256": "794815d5489c1013ef2842c2f8bd852959a76fc6738cc1e42ab9bcc6d9626a34",
+      "manifestValidatedAfterMeasurement": true
+    },
+    "round5-final": {
+      "baseCommit": "791339a",
+      "overrides": {},
+      "sourceFiles": 294,
+      "sourceMatchesReference": true,
+      "manifestSHA256": "43e9fcaf9ffb59e25f1b41fd815574bf9fee8bad289e51d4d2dd894da1ca748e",
+      "manifestValidatedAfterMeasurement": true
+    }
+  },
+  "provenanceNote": "Corrected round4-v2 contains the final PDF fixes but excludes the later hypen slot support. round5-final adds that one para-model change. Their PDF sources are identical. The first round4 attempt exposed a pre-existing split at pages19/20 after restoring independent rows at17/18; it was corrected and remeasured rather than included in final results."
+}

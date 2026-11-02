@@ -1,0 +1,174 @@
+{
+  "ignoredFields": [
+    "generatedAt",
+    "elapsedMs",
+    "ms"
+  ],
+  "changes": [
+    {
+      "path": "hwp5.pairs.480.tables.ref",
+      "before": 1,
+      "after": 2
+    },
+    {
+      "path": "hwp5.pairs.480.tables.ir",
+      "before": 1,
+      "after": 2
+    },
+    {
+      "path": "hwp5.pairs.480.tables.exact",
+      "before": 1,
+      "after": 2
+    },
+    {
+      "path": "hwp5.pairs.480.tables.cellTotal",
+      "before": 6,
+      "after": 7
+    },
+    {
+      "path": "hwp5.pairs.480.tables.cellExact",
+      "before": 6,
+      "after": 7
+    },
+    {
+      "path": "hwp5.pairs.480.tables.contentNum",
+      "before": 16,
+      "after": 17
+    },
+    {
+      "path": "hwp5.pairs.480.tables.contentDen",
+      "before": 16,
+      "after": 17
+    },
+    {
+      "path": "hwp5.pairs.608.tables.ref",
+      "before": 46,
+      "after": 59
+    },
+    {
+      "path": "hwp5.pairs.608.tables.ir",
+      "before": 46,
+      "after": 59
+    },
+    {
+      "path": "hwp5.pairs.608.tables.exact",
+      "before": 46,
+      "after": 59
+    },
+    {
+      "path": "hwp5.pairs.608.tables.cellTotal",
+      "before": 150,
+      "after": 163
+    },
+    {
+      "path": "hwp5.pairs.608.tables.cellExact",
+      "before": 150,
+      "after": 163
+    },
+    {
+      "path": "hwp5.pairs.608.tables.contentNum",
+      "before": 2296,
+      "after": 2309
+    },
+    {
+      "path": "hwp5.pairs.608.tables.contentDen",
+      "before": 2296,
+      "after": 2309
+    },
+    {
+      "path": "hwp5.unpaired.5.mdLen",
+      "before": 0,
+      "after": 92
+    },
+    {
+      "path": "hwp5.unpaired.8.mdLen",
+      "before": 0,
+      "after": 73
+    },
+    {
+      "path": "hwp5.unpaired.9.mdLen",
+      "before": 0,
+      "after": 148
+    },
+    {
+      "path": "hwp5.unpaired.77.mdLen",
+      "before": 252,
+      "after": 289
+    },
+    {
+      "path": "hwp5.unpaired.86.mdLen",
+      "before": 1027,
+      "after": 1101
+    },
+    {
+      "path": "hwp5.unpaired.186.mdLen",
+      "before": 6912,
+      "after": 6949
+    },
+    {
+      "path": "hwp5.unpaired.272.mdLen",
+      "before": 93452,
+      "after": 93563
+    },
+    {
+      "path": "hwp5.unpaired.281.mdLen",
+      "before": 81479,
+      "after": 81516
+    },
+    {
+      "path": "hwp5.unpaired.304.mdLen",
+      "before": 42752,
+      "after": 42798
+    },
+    {
+      "path": "hwp5.unpaired.388.mdLen",
+      "before": 23,
+      "after": 61
+    },
+    {
+      "path": "hwp5.unpaired.389.mdLen",
+      "before": 23,
+      "after": 61
+    },
+    {
+      "path": "hwp5.unpaired.390.mdLen",
+      "before": 23,
+      "after": 61
+    },
+    {
+      "path": "hwp5.unpaired.391.mdLen",
+      "before": 23,
+      "after": 61
+    },
+    {
+      "path": "hwp5.unpaired.392.mdLen",
+      "before": 23,
+      "after": 99
+    },
+    {
+      "path": "hwp5.unpaired.393.mdLen",
+      "before": 23,
+      "after": 99
+    },
+    {
+      "path": "hwp5.unpaired.417.mdLen",
+      "before": 3686,
+      "after": 3709
+    },
+    {
+      "path": "hwp5.unpaired.418.mdLen",
+      "before": 3631,
+      "after": 3654
+    },
+    {
+      "path": "hwp5.agg.tables.ref",
+      "before": 4244,
+      "after": 4258
+    },
+    {
+      "path": "hwp5.agg.tables.exact",
+      "before": 4244,
+      "after": 4258
+    }
+  ]
+}

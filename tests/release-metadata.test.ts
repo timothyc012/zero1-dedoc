@@ -21,7 +21,8 @@ test("Zero1 Dedoc package metadata and inherited Kordoc plugin stay distinct", (
   assert.equal(pkg.bin["zero1-dedoc-mcp"], "./dist/mcp.js")
   assert.equal(pkg.bin.kordoc, undefined)
   assert.equal(plugin.name, "kordoc")
-  assert.equal(plugin.version, "4.16.1")
+  // plugins/kordoc 은 upstream 스냅숏 — 마지막으로 합친 upstream 판(docs/UPSTREAM.md)
+  assert.equal(plugin.version, "4.24.38")
   assert.ok(!skill.includes("kordoc@^3"))
   for (const preset of ["기안문", "보고서", "계획서", "통지", "회의록", "개조식", "보도자료"]) {
     assert.ok(skill.includes(`\`${preset}\``), `플러그인 문서에 ${preset} 프리셋`)

@@ -12,6 +12,7 @@
 
 import type { LineSegment } from "./line-types.js"
 import { chainCollinearRules } from "./line-extract.js"
+import { OPEN_END_RULES, type RawCellRules } from "./cell-edges.js"
 
 /** 끝점 정렬 괘선 묶음 허용 오차 (pt) — closeOpenTableEdges EDGE_ALIGN_TOL 과 같다 */
 const ALIGN_TOL = 3
@@ -78,7 +79,7 @@ function splitBodies(g: LineSegment[], chained: LineSegment[]): LineSegment[][] 
  * 조건 미달이면 입력을 그대로 반환한다.
  * @param textLayer 쪽 글이 모두 텍스트층(seq)일 때만 끝점이 제각각인 아래 변을 닫는다 — OCR 래스터 괘선은 끝점이 흔들린다
  */
-export function closeOpenTableEnds(horizontals: LineSegment[], verticals: LineSegment[], textLayer = false): LineSegment[] {
+export function closeOpenTableEnds(horizontals: LineSegment[], verticals: LineSegment[], textLayer = false, raw?: RawCellRules): LineSegment[] {
   if (horizontals.length < MIN_RULES || verticals.length < MIN_REACHING) return horizontals
   const groups: LineSegment[][] = []
   for (const rule of chainCollinearRules(horizontals)) {
@@ -106,7 +107,9 @@ export function closeOpenTableEnds(horizontals: LineSegment[], verticals: LineSe
       if (y === null) continue
       // 그 높이에 이미 몸통 폭을 덮는 괘선이 있으면 닫힌 변이다
       if (horizontals.some(h => Math.abs(h.y1 - y) <= TOUCH_TOL && h.x1 <= x1 + INSET && h.x2 >= x2 - INSET)) continue
-      added.push({ x1, y1: y, x2, y2: y, lineWidth: 0.5 })
+      const rule = { x1, y1: y, x2, y2: y, lineWidth: 0.5 }
+      if (raw) OPEN_END_RULES.set(rule, raw)
+      added.push(rule)
     }
   }
   return added.length ? [...horizontals, ...added] : horizontals

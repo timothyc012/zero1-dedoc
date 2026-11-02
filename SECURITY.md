@@ -4,9 +4,8 @@
 
 | Version | Supported |
 |---------|-----------|
-| 4.7.x   | Yes |
-| 4.5.x – 4.6.x | Security fixes only |
-| < 4.5   | No |
+| 4.21.x  | Yes |
+| < 4.21  | No — upgrade to the latest 4.21.x |
 
 ## Reporting a Vulnerability
 
@@ -36,13 +35,19 @@ never touch the network. Only two code paths make outbound requests, both opt-in
 | Path | Destination | Trigger |
 |------|-------------|---------|
 | OCR / formula model download (first run only) | `huggingface.co` | OCR features enabled, models not yet cached |
-| `kordoc watch --webhook <url>` | user-supplied URL | explicitly passed by the operator |
+| `kordoc watch --webhook <url>` | user-supplied URL | explicitly passed by the operator. The payload carries the file name, format and, for Markdown output, the first 1,000 characters of the converted text |
 
 Set **`KORDOC_OFFLINE=1`** to block both *before the request is made*. This is a
 single choke point (`src/shared/offline.ts`) — no other module calls `fetch`.
 Printing and PDF rendering disable page JavaScript and block every request except
 `data:` and `about:` through the shared `launchLockedPage` helper, regardless of
 `KORDOC_OFFLINE`. External images, stylesheets and fonts are therefore not fetched.
+Chromium runs with its sandbox on. It is turned off only on Linux when running as
+root, where Chromium refuses to start sandboxed, or when `KORDOC_CHROMIUM_NO_SANDBOX=1`
+is set.
+Model downloads stop if the response grows well past the model's expected size.
+Webhook targets that resolve to loopback, private, link-local, CGNAT, benchmark,
+documentation, multicast or reserved ranges, IPv4 or IPv6, are refused.
 See [docs/offline-deployment.md](docs/offline-deployment.md) for air-gapped deployment.
 
 ## Security Measures
@@ -57,7 +62,11 @@ kordoc processes untrusted binary files. The following defenses are in place:
 - Symlink resolution via `realpathSync` before any read or write
 
 ### Resource Limits
-- ZIP decompression: 256MB cumulative (HWPX), 100MB (XLSX / DOCX)
+- ZIP decompression: 256MB cumulative (HWPX), 100MB (XLSX / DOCX). Every ZIP entry in every
+  format is decompressed as a stream. It stops as soon as it exceeds the size the archive
+  declares for it, and the pre-check sums the larger of the central-directory and
+  local-header sizes. Forging either size cannot get past the cumulative limit.
+- Compressed PNG text chunks scanned by redaction: 16MB each
 - ZIP entries: 500 max
 - HWP5 decompression: 100MB per stream; records 500,000 per section; sections 100 max
 - HWP3 decompression: 100MB cumulative
@@ -71,6 +80,16 @@ kordoc processes untrusted binary files. The following defenses are in place:
 - No shell command construction from user input
 - PDF JavaScript evaluation disabled (`isEvalSupported: false`)
 - HTML table-cell text escaped; Chromium printing/rendering disables JavaScript and external requests
+- `htmlTables` output keeps only kordoc's own `<br>`, `<u>`, `<sup>`, `<sub>` and image tags in cells. Any
+  other tag from a document, such as `<img onerror>`, is escaped
+- Markdown output escapes link syntax written in document text. `[x](javascript:…)` and `[x]: url`
+  definitions do not become links. Code-span fences are longer than any backtick run inside them
+- Layout HTML (`render --format html`) carries a Content-Security-Policy that forbids scripts and external loads
+- Document colours reach SVG attributes only as `#RRGGBB`
+- The Windows COM fallback for DRM documents passes the file path to PowerShell
+  through an environment variable, never inside the script text
+- Extracted image assets keep image extensions only (others become `.bin`). SVG images
+  carrying scripts or event attributes are not written as `.svg`
 - MCP error messages sanitized (no filesystem path leakage from non-`KordocError` failures)
 - Hyperlink hrefs sanitized (`sanitizeHref`) on both parse and generate paths
 
@@ -82,6 +101,10 @@ kordoc processes untrusted binary files. The following defenses are in place:
   symlink targets. MCP also checks `KORDOC_ROOT`.
 
 ### Access Confinement (opt-in)
+- MCP write tools never write into hidden paths (a folder or file starting with `.`, such as
+  `.claude`, `.ssh` or `.mcp.json`). They also refuse agent instruction files (`CLAUDE.md`,
+  `AGENTS.md`, `GEMINI.md`, `copilot-instructions.md`, `mcp.json`). A prompt injected through
+  a received document therefore cannot plant instructions for later sessions.
 - **`KORDOC_ROOT=<dir>`** confines every MCP read and write to that directory subtree.
   Enforcement resolves existing ancestors with `realpath`; write targets that are
   symlinks are rejected, including when parent directories do not yet exist.
@@ -101,9 +124,13 @@ features are used — pdfjs-dist, onnxruntime-node, sharp, @hyzyla/pdfium).
 Vulnerabilities in these dependencies are outside kordoc's control but are addressed
 via dependency updates.
 
-`npm audit --omit=dev` reports **0 vulnerabilities** as of 4.7.2. One low-severity
-advisory remains in `esbuild`, a build-time-only dependency of `tsup`/`tsx` that is
-not part of the published package.
+`npm audit` reports **0 vulnerabilities** in both runtime and development dependencies
+as of 4.21.30 (2026-10-13). The publish gate (`prepublishOnly`) runs `scripts/check-licenses.mjs`,
+which fails if any runtime or optional dependency carries a licence outside a permissive
+allowlist (MIT, ISC, Apache-2.0, BSD and similar) or none at all. `npm run sbom` writes a
+CycloneDX SBOM (`sbom.cdx.json`). `kordoc setup` registers the MCP server pinned to the
+installed version (`npx -y kordoc@<version>`) rather than the latest release. GitHub
+Actions workflows pin every action to a commit SHA.
 
 ## Known Limitations
 

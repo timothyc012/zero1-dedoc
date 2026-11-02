@@ -10,13 +10,14 @@
 
 import { createHash } from "crypto"
 import { createReadStream } from "fs"
-import { mkdir, mkdtemp, stat, rename, rm } from "fs/promises"
+import { mkdir, stat, unlink, rename } from "fs/promises"
 import { createWriteStream } from "fs"
 import { homedir } from "os"
-import { join, dirname, resolve } from "path"
+import { join, dirname } from "path"
 import { pipeline } from "stream/promises"
 import { Readable } from "stream"
 import { assertNetworkAllowed } from "../../shared/offline.js"
+import { cleanupModelDownloadPartials, modelDownloadPartialPath } from "./model-partials.js"
 
 export interface ModelSpec {
   name: string
@@ -24,6 +25,8 @@ export interface ModelSpec {
   url: string
   sha256: string
   sizeMb: number
+  /** 폐쇄망 차단 안내 — 없으면 models --export/--import 안내 */
+  offlineHint?: string
 }
 
 /** 모델 스펙 (SHA-256 은 실제 다운로드로 검증됨 — 변경 금지) */
@@ -153,84 +156,32 @@ export interface DownloadProgress {
 
 export type ProgressHandler = (p: DownloadProgress) => void
 
-// Only active preparations are shared. Settled results must be revalidated:
-// file timestamps alone are not proof that the model bytes are unchanged.
-const preparations = new Map<string, {
-  task: Promise<void>
-  listeners: Set<ProgressHandler>
-  progress: { latest?: DownloadProgress }
-}>()
-// Distinct expected hashes must not race to replace the same destination.
-const pathPreparations = new Map<string, Promise<void>>()
-
-async function ensureModel(localPath: string, spec: ModelSpec, onProgress?: ProgressHandler): Promise<void> {
-  localPath = resolve(localPath)
-  const key = JSON.stringify([localPath, spec.sha256])
-  let preparation = preparations.get(key)
-  if (!preparation) {
-    const listeners = new Set<ProgressHandler>()
-    const progress: { latest?: DownloadProgress } = {}
-    const report: ProgressHandler = event => {
-      progress.latest = event
-      // Snapshot subscribers: a reentrant subscriber receives the replay below.
-      for (const listener of [...listeners]) listener(event)
-    }
-    const previous = pathPreparations.get(localPath)
-    const task = (async () => {
-      // A failed preparation must not poison the queue for another hash.
-      if (previous) await previous.catch(() => {})
-      await mkdir(dirname(localPath), { recursive: true })
-      if (await isExistingValid(localPath, spec.sha256)) {
-        report({ spec, downloaded: 0, total: null, phase: "skip", message: "이미 존재 + SHA 일치" })
-        return
-      }
-      // Never unlink after a stale validation: another process may already
-      // have installed a valid file. Only replace with verified bytes.
-      await downloadToFile(spec, localPath, report)
-    })()
-    preparation = { task, listeners, progress }
-    preparations.set(key, preparation)
-    pathPreparations.set(localPath, task)
-    const clear = () => {
-      preparations.delete(key)
-      if (pathPreparations.get(localPath) === task) pathPreparations.delete(localPath)
-    }
-    void task.then(clear, clear)
-  }
-  // Keep each subscriber's spec and progress handler, not just the leader's.
-  let progressFailed = false
-  let progressError: unknown
-  const listener: ProgressHandler = progress => {
-    if (progressFailed) return
-    try {
-      onProgress?.({ ...progress, spec })
-    } catch (error) {
-      // Subscriber errors reject only that caller, never the shared download
-      // (including callbacks invoked from a stream's data event).
-      progressFailed = true
-      progressError = error
-    }
-  }
-  preparation.listeners.add(listener)
-  if (preparation.progress.latest) listener(preparation.progress.latest)
-  try {
-    await preparation.task
-    if (progressFailed) throw progressError
-  } finally {
-    preparation.listeners.delete(listener)
-  }
-}
-
 /**
  * 지정 모델군을 다운로드/검증한다.
  * - 이미 있고 SHA 일치 → skip
- * - 없음/손상 → 별도 임시파일 다운로드 + SHA 검증 후 원자적 교체.
+ * - 없음 → 다운로드 후 SHA 검증. 실패 시 파일 삭제.
  */
 export async function ensureModelsIn(dir: string, specs: ReadonlyArray<ModelSpec>, onProgress?: ProgressHandler): Promise<void> {
-  dir = resolve(dir)
-  if (specs.length === 0) await mkdir(dir, { recursive: true })
+  await mkdir(dir, { recursive: true })
+
   for (const spec of specs) {
-    await ensureModel(join(dir, spec.filename), spec, onProgress)
+    const localPath = join(dir, spec.filename)
+    await cleanupModelDownloadPartials(localPath)
+
+    if (await isExistingValid(localPath, spec.sha256)) {
+      onProgress?.({
+        spec,
+        downloaded: 0,
+        total: null,
+        phase: "skip",
+        message: "이미 존재 + SHA 일치",
+      })
+      continue
+    }
+
+    // Keep the destination until atomic replacement; another process may have
+    // finished a valid download since our initial check.
+    await downloadToFile(spec, localPath, onProgress)
   }
 }
 
@@ -241,7 +192,15 @@ export async function ensureFormulaModels(onProgress?: ProgressHandler): Promise
 
 /** 단일 모델만 확인/다운로드 (진단 UI 에서 개별 상태 새로고침용) */
 export async function ensureSingleModel(spec: ModelSpec, onProgress?: ProgressHandler): Promise<void> {
-  return ensureModelsIn(getFormulaModelsDir(), [spec], onProgress)
+  const dir = getFormulaModelsDir()
+  await mkdir(dir, { recursive: true })
+  const localPath = join(dir, spec.filename)
+  await cleanupModelDownloadPartials(localPath)
+  if (await isExistingValid(localPath, spec.sha256)) {
+    onProgress?.({ spec, downloaded: 0, total: null, phase: "skip" })
+    return
+  }
+  await downloadToFile(spec, localPath, onProgress)
 }
 
 async function isExistingValid(localPath: string, sha256Expected: string): Promise<boolean> {
@@ -267,14 +226,15 @@ async function downloadToFile(
   // 폐쇄망 모드에서는 요청 자체를 보내지 않는다 (사이드로드 안내로 대체)
   assertNetworkAllowed(
     `${spec.name} 모델 다운로드`,
-    "온라인 PC에서 `kordoc models --export <디렉토리>` 로 내보낸 뒤 이 PC에서 `kordoc models --import <디렉토리>` 하거나, KORDOC_MODEL_CACHE 로 모델 캐시 경로를 지정하세요",
+    spec.offlineHint ?? "온라인 PC에서 `kordoc models --export <디렉토리>` 로 내보낸 뒤 이 PC에서 `kordoc models --import <디렉토리>` 하거나, KORDOC_MODEL_CACHE 로 모델 캐시 경로를 지정하세요",
   )
 
-  // A private sibling directory isolates temporary files across processes,
-  // while keeping the final rename on the same filesystem.
+  // 먼저 .part 로 받고 검증 후 rename — 중단된 다운로드가 "정상 파일"로 오인되는 걸 방지
+  // Batch workers may download the same missing model concurrently. Never share
+  // a partial file: only a fully verified download is atomically published.
+  const partPath = modelDownloadPartialPath(localPath)
   await mkdir(dirname(localPath), { recursive: true })
-  const partDir = await mkdtemp(`${localPath}.part-`)
-  const partPath = join(partDir, "download")
+
   try {
     const resp = await fetch(spec.url, {
       headers: {
@@ -292,20 +252,34 @@ async function downloadToFile(
     const total = lenHeader ? Number.parseInt(lenHeader, 10) : null
     let downloaded = 0
 
-    const ws = createWriteStream(partPath, { flags: "wx" })
+    // 크기 상한 — SHA-256 은 다 받은 뒤 검증하므로, 받는 동안 응답이 끝없이 이어지면 디스크가 찬다
+    const maxBytes = Math.max(spec.sizeMb * 1.5, spec.sizeMb + 8) * 1024 * 1024
+    const ws = createWriteStream(partPath)
     try {
       const reader = Readable.fromWeb(resp.body as unknown as import("stream/web").ReadableStream)
       reader.on("data", (chunk: Buffer | Uint8Array) => {
         downloaded += chunk.length
-        onProgress?.({ spec, downloaded, total, phase: "download" })
+        if (downloaded > maxBytes) reader.destroy(new Error(`응답이 예상 크기(${spec.sizeMb}MB)를 크게 넘습니다`))
+        onProgress?.({
+          spec,
+          downloaded,
+          total,
+          phase: "download",
+        })
       })
       await pipeline(reader, ws)
     } catch (e) {
       throw new Error(`${spec.name} 스트리밍 실패: ${(e as Error).message}`)
     }
 
-    onProgress?.({ spec, downloaded, total, phase: "verify" })
+    onProgress?.({
+      spec,
+      downloaded,
+      total,
+      phase: "verify",
+    })
 
+    // SHA 검증
     let actual: string
     try {
       actual = await sha256OfFile(partPath)
@@ -319,20 +293,17 @@ async function downloadToFile(
       )
     }
 
-    try {
-      await rename(partPath, localPath)
-    } catch (error) {
-      // Another process may have won installation (Windows can return EPERM).
-      // Accept only freshly verified bytes, never merely the file's presence.
-      if (!await isExistingValid(localPath, spec.sha256)) throw error
-    }
-    onProgress?.({ spec, downloaded, total, phase: "done" })
+    await rename(partPath, localPath)
+    onProgress?.({
+      spec,
+      downloaded,
+      total,
+      phase: "done",
+    })
   } finally {
-    try {
-      await rm(partDir, { recursive: true, force: true })
-    } catch {
-      // Best-effort cleanup of our own temporary files; retain the real error.
-    }
+    // Successful rename already removed this path. Process termination bypasses
+    // finally; the next ensure call reclaims it only after proving the owner dead.
+    try { await unlink(partPath) } catch { /* Preserve the original outcome. */ }
   }
 }
 

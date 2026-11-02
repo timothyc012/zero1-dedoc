@@ -7,6 +7,8 @@
  * 참조: docs/biff8-spec.md §3.4, §3.5
  */
 
+import { escapeLiteralTags } from "../script-tags.js"
+import { escapeLiteralDollar } from "../table/builder.js"
 import {
   OP_NUMBER,
   OP_RK,
@@ -225,18 +227,18 @@ export function extractSheetCells(
         const h = readCellHeader(rec.data)
         if (h && rec.data.length >= 10) {
           const isst = rec.data.readUInt32LE(6)
-          const value = sst[isst] ?? ""
-          cells.push({ row: h.row, col: h.col, value,
-            ...(captureProvenance ? { sourceCell: { storedType: "string", rawValue: value } as const } : {}) })
+          const raw = sst[isst] ?? ""
+          cells.push({ row: h.row, col: h.col, value: escapeLiteralTags(escapeLiteralDollar(raw)), // 태그 모양 글자 "<sub>" 는 \<sub> (#122)
+            ...(captureProvenance ? { sourceCell: { storedType: "string", rawValue: raw } as const } : {}) })
         }
         break
       }
       case OP_LABEL: {
         const h = readCellHeader(rec.data)
         if (h) {
-          const value = decodeLabelString(rec.data)
-          cells.push({ row: h.row, col: h.col, value,
-            ...(captureProvenance ? { sourceCell: { storedType: "string", rawValue: value } as const } : {}) })
+          const raw = decodeLabelString(rec.data)
+          cells.push({ row: h.row, col: h.col, value: escapeLiteralTags(escapeLiteralDollar(raw)),
+            ...(captureProvenance ? { sourceCell: { storedType: "string", rawValue: raw } as const } : {}) })
         }
         break
       }
@@ -250,12 +252,12 @@ export function extractSheetCells(
             while (j < records.length && (records[j].opcode === OP_SHRFMLA || records[j].opcode === OP_ARRAY)) j++
             const next = records[j]
             if (next && next.opcode === OP_STRING) {
-              const value = decodeFormulaStringRecord(next.data)
+              const raw = decodeFormulaStringRecord(next.data)
               cells.push({
                 row: h.row,
                 col: h.col,
-                value,
-                ...(captureProvenance ? { sourceCell: { storedType: "formula", rawValue: value, cachedValue: value } as const } : {}),
+                value: escapeLiteralTags(escapeLiteralDollar(raw)),
+                ...(captureProvenance ? { sourceCell: { storedType: "formula", rawValue: raw, cachedValue: raw } as const } : {}),
               })
               i = j // String 레코드까지 건너뛰기
             } else {

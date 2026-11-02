@@ -7,8 +7,10 @@ import type JSZip from "jszip"
 import { KordocError, stripDtd } from "../utils.js"
 import type { IRBlock, ParseWarning } from "../types.js"
 import { HEADING_RATIO_H1, HEADING_RATIO_H2, HEADING_RATIO_H3 } from "../types.js"
-import { createXmlParser, findChildByLocalName, MAX_DECOMPRESS_SIZE } from "./parser-shared.js"
+import { createXmlParser, findChildByLocalName, MAX_DECOMPRESS_SIZE, readZipEntry } from "./parser-shared.js"
 import type { ScriptKind } from "../script-tags.js"
+import type { Edges } from "../table/layout-frames.js"
+import { TOC_ENTRY_BLOCKS } from "../toc-entry.js"
 
 // ─── HWPX 스타일 정보 ──────────────────────────────
 
@@ -40,6 +42,14 @@ export function isRealStrikeShape(shape: string): boolean {
   }
 }
 
+/**
+ * 색 강조 글자 모양 — 검정 아닌 글자색 또는 음영(<hh:charPr> 여는 태그). 견본 문단을 복제해 새 글을 넣을 때
+ * 한 낱말에만 칠한 색·형광펜을 새 글 전체에 입히지 않으려고 가린다(견본 모드 fillParagraph avoid·패치 견본 복제)
+ */
+export function isColorEmphasis(charPrOpenTag: string): boolean {
+  return /\bshadeColor="(?!none"|#FFFFFF")[^"]+"/i.test(charPrOpenTag) || /\btextColor="(?!#000000"|none")[^"]+"/i.test(charPrOpenTag)
+}
+
 /** hh:numbering > hh:paraHead 한 수준의 정의 */
 export interface ParaHeadDef {
   numFormat: string  // DIGIT, HANGUL_SYLLABLE, CIRCLED_DIGIT 등
@@ -66,6 +76,7 @@ export interface HwpxStyleMap {
   bullets: Map<string, string>           // bullet id → 글머리 문자
   paraHeadings: Map<string, ParaHeadingRef>  // paraPr id → heading 참조
   paraIndents: Map<string, { left: number; intent: number }>  // paraPr id → 들여쓰기(HWPUNIT, v4.0.4)
+  borderEdges: Map<string, Edges>        // borderFill id → 보이는 변 (보이지 않는 틀 표 풀기, v4.17.0)
 }
 
 /** head.xml 또는 header.xml에서 스타일 정보 추출 */
@@ -77,6 +88,7 @@ export async function extractHwpxStyles(zip: JSZip, decompressed?: { total: numb
     bullets: new Map(),
     paraHeadings: new Map(),
     paraIndents: new Map(),
+    borderEdges: new Map(),
   }
 
   const headerPaths = ["Contents/header.xml", "header.xml", "Contents/head.xml", "head.xml"]
@@ -86,7 +98,7 @@ export async function extractHwpxStyles(zip: JSZip, decompressed?: { total: numb
     if (!file) continue
 
     try {
-      const xml = await file.async("text")
+      const xml = await readZipEntry(file, "text", decompressed?.total)
       if (decompressed) {
         decompressed.total += xml.length * 2
         if (decompressed.total > MAX_DECOMPRESS_SIZE) throw new KordocError("ZIP 압축 해제 크기 초과 (ZIP bomb 의심)")
@@ -105,10 +117,13 @@ export async function extractHwpxStyles(zip: JSZip, decompressed?: { total: numb
       parseBullets(domDoc, result.bullets)
       parseParaHeadings(domDoc, result.paraHeadings)
       parseParaIndents(domDoc, result.paraIndents)
+      parseBorderEdges(domDoc, result.borderEdges)
       break
     } catch { continue }
   }
 
+  // 1-based 테두리 목록이 확인되면 참조 0은 선 없음이다. 정의가 없는 문서는 미상으로 유지한다.
+  if (result.borderEdges.size > 0 && !result.borderEdges.has("0")) result.borderEdges.set("0", { t: false, b: false, l: false, r: false })
   return result
 }
 
@@ -267,6 +282,31 @@ function parseParaIndents(doc: Document, map: Map<string, { left: number; intent
   }
 }
 
+/**
+ * header.xml의 hh:borderFill 파싱 — id → 네 변이 보이는지 (v4.17.0, 보이지 않는 틀 표 풀기).
+ * 선 종류 NONE 이거나 흰색(#FFFFFF — 흰 바탕에 안 보임)이면 안 보이는 변이다. 대각선·채우기는 보지 않는다.
+ */
+function parseBorderEdges(doc: Document, map: Map<string, Edges>): void {
+  const tagNames = ["hh:borderFill", "borderFill"]
+  for (const tagName of tagNames) {
+    const elements = doc.getElementsByTagName(tagName)
+    for (let i = 0; i < elements.length; i++) {
+      const el = elements[i]
+      const id = el.getAttribute("id") || ""
+      if (!id) continue
+      const seen = (name: string): boolean => {
+        const b = findChildByLocalName(el, name)
+        if (!b) return false
+        const type = b.getAttribute("type") || "NONE"
+        const color = (b.getAttribute("color") || "#000000").toUpperCase()
+        return type !== "NONE" && color !== "#FFFFFF"
+      }
+      map.set(id, { t: seen("topBorder"), b: seen("bottomBorder"), l: seen("leftBorder"), r: seen("rightBorder") })
+    }
+    if (map.size > 0) break
+  }
+}
+
 /** header.xml의 hh:paraPr > hh:heading 파싱 — 문단 속성 id → NUMBER/BULLET/OUTLINE 참조 */
 function parseParaHeadings(doc: Document, map: Map<string, ParaHeadingRef>): void {
   const tagNames = ["hh:paraPr", "paraPr"]
@@ -295,7 +335,8 @@ function parseParaHeadings(doc: Document, map: Map<string, ParaHeadingRef>): voi
 // ─── 헤딩 감지 (스타일 기반) ────────────────────────
 
 /** HWPX 스타일 기반 헤딩 감지 */
-export function detectHwpxHeadings(blocks: IRBlock[], styleMap: HwpxStyleMap): void {
+/** tocTexts — 목차 항목 글(표 칸에서 풀려 나온 문단은 블록 표시 대신 글로 가린다, #121) */
+export function detectHwpxHeadings(blocks: IRBlock[], styleMap: HwpxStyleMap, tocTexts?: Set<string>): void {
   // outline(개요) 기반 헤딩이 이미 감지된 문서는 폰트크기 휴리스틱 생략 — outline이 권위 정보
   if (blocks.some(b => b.type === "heading")) return
 
@@ -313,7 +354,7 @@ export function detectHwpxHeadings(blocks: IRBlock[], styleMap: HwpxStyleMap): v
   }
 
   for (const block of blocks) {
-    if (block.type !== "paragraph" || !block.text) continue
+    if (block.type !== "paragraph" || !block.text || TOC_ENTRY_BLOCKS.has(block) || tocTexts?.has(block.text.trim())) continue
     const text = block.text.trim()
     if (text.length === 0 || text.length > 200 || /^\d+$/.test(text)) continue
 

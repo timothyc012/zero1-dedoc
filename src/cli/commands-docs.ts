@@ -3,9 +3,11 @@
 import { readFileSync, writeFileSync, mkdirSync, statSync } from "fs"
 import { basename, dirname, resolve, extname } from "path"
 import { Command } from "commander"
-import { detectFormat, detectZipFormat } from "../detect.js"
-import type { FillInput } from "../form/match.js"
+import { parse, detectFormat, detectZipFormat, fillFormFields, extractFormFields, blocksToMarkdown, markdownToHwpx, fillHwpx, fillWithUniqueGuard, PRESET_ALIAS, extractClickHereFields, BUILTIN_TEMPLATES, resolveBuiltinTemplate, readBuiltinTemplate, hwpToHwpx } from "../index.js"
+import type { FillInput } from "../index.js"
+import { fillPlan } from "../form/match.js"
 import { toArrayBuffer, sanitizeError } from "../utils.js"
+
 
 export function registerDocCommands(program: Command): void {
   program
@@ -48,7 +50,7 @@ export function registerDocCommands(program: Command): void {
     .option("--list-templates", "내장 표준 서식 목록 + 누름틀 필드 나열")
     .option("--require-unique", "한 키가 서식의 2곳 이상에 매칭되면 채우지 않고 거부 (반복 라벨 양식 오염 방지)")
     .option("--mask", "채운 값 미노출 — 출력 파일 없이 markdown을 stdout으로 낼 때 본문 대신 안내만 표시")
-    .option("--dry-run", "채우지 않고 서식 필드 목록만 출력")
+    .option("--dry-run", "채우지 않고 서식 필드 목록만 출력 — -j/-f 를 함께 주면 키·배열 번호별로 값을 쓸 칸(표·행·열)을 JSON 으로")
     .option("--silent", "진행 메시지 숨기기")
     .action(async (file: string | undefined, opts, command: Command) => {
       try {
@@ -60,10 +62,13 @@ export function registerDocCommands(program: Command): void {
           opts.format = rootOpts.format
         }
 
+        if (!["hwpx-preserve", "hwpx", "markdown"].includes(opts.format)) {
+          process.stderr.write(`[kordoc] --format 는 hwpx-preserve/hwpx/markdown 중 하나여야 합니다: ${opts.format}\n`)
+          process.exit(1)
+        }
+
         // --list-templates: 내장 서식 목록 + 누름틀 필드
         if (opts.listTemplates) {
-          const { BUILTIN_TEMPLATES, readBuiltinTemplate } = await import("../form/templates.js")
-          const { extractClickHereFields } = await import("../form/click-here.js")
           const list = []
           for (const t of BUILTIN_TEMPLATES) {
             const fields = await extractClickHereFields(readBuiltinTemplate(t))
@@ -78,7 +83,6 @@ export function registerDocCommands(program: Command): void {
         let arrayBuffer: ArrayBuffer
         let inputName: string
         if (templateName) {
-          const { BUILTIN_TEMPLATES, resolveBuiltinTemplate, readBuiltinTemplate } = await import("../form/templates.js")
           const t = resolveBuiltinTemplate(templateName)
           if (!t) {
             process.stderr.write(`[kordoc] 알 수 없는 내장 템플릿: ${templateName} (사용 가능: ${BUILTIN_TEMPLATES.map(x => `${x.id}(${x.aliases[0]})`).join(", ")})\n`)
@@ -103,21 +107,28 @@ export function registerDocCommands(program: Command): void {
 
         if (!opts.silent) process.stderr.write(`[kordoc] ${inputName} 파싱 중...\n`)
 
-        // --dry-run: 필드 목록만 출력 — 서식 입력란(빈 후행 열)이 목록에 나오도록 보존 (#47)
-        if (opts.dryRun) {
-          const { parse } = await import("../parse.js")
-          const { extractFormFields } = await import("../form/recognize.js")
-          const { extractClickHereFields } = await import("../form/click-here.js")
-          const result = await parse(arrayBuffer, { keepTrailingEmptyCols: true })
+        // HWP 5.x 서식은 서식 그대로 HWPX 로 바꿔 누름틀 목록·원본 서식 채우기에 쓴다 (못 바꾸면 null)
+        const hwpAsHwpx = async (): Promise<ArrayBuffer | null> => {
+          if (detectFormat(arrayBuffer) !== "hwp") return null
+          try {
+            const hwpx = await hwpToHwpx(new Uint8Array(arrayBuffer))
+            return hwpx.buffer.slice(hwpx.byteOffset, hwpx.byteOffset + hwpx.byteLength) as ArrayBuffer
+          } catch {
+            return null
+          }
+        }
+
+        // --dry-run: 필드 목록만 출력 — 서식 입력란(빈 후행 열)이 목록에 나오도록 보존 (#47). 값을 함께 주면 아래에서 대상 칸을 낸다
+        if (opts.dryRun && !opts.json && !opts.fields) {
+          const result = await parse(arrayBuffer, { keepTrailingEmptyCols: true, layoutTables: "keep" })
           if (!result.success) {
             process.stderr.write(`[kordoc] 파싱 실패: ${result.error}\n`)
             process.exit(1)
           }
           const formInfo = extractFormFields(result.blocks)
           // 누름틀(CLICK_HERE) 필드도 함께 나열 — 표준 서식은 라벨 표 없이 누름틀만 있을 수 있다
-          const clickHereFields = detectFormat(arrayBuffer) === "hwpx"
-            ? await extractClickHereFields(arrayBuffer)
-            : []
+          const hwpxView = detectFormat(arrayBuffer) === "hwpx" ? arrayBuffer : await hwpAsHwpx()
+          const clickHereFields = hwpxView ? await extractClickHereFields(hwpxView) : []
           if (formInfo.fields.length === 0 && clickHereFields.length === 0) {
             process.stderr.write(`[kordoc] 서식 필드를 찾을 수 없습니다.\n`)
             process.exit(1)
@@ -133,7 +144,8 @@ export function registerDocCommands(program: Command): void {
         let values: Record<string, string> = {}
         if (opts.json) {
           const jsonPath = resolve(opts.json)
-          const jsonContent = readFileSync(jsonPath, "utf-8")
+          // Windows 메모장·PowerShell 이 붙이는 UTF-8 BOM 은 JSON.parse 가 거부한다
+          const jsonContent = readFileSync(jsonPath, "utf-8").replace(/^﻿/, "")
           values = JSON.parse(jsonContent)
         } else if (opts.fields) {
           const fieldsStr: string = opts.fields
@@ -194,15 +206,23 @@ export function registerDocCommands(program: Command): void {
             const zipFormat = await detectZipFormat(arrayBuffer)
             isHwpx = zipFormat === "hwpx"
           }
+          const converted = await hwpAsHwpx()
+          if (converted) {
+            arrayBuffer = converted
+            isHwpx = true
+            if (!opts.silent) process.stderr.write(`[kordoc] HWP 를 서식 그대로 HWPX 로 바꿔 채웁니다\n`)
+          }
           if (!isHwpx) {
             if (!opts.silent) process.stderr.write(`[kordoc] HWPX가 아니므로 hwpx 모드로 전환합니다\n`)
             outputFormat = "hwpx"
           } else {
-            const { fillHwpx } = await import("../form/filler-hwpx.js")
-            const { fillWithUniqueGuard } = await import("../form/match.js")
             const hwpxResult = opts.requireUnique
               ? await fillWithUniqueGuard(inputs, (vals, blocked) => fillHwpx(arrayBuffer, vals, blocked))
               : { ...(await fillHwpx(arrayBuffer, inputs)), rejected: [] as string[] }
+            if (opts.dryRun) {
+              process.stdout.write(JSON.stringify(fillPlan(inputs, hwpxResult.filled, hwpxResult.unmatched, hwpxResult.rejected), null, 2) + "\n")
+              return
+            }
             if (!opts.silent) {
               process.stderr.write(`[kordoc] ${hwpxResult.filled.length}개 필드 채움 (원본 스타일 보존)\n`)
               if (hwpxResult.rejected.length > 0) {
@@ -224,12 +244,7 @@ export function registerDocCommands(program: Command): void {
         }
 
         // ─── 일반 경로: parse → fill → output ─── (양식 입력란 보존, #47)
-        const { parse } = await import("../parse.js")
-        const { extractFormFields } = await import("../form/recognize.js")
-        const { fillFormFields } = await import("../form/filler.js")
-        const { fillWithUniqueGuard } = await import("../form/match.js")
-        const { blocksToMarkdown } = await import("../table/builder.js")
-        const result = await parse(arrayBuffer, { keepTrailingEmptyCols: true })
+        const result = await parse(arrayBuffer, { keepTrailingEmptyCols: true, layoutTables: "keep" })
         if (!result.success) {
           process.stderr.write(`[kordoc] 파싱 실패: ${result.error}\n`)
           process.exit(1)
@@ -243,6 +258,10 @@ export function registerDocCommands(program: Command): void {
         const fillResult = opts.requireUnique
           ? await fillWithUniqueGuard(inputs, (vals, blocked) => fillFormFields(result.blocks, vals, blocked))
           : { ...fillFormFields(result.blocks, inputs), rejected: [] as string[] }
+        if (opts.dryRun) {
+          process.stdout.write(JSON.stringify(fillPlan(inputs, fillResult.filled, fillResult.unmatched, fillResult.rejected), null, 2) + "\n")
+          return
+        }
         if (!opts.silent) {
           process.stderr.write(`[kordoc] ${fillResult.filled.length}개 필드 채움\n`)
           if (fillResult.rejected.length > 0) {
@@ -256,7 +275,6 @@ export function registerDocCommands(program: Command): void {
         const markdown = blocksToMarkdown(fillResult.blocks)
 
         if (outputFormat === "hwpx") {
-          const { markdownToHwpx } = await import("../hwpx/generator.js")
           const hwpxBuffer = await markdownToHwpx(markdown)
           if (opts.output) {
             mkdirSync(dirname(resolve(opts.output)), { recursive: true })
@@ -297,7 +315,7 @@ export function registerDocCommands(program: Command): void {
     .option("--silent", "진행 메시지 숨기기")
     .action(async (file: string, opts) => {
       try {
-        const { placeSealHwpx, detectFormat } = await import("../index.js")
+        const { placeSealHwpx, detectFormat, hwpToHwpx } = await import("../index.js")
         const rootOpts = program.opts()
         const output: string | undefined = opts.output ?? rootOpts.output
         const silent: boolean = opts.silent ?? rootOpts.silent
@@ -306,9 +324,16 @@ export function registerDocCommands(program: Command): void {
           process.stderr.write(`[kordoc] --mode 는 overlap/right/auto 중 하나여야 합니다\n`)
           process.exit(1)
         }
-        const buf = new Uint8Array(readFileSync(resolve(file)))
-        if (detectFormat(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer) !== "hwpx") {
-          process.stderr.write(`[kordoc] seal 은 HWPX 전용입니다 (HWP 5.x 바이너리는 미지원)\n`)
+        let buf: Uint8Array = new Uint8Array(readFileSync(resolve(file)))
+        let format = detectFormat(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer)
+        if (format === "hwp") {
+          // HWP 5.x 는 서식 그대로 HWPX 로 바꿔 찍는다
+          buf = await hwpToHwpx(buf)
+          format = "hwpx"
+          if (!silent) process.stderr.write(`[kordoc] HWP 를 서식 그대로 HWPX 로 바꿔 찍습니다\n`)
+        }
+        if (format !== "hwpx") {
+          process.stderr.write(`[kordoc] seal 은 HWPX·HWP 5.x 전용입니다 (감지된 포맷: ${format})\n`)
           process.exit(1)
         }
         const imgPath = resolve(opts.image)
@@ -351,7 +376,7 @@ export function registerDocCommands(program: Command): void {
             dyMm: parseNum("--dy", opts.dy, { allowNeg: true }),
           }],
         )
-        const outPath = resolve(output ?? file.replace(/\.hwpx$/i, "") + ".sealed.hwpx")
+        const outPath = resolve(output ?? file.replace(/\.hwpx?$/i, "") + ".sealed.hwpx")
         mkdirSync(dirname(outPath), { recursive: true })
         writeFileSync(outPath, Buffer.from(result.buffer))
         if (!silent) {
@@ -368,10 +393,60 @@ export function registerDocCommands(program: Command): void {
     })
 
   program
+    .command("memo <file>")
+    .description('앵커 문구에 메모(한글 메모 넣기)를 단다 — 본문 글·서식은 그대로 (#180) — kordoc memo 보고서.hwpx --anchor "찾을 문구" --text "메모 내용" -o 결과.hwpx')
+    .requiredOption("--anchor <text>", "메모를 붙일 본문 글 (한 문단 안)")
+    .requiredOption("--text <text>", "메모 글 (\\n 은 메모 안 줄바꿈)")
+    .option("--author <name>", "작성자", "kordoc")
+    .option("-n, --occurrence <num>", "같은 앵커가 여럿일 때 0-based 선택", "0")
+    .option("-o, --output <path>", "출력 경로 (기본: <입력>.memo.hwpx)")
+    .option("--silent", "진행 메시지 숨기기")
+    .action(async (file: string, opts) => {
+      try {
+        const { addMemoHwpx, detectFormat, hwpToHwpx } = await import("../index.js")
+        const rootOpts = program.opts()
+        const output: string | undefined = opts.output ?? rootOpts.output
+        const silent: boolean = opts.silent ?? rootOpts.silent
+        let buf: Uint8Array = new Uint8Array(readFileSync(resolve(file)))
+        let format = detectFormat(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer)
+        if (format === "hwp") {
+          // HWP 5.x 는 서식 그대로 HWPX 로 바꿔 메모를 단다
+          buf = await hwpToHwpx(buf)
+          format = "hwpx"
+          if (!silent) process.stderr.write(`[kordoc] HWP 를 서식 그대로 HWPX 로 바꿔 메모를 답니다\n`)
+        }
+        if (format !== "hwpx") {
+          process.stderr.write(`[kordoc] memo 는 HWPX·HWP 5.x 전용입니다 (감지된 포맷: ${format})\n`)
+          process.exit(1)
+        }
+        const occurrence = Number(opts.occurrence)
+        if (!Number.isInteger(occurrence) || occurrence < 0) {
+          process.stderr.write(`[kordoc] --occurrence 값이 잘못됐습니다: ${opts.occurrence} (0 이상 정수)\n`)
+          process.exit(1)
+        }
+        const result = await addMemoHwpx(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer,
+          [{ anchor: opts.anchor, text: String(opts.text).replace(/\\n/g, "\n"), author: opts.author, occurrence }])
+        const outPath = resolve(output ?? file.replace(/\.hwpx?$/i, "") + ".memo.hwpx")
+        mkdirSync(dirname(outPath), { recursive: true })
+        writeFileSync(outPath, Buffer.from(result.buffer))
+        if (!silent) {
+          for (const p of result.placed) process.stderr.write(`[kordoc] 메모 ${p.number}: "${p.anchor}" #${p.occurrence}\n`)
+          process.stderr.write(`[kordoc] → ${outPath}\n`)
+        }
+      } catch (err) {
+        process.stderr.write(`[kordoc] 오류: ${sanitizeError(err)}\n`)
+        process.exit(1)
+      }
+    })
+
+  program
     .command("patch <original> <edited>")
-    .description("서식 보존 라운드트립 패치 — 편집된 마크다운을 원본 HWPX/HWP에 in-place 반영 (kordoc patch 원본.hwpx 편집.md -o 출력.hwpx). 미적용(skip) 편집이 있으면 exit 2")
+    .description("서식 보존 라운드트립 패치 — 편집된 마크다운을 원본 HWPX/HWP에 in-place 반영 (kordoc patch 원본.hwpx 편집.md -o 출력.hwpx). 견본 서식 그대로 새 문서 쓰기(서식 베끼기)도 이 경로: 견본을 --keep-layout-tables 로 읽어 내용만 새로 쓴 뒤 patch — HWPX 는 문단 추가·삭제를 같은 항목 부호 견본 문단 서식으로 반영. 제자리 반영 못 한 편집(HWP 의 문단 추가·삭제 등)이 있으면 편집 내용을 다 담은 대체본 <출력>.rewrite.hwpx(HWP 는 서식 그대로 HWPX 로 바꿔 반영, HWPX 는 원본 서식 새로쓰기)도 쓰고 exit 2")
     .option("-o, --output <path>", "출력 경로 (기본: <원본>.patched.hwpx|.hwp)")
     .option("--no-verify", "패치 후 재파싱 자동 검증 생략")
+    .option("--no-structure", "문단 추가·삭제를 반영하지 않고 건너뜀 (HWPX — 글 수정만, 문서 골격 고정)")
+    .option("--keep-lineseg", "글이 바뀐 문단의 줄 나눔 정보를 지우지 않고 원본 줄 위치를 남김 (HWP 5.x — 기본은 지워서 한컴이 다시 짬)")
+    .option("--json", "결과(적용 수·건너뛴 편집·검증 잔차)를 JSON 으로 stdout 출력 — --silent 와 함께 써도 나온다")
     .option("--silent", "진행 메시지 숨기기")
     .action(async (original: string, edited: string, opts) => {
       try {
@@ -385,23 +460,43 @@ export function registerDocCommands(program: Command): void {
 
         const format = detectFormat(originalBuf.buffer as ArrayBuffer)
         const result = format === "hwp"
-          ? await patchHwp(originalBuf, editedMarkdown, { verify: opts.verify !== false })
-          : await patchHwpx(originalBuf, editedMarkdown, { verify: opts.verify !== false })
-        if (!result.success || !result.data) {
-          process.stderr.write(`[kordoc] 패치 실패: ${result.error ?? "알 수 없는 오류"}\n`)
-          process.exit(1)
-        }
-
+          ? await patchHwp(originalBuf, editedMarkdown, { verify: opts.verify !== false, keepLineseg: opts.keepLineseg === true })
+          : await patchHwpx(originalBuf, editedMarkdown, { verify: opts.verify !== false, structure: opts.structure !== false })
         const ext = format === "hwp" ? ".hwp" : ".hwpx"
         const outPath = resolve(output ?? original.replace(/\.hwpx?$/i, "") + ".patched" + ext)
+        // 제자리 반영 못 한 편집이 있으면 편집 내용을 다 담은 대체본(원본 서식 새로쓰기)도 쓴다
+        const { needsRewrite, rewriteEdited, rewritePath } = await import("../roundtrip/rewrite-fallback.js")
+        const rewrite = needsRewrite(result) ? await rewriteEdited(originalBuf, format !== "hwp", editedMarkdown, result.success) : null
+        const rewriteOut = rewrite ? rewritePath(outPath) : undefined
+        if (rewrite && rewriteOut) {
+          mkdirSync(dirname(rewriteOut), { recursive: true })
+          writeFileSync(rewriteOut, rewrite.data)
+          if (!silent && !opts.json) process.stderr.write(`[kordoc] 대체본(편집 내용 전부 반영, ${{ patch: "원본 서식 그대로 HWPX 로 바꿔 반영", template: "원본 서식 견본", plain: "kordoc 기본 서식" }[rewrite.how]}) → ${rewriteOut}\n`)
+        }
+
+        if (!result.success || !result.data) {
+          if (opts.json) process.stdout.write(JSON.stringify({ success: false, error: result.error ?? "알 수 없는 오류", applied: result.applied, skipped: result.skipped, ...(rewriteOut ? { rewrite: rewriteOut } : {}) }, null, 2) + "\n")
+          process.stderr.write(`[kordoc] 패치 실패: ${result.error ?? "알 수 없는 오류"}\n`)
+          process.exit(rewriteOut ? 2 : 1)
+        }
+
         mkdirSync(dirname(outPath), { recursive: true })
         writeFileSync(outPath, result.data)
 
-        if (!silent) {
+        if (opts.json) {
+          // 외부 도구가 부분 적용(skip)·검증 잔차를 사용자에게 알릴 수 있게 — --silent 로는 사유가 통째로 사라졌다
+          process.stdout.write(JSON.stringify({
+            success: true, output: outPath, applied: result.applied, skipped: result.skipped, ...(rewriteOut ? { rewrite: rewriteOut } : {}),
+            ...(result.warnings ? { warnings: result.warnings } : {}),
+            ...(result.verification ? { verification: result.verification.stats } : {}),
+          }, null, 2) + "\n")
+        }
+        if (!silent && !opts.json) {
           process.stderr.write(`[kordoc] ${result.applied}개 변경 적용 (원본 서식 보존) → ${outPath}\n`)
           for (const s of result.skipped) {
             process.stderr.write(`[kordoc] ⚠️ SKIP: ${s.reason}${s.before ? ` | ${s.before}` : ""}\n`)
           }
+          for (const w of result.warnings ?? []) process.stderr.write(`[kordoc] ⚠️ ${w}\n`)
           if (result.verification) {
             const v = result.verification.stats
             const residual = v.added + v.removed + v.modified
@@ -414,6 +509,34 @@ export function registerDocCommands(program: Command): void {
       } catch (err) {
         process.stderr.write(`[kordoc] 오류: ${sanitizeError(err)}\n`)
         process.exit(1)
+      }
+    })
+
+  program
+    .command("compare <a> <b>")
+    .description("두 문서 비교 — 추가·삭제·변경 블록 (HWP↔HWPX 등 형식이 달라도 됨, 신구대조표용). 차이가 있으면 exit 1")
+    .option("--json", "비교 결과(stats·diffs)를 JSON 으로 stdout 출력")
+    .action(async (a: string, b: string, opts) => {
+      try {
+        const { compare } = await import("../index.js")
+        const read = (p: string): ArrayBuffer => { const buf = readFileSync(resolve(p)); return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer }
+        const result = await compare(read(a), read(b))
+        const { stats, diffs } = result
+        if (opts.json) process.stdout.write(JSON.stringify(result, null, 2) + "\n")
+        else {
+          process.stdout.write(`추가 ${stats.added} · 삭제 ${stats.removed} · 변경 ${stats.modified} · 동일 ${stats.unchanged}\n`)
+          for (const d of diffs) {
+            if (d.type === "unchanged") continue
+            const mark = d.type === "added" ? "+" : d.type === "removed" ? "-" : "~"
+            const text = (blk?: { text?: string; table?: unknown }) => (blk?.text ?? (blk?.table ? "[표]" : "")).replace(/\s+/g, " ").slice(0, 160)
+            if (d.type === "modified") process.stdout.write(`~ ${text(d.before)}\n  → ${text(d.after)}\n`)
+            else process.stdout.write(`${mark} ${text(d.after ?? d.before)}\n`)
+          }
+        }
+        process.exit(stats.added + stats.removed + stats.modified > 0 ? 1 : 0)
+      } catch (err) {
+        process.stderr.write(`[kordoc] 오류: ${sanitizeError(err)}\n`)
+        process.exit(2)
       }
     })
 

@@ -220,6 +220,41 @@ describe("detectRulingLines — 채움 경계", () => {
     assert.equal(verticals.length, 3)
   })
 
+  it("색 머리 띠를 가른 흐린 흰 줄을 본문 세로 괘선과 같은 x 의 세로선으로 낸다", () => {
+    // cbe-record-guide: 0.25pt 흰 구분선이 216dpi 에서 1px 미만이라 띠보다 조금 밝은 줄로만 남는다(실측 띠 179 → 줄 223)
+    const w = 900, h = 400
+    const rgba = makeCanvas(w, h)
+    fillRect(rgba, w, 100, 30, 800, 87, 210)
+    fillRect(rgba, w, 450, 30, 450, 87, 235)
+    for (let r = 0; r <= 4; r++) drawHLine(rgba, w, 100, 800, 90 + r * 60)
+    for (const x of [100, 450, 800]) drawVLine(rgba, w, x, 90, 330)
+    const { verticals } = detectRulingLines(rgba, w, h, SCALE)
+    assert.ok(verticals.some(v => Math.abs(v.x1 - 450) <= 3 && v.y2 <= 92 && v.y1 <= 40), JSON.stringify(verticals))
+  })
+
+  it("띠 안 밝은 줄이라도 본문 세로 괘선과 x 가 안 맞으면 선이 아님", () => {
+    const w = 900, h = 400
+    const rgba = makeCanvas(w, h)
+    fillRect(rgba, w, 100, 30, 800, 87, 210)
+    fillRect(rgba, w, 300, 30, 300, 87, 235)
+    for (let r = 0; r <= 4; r++) drawHLine(rgba, w, 100, 800, 90 + r * 60)
+    for (const x of [100, 450, 800]) drawVLine(rgba, w, x, 90, 330)
+    const { verticals } = detectRulingLines(rgba, w, h, SCALE)
+    assert.ok(!verticals.some(v => Math.abs(v.x1 - 300) <= 3), JSON.stringify(verticals))
+  })
+
+  it("진한 머리 띠 아랫변이 회색 첫 열에서 끊겨도 표 폭 가로선으로, 회색 첫 열 오른쪽 변은 열 경계로 낸다 (비법인 지목별 토지 표)", () => {
+    const w = 900, h = 400
+    const rgba = makeCanvas(w, h)
+    fillRect(rgba, w, 100, 30, 800, 75, 90) // 진한 머리 띠
+    fillRect(rgba, w, 100, 76, 180, 330, 220) // 회색 첫 열 — 띠 아래 왼쪽 끝을 가린다
+    for (let r = 1; r <= 4; r++) drawHLine(rgba, w, 100, 800, 90 + r * 60)
+    for (const x of [450, 600]) drawVLine(rgba, w, x, 76, 330)
+    const { horizontals, verticals } = detectRulingLines(rgba, w, h, SCALE)
+    assert.ok(horizontals.some(l => Math.abs(l.y1 - 76) <= 3 && l.x1 <= 103 && l.x2 >= 797), JSON.stringify(horizontals))
+    assert.ok(verticals.some(v => Math.abs(v.x1 - 181) <= 3 && v.y2 - v.y1 > 200), JSON.stringify(verticals))
+  })
+
   it("크림색 바탕 쪽(휘도 242)의 흰 상자는 채움이 아니다 — 바탕은 최빈 휘도", () => {
     const w = 900, h = 400
     const rgba = makeCanvas(w, h)

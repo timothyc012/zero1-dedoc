@@ -82,8 +82,9 @@ describe("마크다운 글·링크의 날 HTML (PDF 리뷰 r1 재현)", () => {
   const liveTags = (html: string) => [...html.matchAll(/<(script|img|b)\b[^>]*>/gi)].map(m => m[0])
 
   it("escapeGfm: 링크·그림 목적지 모양 스팬도 공백·<> 가 있으면 보호하지 않는다", () => {
-    assert.equal(escapeGfm('Mask ](https://a <img src=x onerror="x">) end'), 'Mask ](https://a \\<img src=x onerror="x">) end')
-    assert.equal(escapeGfm("span ![a](b <img src=x onerror=alert(6)>) end"), "span ![a](b \\<img src=x onerror=alert(6)>) end")
+    // 보호하지 않은 "](" 는 링크가 되지 않게 \] 로 (보안 감사 2026-10-13)
+    assert.equal(escapeGfm('Mask ](https://a <img src=x onerror="x">) end'), 'Mask \\](https://a \\<img src=x onerror="x">) end')
+    assert.equal(escapeGfm("span ![a](b <img src=x onerror=alert(6)>) end"), "span ![a\\](b \\<img src=x onerror=alert(6)>) end")
     // kordoc 이 내는 모양(공백·<> 없는 목적지)은 종전처럼 통째 보호 — _ 이스케이프로 URL·파일명이 깨지지 않는다
     assert.equal(escapeGfm("[보기](https://a.go.kr/x_y?q=1&r=2) ![image](image_001.png)"), "[보기](https://a.go.kr/x_y?q=1&r=2) ![image](image_001.png)")
   })

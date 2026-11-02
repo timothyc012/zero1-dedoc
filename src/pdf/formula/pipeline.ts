@@ -7,7 +7,7 @@
 
 import type { PDFiumLibrary, PDFiumDocument } from "@hyzyla/pdfium"
 import type { InferenceSession } from "onnxruntime-node"
-import type { PreTrainedTokenizer } from "@huggingface/transformers"
+import type { Tokenizer } from "@huggingface/tokenizers"
 
 /** sharp 은 CommonJS `export =` 형태라 타입을 직접 import 하기 까다로움. 함수형 시그니처만 사용. */
 type SharpFactory = (
@@ -30,6 +30,7 @@ import {
 } from "./models.js"
 import type { FormulaRegion, PixelFrame } from "./types.js"
 import { join } from "path"
+import { disableOrtTelemetry } from "../../ocr/runtime-env.js"
 
 /** PDF 페이지 렌더 해상도 (scale=2 → 약 144 DPI). 수식 인식에는 이 이상은 과함. */
 const RENDER_SCALE = 2
@@ -58,14 +59,24 @@ export interface PageFormulaResult {
  * 수식 OCR 실행 컨텍스트. 처음 호출 시 무겁게 초기화 (ONNX 세션 로드),
  * 이후 runOnBuffer / runOnPages 를 여러 번 호출해 재사용 가능.
  *
- * 모든 의존성(onnxruntime-node, @huggingface/transformers, @hyzyla/pdfium, sharp)은
+ * 모든 의존성(onnxruntime-node, @huggingface/tokenizers, @hyzyla/pdfium, sharp)은
  * optional 이므로 dynamic import. 미설치 시 초기화에서 명확한 에러 메시지 반환.
  */
+/**
+ * 쪽당 수식 영역 상한 — 넘으면 별행(display) 수식부터 남긴다. 위에서부터 자르면 인라인 수식 많은 쪽 아래의 별행 수식이 버려졌다
+ * (arXiv 수식 정답 대조: 영역 68개 쪽에서 아래 별행 3개). 남긴 영역은 원래 순서 그대로
+ */
+export function capFormulaRegions<T extends { kind: string }>(regions: T[], max: number): T[] {
+  if (regions.length <= max) return regions
+  const kept = new Set([...regions.filter(r => r.kind === "display"), ...regions.filter(r => r.kind !== "display")].slice(0, max))
+  return regions.filter(r => kept.has(r))
+}
+
 export class FormulaPipeline {
   private mfd: InferenceSession
   private encoder: InferenceSession
   private decoder: InferenceSession
-  private tokenizer: PreTrainedTokenizer
+  private tokenizer: Tokenizer
   private ort: typeof import("onnxruntime-node")
   private sharp: SharpFactory
   private pdfium: PDFiumLibrary
@@ -75,7 +86,7 @@ export class FormulaPipeline {
     mfd: InferenceSession
     encoder: InferenceSession
     decoder: InferenceSession
-    tokenizer: PreTrainedTokenizer
+    tokenizer: Tokenizer
     ort: typeof import("onnxruntime-node")
     sharp: SharpFactory
     pdfium: PDFiumLibrary
@@ -96,6 +107,7 @@ export class FormulaPipeline {
    * `ensureFormulaModels()` 를 먼저 돌려야 한다.
    */
   static async create(options?: FormulaPipelineOptions): Promise<FormulaPipeline> {
+    disableOrtTelemetry()
     const opts: Required<FormulaPipelineOptions> = {
       scale: options?.scale ?? RENDER_SCALE,
       maxRegionsPerPage: options?.maxRegionsPerPage ?? 50,
@@ -111,9 +123,9 @@ export class FormulaPipeline {
         "sharp",
         () => import("sharp") as unknown as Promise<{ default?: SharpFactory } & SharpFactory>,
       ),
-      tryImport<typeof import("@huggingface/transformers")>(
-        "@huggingface/transformers",
-        () => import("@huggingface/transformers"),
+      tryImport<typeof import("@huggingface/tokenizers")>(
+        "@huggingface/tokenizers",
+        () => import("@huggingface/tokenizers"),
       ),
       tryImport<typeof import("@hyzyla/pdfium")>(
         "@hyzyla/pdfium",
@@ -145,15 +157,11 @@ export class FormulaPipeline {
       ortMod.InferenceSession.create(decPath, sessionOpts),
     ])
 
-    // Transformers.js 의 PreTrainedTokenizer 를 로컬 tokenizer.json 으로 로드.
-    // AutoTokenizer.from_pretrained 는 HF hub 접근을 시도하므로 우회.
+    // 로컬 tokenizer.json 으로 토크나이저를 만든다(허브 접근 없음). 디코딩만 쓴다 —
+    // 예전 Transformers.js PreTrainedTokenizer.decode 와 같은 결과(토큰 1200개 전부 + 무작위 시퀀스 2만 개 대조)
     const { readFile } = await import("fs/promises")
     const tokenizerJson = JSON.parse(await readFile(tokPath, "utf-8"))
-    const PretrainedCtor = hfMod.PreTrainedTokenizer as unknown as new (
-      json: unknown,
-      config: Record<string, unknown>,
-    ) => PreTrainedTokenizer
-    const tokenizer = new PretrainedCtor(tokenizerJson, {})
+    const tokenizer = new hfMod.Tokenizer(tokenizerJson, {})
 
     const pdfium = await pdfiumMod.PDFiumLibrary.init()
 
@@ -236,7 +244,6 @@ export class FormulaPipeline {
   ): Promise<PageFormulaResult | null> {
     const { originalWidth: pdfWidth, originalHeight: pdfHeight } = page.getOriginalSize()
 
-    const sharpCtor = this.sharp
     const rendered = await page.render({
       scale: this.opts.scale,
       render: async ({ data, width, height }) => {
@@ -248,15 +255,26 @@ export class FormulaPipeline {
     const { data: bgra, width: rw, height: rh } = rendered
     const rgba = bgraToRgba(bgra)
 
-    const pageFrame: PixelFrame = { width: rw, height: rh, data: rgba }
+    const regions = await this.recognizeFrame({ width: rw, height: rh, data: rgba }, pageNumber)
+    return {
+      pageNumber,
+      renderedWidth: rw,
+      renderedHeight: rh,
+      pdfWidth,
+      pdfHeight,
+      regions,
+    }
+  }
 
+  /** 래스터 한 장(RGBA)의 수식 영역을 검출·인식한다 — PDF 쪽 렌더와 이미지 OCR 이 같이 쓴다. 좌표는 입력 픽셀 */
+  async recognizeFrame(pageFrame: PixelFrame, pageNumber = 1): Promise<FormulaRegion[]> {
+    const { width: rw, height: rh, data: rgba } = pageFrame
+    const sharpCtor = this.sharp
     // 1) 수식 영역 검출
     const regions0 = await detectFormulaRegions(this.mfd, pageFrame, this.ort)
-    if (regions0.length === 0) {
-      return { pageNumber, renderedWidth: rw, renderedHeight: rh, pdfWidth, pdfHeight, regions: [] }
-    }
+    if (regions0.length === 0) return []
 
-    const capped = regions0.slice(0, this.opts.maxRegionsPerPage)
+    const capped = capFormulaRegions(regions0, this.opts.maxRegionsPerPage)
     const regions: FormulaRegion[] = []
 
     // 2) 각 영역 crop → 인식
@@ -299,15 +317,7 @@ export class FormulaPipeline {
 
       regions.push({ ...r, latex })
     }
-
-    return {
-      pageNumber,
-      renderedWidth: rw,
-      renderedHeight: rh,
-      pdfWidth,
-      pdfHeight,
-      regions,
-    }
+    return regions
   }
 }
 

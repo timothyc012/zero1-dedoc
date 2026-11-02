@@ -169,15 +169,15 @@ describe("patchHwpx 행 연산: GFM 표", () => {
     assert.ok(newCell && / header="0"/.test(newCell[0]), "삽입 행은 데이터 행 서식")
   })
 
-  it("빈 행 삽입 → 렌더에서 소실되므로 skip", async () => {
+  it("빈 행 삽입 → 서식 입력 행으로 남는다 (렌더가 앵커 칸이 다 빈 행을 보존, #144)", async () => {
     const { original, markdown } = await make(GFM_MD)
     const edited = markdown.replace("| 장소 | 박영희 | 본청 |", "| 장소 | 박영희 | 본청 |\n|  |  |  |")
     const res = await patchHwpx(original, edited)
     assert.ok(res.success)
-    assert.equal(res.applied, 0)
-    assert.ok(res.skipped.some(s => s.reason.includes("렌더에서 변형")), `skipped: ${JSON.stringify(res.skipped)}`)
+    assert.equal(res.applied, 1)
+    assert.deepEqual(res.skipped, [])
     const r2 = await reparse(res.data!)
-    assert.equal(r2.markdown, markdown, "원본 유지")
+    assert.equal(r2.markdown.trim(), edited.trim())
   })
 
   it("이미지 토큰 포함 행 삽입 → skip", async () => {
@@ -271,11 +271,33 @@ describe("patchHwpx 행 연산: HTML 표", () => {
 describe("patchHwpx 정직한 보고: 셀 줄 수 변경", () => {
   const MULTILINE_MD = "<table>\n<tr><th>항목</th><th>내용</th></tr>\n<tr><td>비고</td><td>첫줄<br>둘째줄</td></tr>\n</table>"
 
-  it("셀 줄 삭제 → 적용되지만 빈 문단 잔존을 partial로 보고", async () => {
+  it("셀 줄 삭제 → 칸 문단째 지움 (구조 편집, 기본)", async () => {
+    const { original, markdown } = await make(MULTILINE_MD)
+    const edited = markdown.replace("첫줄<br>둘째줄", "첫줄만")
+    const res = await patchHwpx(original, edited)
+    assert.ok(res.success)
+    assert.equal(res.applied, 1)
+    assert.deepEqual(res.skipped, [])
+    const r2 = await reparse(res.data!)
+    assert.equal(r2.markdown, edited)
+  })
+
+  it("셀 줄 추가 → 칸 문단 복제로 새 줄 (구조 편집, 기본)", async () => {
+    const { original, markdown } = await make(MULTILINE_MD)
+    const edited = markdown.replace("첫줄<br>둘째줄", "첫줄<br>끼운줄<br>둘째줄<br>셋째줄")
+    const res = await patchHwpx(original, edited)
+    assert.ok(res.success)
+    assert.equal(res.applied, 1)
+    assert.deepEqual(res.skipped, [])
+    const r2 = await reparse(res.data!)
+    assert.equal(r2.markdown, edited)
+  })
+
+  it("structure: false — 셀 줄 삭제 → 적용되지만 빈 문단 잔존을 partial로 보고", async () => {
     const { original, markdown } = await make(MULTILINE_MD)
     const edited = markdown.replace("첫줄<br>둘째줄", "첫줄만")
     assert.notEqual(edited, markdown)
-    const res = await patchHwpx(original, edited)
+    const res = await patchHwpx(original, edited, { structure: false })
     assert.ok(res.success)
     assert.equal(res.applied, 1)
     const note = res.skipped.find(s => s.reason.includes("줄 삭제"))
@@ -284,13 +306,48 @@ describe("patchHwpx 정직한 보고: 셀 줄 수 변경", () => {
     assert.equal(r2.markdown, edited, "텍스트 자체는 편집대로 반영")
   })
 
-  it("셀 줄 추가 병합 → partial로 보고", async () => {
+  it("structure: false — 셀 줄 추가 병합 → partial로 보고", async () => {
     const { original, markdown } = await make(MULTILINE_MD)
     const edited = markdown.replace("첫줄<br>둘째줄", "첫줄<br>둘째줄<br>셋째줄")
-    const res = await patchHwpx(original, edited)
+    const res = await patchHwpx(original, edited, { structure: false })
     assert.ok(res.success)
     assert.equal(res.applied, 1)
     const note = res.skipped.find(s => s.reason.includes("병합 적용"))
     assert.ok(note?.partial === true, `partial 보고: ${JSON.stringify(res.skipped)}`)
+  })
+})
+
+describe("행 추가 복제 행 테두리 — 머리 구분선·바깥선을 행마다 긋지 않는다", () => {
+  /** 행마다 첫 칸이 참조하는 borderFill 의 윗변·아랫변 [type, width] */
+  async function rowBorders(data: Uint8Array): Promise<Array<{ top: string; bottom: string }>> {
+    const zip = await JSZip.loadAsync(data)
+    const header = await zip.file("Contents/header.xml")!.async("string")
+    const section = await zip.file("Contents/section0.xml")!.async("string")
+    const side = (id: string, s: string) => {
+      const def = header.match(new RegExp(`<hh:borderFill id="${id}"[\\s\\S]*?</hh:borderFill>`))![0]
+      const m = def.match(new RegExp(`<hh:${s}Border type="(\\w+)" width="([^"]+)"`))!
+      return `${m[1]} ${m[2]}`
+    }
+    return [...section.matchAll(/<hp:tr>[\s\S]*?<\/hp:tr>/g)].map(tr => {
+      const id = tr[0].match(/<hp:tc [^>]*borderFillIDRef="(\d+)"/)![1]
+      return { top: side(id, "top"), bottom: side(id, "bottom") }
+    })
+  }
+
+  it("본문 1행 공문서 표를 8행으로 늘리면 이중선은 머리 아래 한 번, 굵은 바깥선은 새 마지막 행 아래에만", async () => {
+    const buf = await markdownToHwpx("# 시험\n\n| 구분 | 내용 |\n| --- | --- |\n| 가 | 나 |\n", { gongmun: { preset: "official" } })
+    const original = new Uint8Array(buf)
+    const before = await rowBorders(original)
+    assert.match(before[1].top, /^DOUBLE_SLIM/) // 머리 구분선
+    const md = (await parseHwpx(buf)).markdown
+    const edited = md.replace("| 가 | 나 |", Array.from({ length: 8 }, (_, i) => `| 항목${i + 1} | 내용${i + 1} |`).join("\n"))
+    const r = await patchHwpx(original, edited)
+    assert.ok(r.success && r.data, r.error)
+    const rows = await rowBorders(r.data!)
+    assert.equal(rows.length, 9)
+    assert.equal(rows[1].top, before[1].top)
+    for (let i = 2; i < 9; i++) assert.equal(rows[i].top, "SOLID 0.12 mm", `${i}행 윗변`)
+    for (let i = 1; i < 8; i++) assert.equal(rows[i].bottom, "SOLID 0.12 mm", `${i}행 아랫변`)
+    assert.equal(rows[8].bottom, before[1].bottom) // 바깥 아랫변은 새 마지막 행으로
   })
 })

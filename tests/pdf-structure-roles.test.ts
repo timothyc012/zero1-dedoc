@@ -1,6 +1,6 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { isChartTable, isProseTable, isTableOfContents, tocBlock, TOC_BLOCKS } from "../src/pdf/table-roles.js"
+import { isChartTable, isProseFragmentTable, isProseTable, isTableOfContents, tocBlock, TOC_BLOCKS } from "../src/pdf/table-roles.js"
 import { demoteNonHeadingRoles } from "../src/pdf/heading-demote.js"
 import { xyCutOrder } from "../src/pdf/xy-cut.js"
 import { splitSingleCellTables } from "../src/pdf/text-clean.js"
@@ -28,6 +28,12 @@ describe("PDF table roles", () => {
     assert.equal(isTableOfContents(table([["Seoul", "31"], ["Busan", "12"], ["Daegu", "9"], ["Incheon", "8"]])), false)
   })
 
+  it("takes a row holding two entries' page labels (교육청 학교 매뉴얼 목차 \"51 65\")", () => {
+    assert.equal(isTableOfContents(table([["3. 사전의견 수렴", "48"], ["4. 설명회 추진 5. 추진위원회 구성", "51 65"], ["6. 학부모 설문조사", "69"]])), true)
+    // 갈라 읽어도 쪽 번호가 줄면 목차가 아니다
+    assert.equal(isTableOfContents(table([["가", "48"], ["나 다", "65 51"], ["라", "69"]])), false)
+  })
+
   it("keeps contents lines in reading order", () => {
     const block = tocBlock(table([["Introduction", "1"], ["Methods", "7"], ["Results", "12"]]), 1,
       { page: 1, x: 0, y: 0, width: 100, height: 40 })
@@ -44,12 +50,55 @@ describe("PDF table roles", () => {
     ])), false)
   })
 
+  it("treats sentence fragments scattered over OCR columns as prose, not label/value cells (손글씨 편지)", () => {
+    assert.equal(isProseFragmentTable(table([["한 달 전에 싸움을", "하고 집을 나간"], ["아버지는 이젠 몽실이", "아버지가 아닌 것일까?"], ["정말 돌아오지", "않는 것일까?"]])), true)
+    assert.equal(isProseFragmentTable(table([["구분", "사업명", "예산액"], ["복지", "자활근로사업", "679,330"], ["보건", "결핵검진 지원", "1,550"]])), false)
+  })
+
+  it("keeps an OCR grid with a Hangul header row as a table even when a year column looks like an axis (공정위 피심인 일반현황)", () => {
+    const years = ["2024", "2023", "2022", "2021"]
+    const rows = [["사업자명", "연도", "자본금", "매출액"], ...years.map((y, i) => [i === 0 ? "대성" : "", y, "251", String(174115 - i * 1000)])]
+    assert.equal(isChartTable(table(rows), true), false)
+  })
+
   it("recognizes a value axis or a sparse grid of quantities as a chart", () => {
     assert.equal(isChartTable(table([["90\n80\n70\n60\n50", "81"], ["", "56"], ["", "47"]])), true)
     assert.equal(isChartTable(table([["2.5%", "", ""], ["", "-3.1%", ""], ["", "", "-6.4%"]])), true)
     // Phone numbers in a sparse grid are identifiers, not plotted values.
     assert.equal(isChartTable(table([["", "", "(044-201-3823)"], ["", "", "(044-201-4770)"], ["", "", "(044-201-3813)"]])), false)
     assert.equal(isChartTable(table([["Year", "Rate"], ["2012", "10%"], ["2013", "6%"], ["2014", "7%"]])), false)
+    // 축 눈금 칸에 막대 값이 붙고("80 45") 아래에 가로 축 라벨이 와도 값 축이다 (ODL 038)
+    assert.equal(isChartTable(table([["80 45", "1", "1"], ["60", "5", ""], ["40", "81", "73"], ["20", "51", ""], ["0", "", ""],
+      ["July 2020", "October 2020", "January 2021"]])), true)
+    // OCR 이 눈금 둘을 한 줄로 읽고("100% 90%"), 가로 축 연도 칸("2014 2015 …")은 눈금 위의 값이 아니다 (ODL 059)
+    assert.equal(isChartTable(table([["100% 90%", "", "8%"], ["80% 70%", "", ""], ["60%", "", ""], ["50% 40%", "98%", "33%"],
+      ["30% 20%", "", ""], ["10%", "", "31%"], ["0%", "", ""]])), true)
+    assert.equal(isChartTable(table([["600", "", "", "506"], ["400", "232", "347", ""], ["200", "97", "", ""], ["0", "", "", ""],
+      ["", "", "2014 2015 2016 2017 2018", ""], ["", "China", "", "Viet Nam Malaysia"]])), true)
+  })
+
+  it("keeps the looser axis test for a grid read by OCR from a chart image (보도자료 주택통계 그래프)", () => {
+    // OCR 이 눈금과 막대 값을 한 칸에 섞고 가로 축 날짜를 한 칸에 몰았다 — 눈금 "20 15 10 5" 만 한 걸음씩 준다
+    const ocrChart = table([["지역별전월세거래량", "수도권지방전국"], ["(만건)", ""], ["30", "28.0 24.4 23.1 25.4 25.3 25.3 23.4 25"],
+      ["21.4 20.0 20.8 20", "21.0 21.9 2.1"], ["15", ""], ["10", ""], ["5", ""], ["", "0 25.10 25.1 ‘25.12 26.1 ’26.2 ’26.3"]])
+    assert.equal(isChartTable(ocrChart, true), true)
+  })
+
+  it("does not read a data table's falling numbers as a value axis", () => {
+    // 월별 건수 열 끝의 "3 2 1 0" — 열의 일부일 뿐 (korean-publang-2015)
+    assert.equal(isChartTable(table([["구분", "맞춤법", "띄어쓰기"], ["4월", "7", "9"], ["5월", "4", "5"], ["6월", "2", "1"],
+      ["7월", "3", "6"], ["8월", "2", "10"], ["9월", "1", "8"], ["10월", "0", "7"]])), false)
+    // 내림차순 연도 열 옆 금액은 그 눈금 위의 값이 아니다 (khs-budget-2014 계속비)
+    assert.equal(isChartTable(table([["연도", "예산액"], ["2018", "612,868,300"], ["2017", "1,544,362,400"],
+      ["2016", "2,789,535,800"], ["2015", "3,101,587,500"]])), false)
+    // 배점 열 "10.0 9.0 8.0 7.0 6.0" 옆 비율·업체 수 (hwp3-sample16 별표2)
+    assert.equal(isChartTable(table([["등급", "비율", "1점", "10점"], ["탁월", "10", "1.0", "10.0"], ["우수", "20", "0.9", "9.0"],
+      ["보통", "40", "0.8", "8.0"], ["다소미흡", "20", "0.7", "7.0"], ["미흡", "10", "0.6", "6.0"]])), false)
+    // 빈 칸이 많아도 행마다 줄 맞춘 값은 표다 (hwpx_sample2 호봉표 — 한글 라벨에 텍스트층이 없다)
+    const empty = ["", "", "", "", "", "", "", ""]
+    assert.equal(isChartTable(table([["", "", "1", "2,669,354", "3,050,690", "3,432,027", "", ""],
+      ["", "", "2", "4,106,389", "4,693,016", "5,279,643", "", ""], ["", "", "3", "5,717,900", "6,534,743", "7,351,586", "", ""],
+      empty, empty, empty, empty, empty])), false)
   })
 })
 

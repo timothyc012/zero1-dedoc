@@ -1,0 +1,323 @@
+{
+  "version": "4.22.0",
+  "verifiedDate": "2026-10-16",
+  "gitHead": "b27930390a82c2e2887eecaccf49b33eeb309e07",
+  "source": "npm publish prepublishOnly; external ODL: pdf-20261016-parent-edges-final release candidate",
+  "hwpx": {
+    "docs": 2429,
+    "tables": 10461,
+    "exact": 10461,
+    "gates": {
+      "recallMicro": {
+        "value": 1,
+        "threshold": 1,
+        "pass": true
+      },
+      "recallDoc": {
+        "value": 1,
+        "threshold": 1,
+        "failDocs": 0,
+        "pass": true
+      },
+      "missRun": {
+        "failDocs": 0,
+        "threshold": "<20자",
+        "pass": true
+      },
+      "phantom": {
+        "value": 0,
+        "threshold": 0,
+        "pass": true
+      },
+      "blacklist": {
+        "failDocs": 0,
+        "pass": true
+      },
+      "tableExact": {
+        "value": 1,
+        "threshold": 0.9963,
+        "pass": true
+      },
+      "cellF1": {
+        "value": 1,
+        "threshold": 0.9976,
+        "pass": true
+      },
+      "contentNED": {
+        "value": 0.999956,
+        "threshold": 0.9995,
+        "pass": true
+      },
+      "cellExact": {
+        "value": 0.999983,
+        "threshold": 0.9995,
+        "pass": true
+      },
+      "orderAvg": {
+        "value": 1,
+        "threshold": 1,
+        "pass": true
+      },
+      "orderDoc": {
+        "failDocs": 0,
+        "threshold": 1,
+        "pass": true
+      },
+      "eqPresence": {
+        "value": 1,
+        "threshold": 1,
+        "pass": true
+      },
+      "fnPresence": {
+        "value": 1,
+        "threshold": 1,
+        "pass": true
+      },
+      "headerPolicy": {
+        "violations": 0,
+        "pass": true
+      }
+    }
+  },
+  "hwp5": {
+    "pairs": 1131,
+    "ok": 1131,
+    "avgCrossNED": 0,
+    "avgHwpxToHwp": 1,
+    "tables": {
+      "ref": 4317,
+      "exact": 4317
+    },
+    "gates": {
+      "pairSimilarity": {
+        "value": 1,
+        "threshold": 1,
+        "pass": true
+      },
+      "pairTableExact": {
+        "value": 1,
+        "threshold": 1,
+        "pass": true
+      },
+      "pairCellF1": {
+        "value": 1,
+        "threshold": 1,
+        "pass": true
+      },
+      "pairCellExact": {
+        "value": 1,
+        "threshold": 1,
+        "pass": true
+      },
+      "pairContentNED": {
+        "value": 1,
+        "threshold": 1,
+        "pass": true
+      },
+      "pairCoverage": {
+        "value": 1,
+        "threshold": 1,
+        "pass": true
+      },
+      "pairErrors": {
+        "value": 0,
+        "threshold": 0,
+        "pass": true
+      }
+    },
+    "pass": true
+  },
+  "pdf": {
+    "docs": 2070,
+    "scored": 1888,
+    "ocrOnly": 114,
+    "weak": 68,
+    "coverage": 0.99802
+  },
+  "pdfText": {
+    "pairs": 744,
+    "refChars": 2857682,
+    "recall": 0.99858,
+    "precision": 0.9967,
+    "order": 0.99232,
+    "spaceF1": 0.99019,
+    "parseErrors": 0,
+    "excluded": 22
+  },
+  "pdfTable": {
+    "pairs": 708,
+    "refTables": 2331,
+    "reordered": 5,
+    "matchedRate": 0.998284,
+    "exactRate": 0.980266,
+    "cellF1": 0.991267,
+    "cellExactRate": 0.987963,
+    "contentNED": 0.984361,
+    "parseErrors": 0,
+    "nested": {
+      "pairs": 29,
+      "refTables": 101,
+      "reordered": 0,
+      "matchedRate": 1,
+      "exactRate": 1,
+      "cellF1": 1,
+      "cellExactRate": 1,
+      "contentNED": 1
+    }
+  },
+  "annex": {
+    "hwp": {
+      "docs": 272,
+      "recall": 1,
+      "phantom": 0.00001,
+      "order": 1,
+      "tables": 346,
+      "tableExactCount": 346,
+      "tableExact": 1,
+      "cellF1": 1,
+      "eqRef": 11,
+      "eqHit": 11
+    },
+    "pdf": {
+      "docs": 272,
+      "recall": 0.99975,
+      "phantom": 0.00046,
+      "order": 1,
+      "tables": 346,
+      "tableExactCount": 342,
+      "tableExact": 0.98844,
+      "cellF1": 0.99697,
+      "eqRef": 11,
+      "eqHit": 7
+    }
+  },
+  "ocr": {
+    "generatedAt": "2026-10-15T22:26:11.077Z",
+    "docs": 53,
+    "skipped": 3,
+    "pages": 102,
+    "skippedPages": [
+      {
+        "doc": "eval-perf-2024.pdf",
+        "page": 5,
+        "inlineGlyphImages": 10,
+        "reason": "텍스트층이 글줄 안 글자를 그림으로 찍음(정답 불완전)"
+      },
+      {
+        "doc": "eval-perf-2024.pdf",
+        "page": 4,
+        "inlineGlyphImages": 9,
+        "reason": "텍스트층이 글줄 안 글자를 그림으로 찍음(정답 불완전)"
+      },
+      {
+        "doc": "nanet-seoul-minutes.pdf",
+        "page": 1,
+        "glyphCoverage": 0.088,
+        "reason": "래스터에 텍스트층 글자가 그려지지 않음(글꼴 미렌더)"
+      },
+      {
+        "doc": "nanet-seoul-minutes.pdf",
+        "page": 2,
+        "glyphCoverage": 0.071,
+        "reason": "래스터에 텍스트층 글자가 그려지지 않음(글꼴 미렌더)"
+      }
+    ],
+    "cerMicro": 0.04118,
+    "cerMedian": 0.0161,
+    "charRecallMicro": 0.99025,
+    "charPrecisionMicro": 0.99333,
+    "charF1": 0.99179,
+    "hangulRecallMicro": 0.99398,
+    "cerMicroStrict": 0.08329,
+    "cerMedianStrict": 0.0622,
+    "secPerPage": 0.89,
+    "tables": {
+      "refTables": 67,
+      "matched": 51,
+      "exact": 21,
+      "matchedRate": 0.7612,
+      "exactRate": 0.3134,
+      "cellF1Mean": 0.5432,
+      "skippedRefTables": 36
+    },
+    "note": "정답=같은 PDF의 클린 텍스트층, 입력=216dpi 렌더 강제 OCR — 실스캔 노이즈/스큐 미반영(상한치). cer=v2 fair 정규화, cerStrict=v1"
+  },
+  "odl": {
+    "odl": {
+      "documents": 200,
+      "score": {
+        "overall_mean": 0.9629058908199619,
+        "nid_mean": 0.9631607483582301,
+        "nid_s_mean": 0.9665999478099063,
+        "teds_mean": 0.9801519879224879,
+        "teds_s_mean": 0.9906982529854047,
+        "mhs_mean": 0.9482938079964137,
+        "mhs_s_mean": 0.9781551873085683
+      },
+      "nid_count": 200,
+      "teds_count": 42,
+      "mhs_count": 107,
+      "missing_predictions": 0
+    },
+    "odlbest": {
+      "documents": 200,
+      "score": {
+        "overall_mean": 0.9743759571983334,
+        "nid_mean": 0.9786457957918223,
+        "nid_s_mean": 0.9780632314807746,
+        "teds_mean": 0.9829880022855516,
+        "teds_s_mean": 0.9908039556438265,
+        "mhs_mean": 0.9581737322652393,
+        "mhs_s_mean": 0.9781551873085683
+      },
+      "nid_count": 200,
+      "teds_count": 42,
+      "mhs_count": 107,
+      "missing_predictions": 0
+    },
+    "odlocr": {
+      "documents": 200,
+      "score": {
+        "overall_mean": 0.9644498639914558,
+        "nid_mean": 0.963903682730123,
+        "nid_s_mean": 0.9676677432986254,
+        "teds_mean": 0.9801519879224879,
+        "teds_s_mean": 0.9906982529854047,
+        "mhs_mean": 0.9537068357383429,
+        "mhs_s_mean": 0.9851645331029608
+      },
+      "nid_count": 200,
+      "teds_count": 42,
+      "mhs_count": 107,
+      "missing_predictions": 0
+    },
+    "odlfast": {
+      "documents": 200,
+      "score": {
+        "overall_mean": 0.9386471081508861,
+        "nid_mean": 0.9394781066267133,
+        "nid_s_mean": 0.9449332292214208,
+        "teds_mean": 0.9368989769486482,
+        "teds_s_mean": 0.9430792053663571,
+        "mhs_mean": 0.9340166198659459,
+        "mhs_s_mean": 0.9728147333699835
+      },
+      "nid_count": 200,
+      "teds_count": 42,
+      "mhs_count": 107,
+      "missing_predictions": 0
+    }
+  },
+  "validation": {
+    "tests": {
+      "passed": 3940,
+      "skipped": 9,
+      "failed": 0
+    },
+    "roundtrip": 75,
+    "generationFixtures": 8,
+    "formats": 146,
+    "fuzzRuns": 26000,
+    "reflow": 59
+  }
+}

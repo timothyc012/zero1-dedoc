@@ -1,0 +1,699 @@
+{
+  "version": "4.18.7",
+  "phase": "completed",
+  "status": "published-and-verified",
+  "sourceCommit": "6d44309859fc6cec67ab8ef4e163c2efeb83af3c",
+  "sourceRevision": 1,
+  "baselineVersion": "4.18.6",
+  "baselineSourceCommit": "9fe1a376383032b7ff3aae26326057c051393203",
+  "baselineDocsCommit": "63fcd8eba68c5e31ccb7d3cd1bcddc3a6b7332e4",
+  "referenceCriteriaChanged": false,
+  "pullRequest": {
+    "number": 135,
+    "url": "https://github.com/chrisryugj/kordoc/pull/135",
+    "authorHead": "c5c6b05157205f4aba9f9230a3e39bfff1b8559f",
+    "mergeStatus": "MERGED",
+    "mergedAt": "2026-10-02T12:05:22Z",
+    "localPreparation": "Actual author commit retained as second parent; fresh independent verification completed before commit/main push.",
+    "mergeCommit": "6d44309859fc6cec67ab8ef4e163c2efeb83af3c"
+  },
+  "newGain": {
+    "problem": "A CRLF inside one GFM table cell left an internal CR after LF-only replacement. MarkdownIt interpreted that CR as a new table row.",
+    "reproducedBefore": {
+      "sourceTable": "2 rows × 2 columns",
+      "cell": "first\r\nsecond",
+      "oldMarkdownCell": "first\r<br>second",
+      "renderedRows": 3,
+      "actualRows": [
+        [
+          "key",
+          "value"
+        ],
+        [
+          "item",
+          "first"
+        ],
+        [
+          "<br>second",
+          ""
+        ]
+      ]
+    },
+    "fixedAfter": {
+      "renderedRows": 2,
+      "columns": 2,
+      "markdownCell": "first<br>second",
+      "CRLFEmitsExactlyOneBreak": true,
+      "standaloneCRandLFSupported": true,
+      "consecutiveAndMixedBreakCountPreserved": true
+    },
+    "productionChange": {
+      "files": [
+        "src/table/builder.ts",
+        "src/roundtrip/markdown-units.ts"
+      ],
+      "changedLines": 2,
+      "from": "/\\n/g",
+      "to": "/\\r\\n|\\r|\\n/g",
+      "reason": "Keep actual GFM serialization and the roundtrip display/grid replica in agreement."
+    },
+    "preservedContract": [
+      "Plain and bold cell formatting, pipes, existing escapes and backslashes retain their tested behavior.",
+      "Input IR text/spans/blocks are not mutated by display-string normalization.",
+      "HWPX IR retains original CRLF decoded from first&#13;&#10;second.",
+      "Editing another cell in the same table keeps the untouched CRLF hp:t sequence and source cell text."
+    ],
+    "unchangedXMLScope": "Test proves the unchanged hp:t character-reference sequence survives; it does not claim the entire edited section XML or ZIP remains byte-identical."
+  },
+  "focusedRegression": {
+    "newTests": 39,
+    "testFile": "tests/table-cell-newlines.test.ts",
+    "breakdown": {
+      "canonicalRenderer": 1,
+      "newlineMatrix": 32,
+      "pipeBackslash": 1,
+      "HWPXCharacterReferences": 1,
+      "gridReplica": 3,
+      "otherCellPatch": 1
+    },
+    "matrix": "4 newline kinds × plain/bold × 4 cell positions",
+    "red": {
+      "tests": 39,
+      "passed": 10,
+      "failed": 29,
+      "skipped": 0,
+      "exitCode": 1,
+      "result": "/tmp/kordoc-bug-audit-20261002/pr135/red-result.json",
+      "log": "/tmp/kordoc-bug-audit-20261002/pr135/red.log"
+    },
+    "green": {
+      "tests": 39,
+      "passed": 39,
+      "failed": 0,
+      "skipped": 0,
+      "exitCode": 0,
+      "result": "/tmp/kordoc-bug-audit-20261002/pr135/green-result.json",
+      "log": "/tmp/kordoc-bug-audit-20261002/pr135/green.log"
+    }
+  },
+  "candidateVerification": {
+    "status": "passed",
+    "independent": true,
+    "typecheckPassed": true,
+    "buildPassed": true,
+    "tests": {
+      "total": 3249,
+      "passed": 3244,
+      "failed": 0,
+      "skipped": 5
+    },
+    "addedTests": 39,
+    "existingSkippedTests": 5,
+    "optionalFixtureSuitesAbsent": 5,
+    "freshCandidateDistFiles": 142,
+    "nativePDFDocuments": 6,
+    "exactPNGBuffers": 8,
+    "candidateSmokePassed": true,
+    "source49PriorRepairRetained": 3,
+    "source49RepairIsNewGain": false,
+    "protectedFilesUnchanged": 644,
+    "PDFSourceFilesUnchangedFromBaseline6": 76,
+    "sourceAndTestsUnmodifiedByVerifier": true,
+    "report": "/tmp/kordoc-bug-audit-20261002/pr135/verification-4187/final-report.json",
+    "scope": "Fresh local candidate checks. Actual public-package verification is recorded separately below."
+  },
+  "publication": {
+    "status": "verified",
+    "normalPublishResult": {
+      "command": "npm publish --access public",
+      "cwd": "/Users/mong-e/workspace/kordoc",
+      "exitCode": 0,
+      "elapsedMs": 2532314,
+      "scriptsSkipped": false,
+      "log": "/tmp/kordoc-bug-audit-20261002/publish-4.18.7.log"
+    },
+    "mandatoryPublicationGates": {
+      "passed": [
+        "meta",
+        "notices",
+        "typecheck",
+        "test",
+        "build",
+        "pages",
+        "score",
+        "roundtrip",
+        "pdf-table",
+        "pdf-text",
+        "annex",
+        "formats",
+        "fuzz",
+        "reflow",
+        "redact",
+        "ocr"
+      ],
+      "failed": [],
+      "scriptsSkipped": false
+    },
+    "benchmarkMetrics": {
+      "baselineVersion": "4.18.6",
+      "version": "4.18.7",
+      "sourceRevision": 1,
+      "referenceCriteriaChanged": false,
+      "populationUnchanged": true,
+      "PDF": {
+        "documents": 1911,
+        "scored": 1729,
+        "beforeCoverage": 0.99776,
+        "afterCoverage": 0.99776,
+        "beforeFailDocs": 89,
+        "afterFailDocs": 89,
+        "changes": []
+      },
+      "HWPX": {
+        "docs": 2286,
+        "tables": 9865,
+        "exact": 9865,
+        "tableExact": 1,
+        "gates": {
+          "recallMicro": {
+            "value": 1,
+            "threshold": 1,
+            "pass": true
+          },
+          "recallDoc": {
+            "value": 1,
+            "threshold": 1,
+            "failDocs": 0,
+            "pass": true
+          },
+          "missRun": {
+            "failDocs": 0,
+            "threshold": "<20자",
+            "pass": true
+          },
+          "phantom": {
+            "value": 0,
+            "threshold": 0,
+            "pass": true
+          },
+          "blacklist": {
+            "failDocs": 0,
+            "pass": true
+          },
+          "tableExact": {
+            "value": 1,
+            "threshold": 0.9963,
+            "pass": true
+          },
+          "cellF1": {
+            "value": 1,
+            "threshold": 0.9976,
+            "pass": true
+          },
+          "contentNED": {
+            "value": 0.999953,
+            "threshold": 0.9995,
+            "pass": true
+          },
+          "cellExact": {
+            "value": 0.999982,
+            "threshold": 0.9995,
+            "pass": true
+          },
+          "orderAvg": {
+            "value": 1,
+            "threshold": 1,
+            "pass": true
+          },
+          "orderDoc": {
+            "failDocs": 0,
+            "threshold": 1,
+            "pass": true
+          },
+          "eqPresence": {
+            "value": 1,
+            "threshold": 1,
+            "pass": true
+          },
+          "fnPresence": {
+            "value": 1,
+            "threshold": 1,
+            "pass": true
+          },
+          "headerPolicy": {
+            "violations": 0,
+            "pass": true
+          }
+        }
+      },
+      "HWP5": {
+        "pairs": 1120,
+        "ok": 1120,
+        "avgCrossNED": 0,
+        "avgHwpxToHwp": 1,
+        "tables": {
+          "ref": 4258,
+          "exact": 4258
+        },
+        "gates": {
+          "pairSimilarity": {
+            "value": 1,
+            "threshold": 1,
+            "pass": true
+          },
+          "pairTableExact": {
+            "value": 1,
+            "threshold": 1,
+            "pass": true
+          },
+          "pairCellF1": {
+            "value": 1,
+            "threshold": 1,
+            "pass": true
+          },
+          "pairCellExact": {
+            "value": 1,
+            "threshold": 1,
+            "pass": true
+          },
+          "pairContentNED": {
+            "value": 1,
+            "threshold": 1,
+            "pass": true
+          },
+          "pairCoverage": {
+            "value": 1,
+            "threshold": 1,
+            "pass": true
+          },
+          "pairErrors": {
+            "value": 0,
+            "threshold": 0,
+            "pass": true
+          }
+        },
+        "pass": true
+      },
+      "otherTracks": [
+        {
+          "kind": "pdf-table",
+          "before": {
+            "pairs": 708,
+            "refTables": 2331,
+            "reordered": 5,
+            "matchedRate": 0.998284,
+            "exactRate": 0.979408,
+            "cellF1": 0.990863,
+            "cellExactRate": 0.985981,
+            "contentNED": 0.982072,
+            "parseErrors": 0,
+            "nested": {
+              "pairs": 29,
+              "refTables": 101,
+              "reordered": 0,
+              "matchedRate": 1,
+              "exactRate": 0.930693,
+              "cellF1": 0.99802,
+              "cellExactRate": 0.981723,
+              "contentNED": 0.990894
+            }
+          },
+          "after": {
+            "pairs": 708,
+            "refTables": 2331,
+            "reordered": 5,
+            "matchedRate": 0.998284,
+            "exactRate": 0.979408,
+            "cellF1": 0.990863,
+            "cellExactRate": 0.985981,
+            "contentNED": 0.982072,
+            "parseErrors": 0,
+            "nested": {
+              "pairs": 29,
+              "refTables": 101,
+              "reordered": 0,
+              "matchedRate": 1,
+              "exactRate": 0.930693,
+              "cellF1": 0.99802,
+              "cellExactRate": 0.981723,
+              "contentNED": 0.990894
+            }
+          }
+        },
+        {
+          "kind": "pdf-text",
+          "before": {
+            "pairs": 744,
+            "refChars": 2857775,
+            "recall": 0.99829,
+            "precision": 0.99581,
+            "order": 0.99152,
+            "spaceF1": 0.98812,
+            "parseErrors": 0,
+            "excluded": 22
+          },
+          "after": {
+            "pairs": 744,
+            "refChars": 2857775,
+            "recall": 0.99829,
+            "precision": 0.99581,
+            "order": 0.99152,
+            "spaceF1": 0.98812,
+            "parseErrors": 0,
+            "excluded": 22
+          }
+        },
+        {
+          "kind": "annex",
+          "before": {
+            "hwp": {
+              "docs": 272,
+              "recall": 1,
+              "phantom": 0.00001,
+              "order": 1,
+              "tables": 346,
+              "tableExactCount": 346,
+              "tableExact": 1,
+              "cellF1": 1,
+              "eqRef": 11,
+              "eqHit": 11
+            },
+            "pdf": {
+              "docs": 272,
+              "recall": 0.99965,
+              "phantom": 0.00053,
+              "order": 1,
+              "tables": 346,
+              "tableExactCount": 335,
+              "tableExact": 0.96821,
+              "cellF1": 0.99561,
+              "eqRef": 11,
+              "eqHit": 7
+            }
+          },
+          "after": {
+            "hwp": {
+              "docs": 272,
+              "recall": 1,
+              "phantom": 0.00001,
+              "order": 1,
+              "tables": 346,
+              "tableExactCount": 346,
+              "tableExact": 1,
+              "cellF1": 1,
+              "eqRef": 11,
+              "eqHit": 11
+            },
+            "pdf": {
+              "docs": 272,
+              "recall": 0.99965,
+              "phantom": 0.00053,
+              "order": 1,
+              "tables": 346,
+              "tableExactCount": 335,
+              "tableExact": 0.96821,
+              "cellF1": 0.99561,
+              "eqRef": 11,
+              "eqHit": 7
+            }
+          }
+        }
+      ]
+    },
+    "additionalTrackComparison": {
+      "baselineVersion": "4.18.6",
+      "version": "4.18.7",
+      "tracks": {
+        "roundtrip": {
+          "gatesUnchanged": true,
+          "population": 75
+        },
+        "formats": {
+          "gatesUnchanged": true,
+          "population": 88
+        },
+        "fuzz": {
+          "gatesUnchanged": true,
+          "population": 23700
+        },
+        "ocr": {
+          "qualityMetricsAndExclusionsUnchanged": true,
+          "docs": 53,
+          "pages": 102,
+          "skippedDocs": 3,
+          "excludedPages": 4,
+          "observedSecondsPerPage": {
+            "before": 0.96,
+            "after": 0.97
+          },
+          "resourceClaim": "single sequential observed runs, no statistical speedup claim"
+        }
+      }
+    },
+    "publicPackage": {
+      "version": "4.18.7",
+      "sourceCommit": "6d44309859fc6cec67ab8ef4e163c2efeb83af3c",
+      "registryGitHead": "6d44309859fc6cec67ab8ef4e163c2efeb83af3c",
+      "tarball": "https://registry.npmjs.org/kordoc/-/kordoc-4.18.7.tgz",
+      "bytes": 5841764,
+      "shasum": "829c2671c8aff7345142b0289387537bbac48a3c",
+      "integrity": "sha512-x64uCbFFl8jQ/GDzPhbmSXSKj/ViYEriTG+0XPtnERMPY5aUA5RuqmXbP0Ta5fpYxTP1KFhSV1np7VrRTmGmXw==",
+      "sha256": "46018fab8d4816f52e1438acb088443126f6cb52701ec7d08341f43c70358c3b",
+      "packageRoot": "/tmp/kordoc-bug-audit-20261002/public-package-4.18.7/unpacked/package",
+      "checkedAt": "2026-10-02T12:52:04.621Z",
+      "latest": "4.18.7",
+      "distFilesExact": 142,
+      "distTreeDigest": "f655b83f5b6d6cb3f48609af85c2cc6559da457f6afc6d67670b732a6138b2f1",
+      "smoke": {
+        "crlfChecks": [
+          {
+            "name": "CRLF",
+            "table": [
+              2,
+              2
+            ],
+            "esmAndCjs": true,
+            "otherCellPatchApplied": 1,
+            "rawNewlinePreserved": true
+          },
+          {
+            "name": "CR",
+            "table": [
+              2,
+              2
+            ],
+            "esmAndCjs": true,
+            "otherCellPatchApplied": 1,
+            "rawNewlinePreserved": true
+          },
+          {
+            "name": "LF",
+            "table": [
+              2,
+              2
+            ],
+            "esmAndCjs": true,
+            "otherCellPatchApplied": 1,
+            "rawNewlinePreserved": true
+          }
+        ],
+        "cliBoundaryChecks": [
+          {
+            "invalid": "typo",
+            "rejected": true,
+            "inputBytesPreserved": true
+          },
+          {
+            "invalid": "json",
+            "rejected": true,
+            "inputBytesPreserved": true
+          },
+          {
+            "position": "before",
+            "plainGeneration": true,
+            "noOfficialEndMark": true
+          },
+          {
+            "position": "after",
+            "plainGeneration": true,
+            "noOfficialEndMark": true
+          }
+        ],
+        "repairedSource49ListSentences": 3,
+        "version": "4.18.7",
+        "packageRoot": "/tmp/kordoc-bug-audit-20261002/public-package-4.18.7/unpacked/package",
+        "esmOriginalFeeTable": [
+          7,
+          4
+        ],
+        "cjsGeneratedOfficialDocument": true,
+        "collisionImagesPreserved": 2,
+        "missingInputCode": "FILE_NOT_FOUND",
+        "cliBomFill": true,
+        "cliBomProfile": true,
+        "electronNodeArgv": true,
+        "status": "passed"
+      },
+      "defaultNativeDocuments": 6,
+      "defaultPngBuffersExact": 8,
+      "irComparisonFields": [
+        "type",
+        "text",
+        "bbox",
+        "table"
+      ],
+      "retainedTextBboxAndOrderIdentical": true,
+      "wholeIRStyleMetadataEqualityClaimed": false,
+      "historical13GlyphRemovalsRetainedNotNewGain": true,
+      "noPresetOrExternalTelemetryEnv": true,
+      "independentNpmExecVersion": "4.18.7"
+    },
+    "remote": {
+      "version": "4.18.7",
+      "sourceCommit": "6d44309859fc6cec67ab8ef4e163c2efeb83af3c",
+      "annotatedTagObject": "b5d34756e6510aa71a6f4bb228830b4919645a73",
+      "tagPeelsToSource": true,
+      "gitlab": {
+        "main": "6d44309859fc6cec67ab8ef4e163c2efeb83af3c",
+        "tag": "b5d34756e6510aa71a6f4bb228830b4919645a73",
+        "peeledTag": "6d44309859fc6cec67ab8ef4e163c2efeb83af3c",
+        "sourceMirrorRun": 37004639144,
+        "tagMirrorRun": 37008968808,
+        "success": true
+      },
+      "sourceCI": {
+        "run": 37004639064,
+        "node20": "success",
+        "node22": "success",
+        "node24": "success"
+      },
+      "pullRequest": {
+        "number": 135,
+        "state": "MERGED",
+        "head": "c5c6b05157205f4aba9f9230a3e39bfff1b8559f",
+        "mergeCommit": "6d44309859fc6cec67ab8ef4e163c2efeb83af3c",
+        "mergedAt": "2026-10-02T12:05:22Z"
+      },
+      "githubRelease": "https://github.com/chrisryugj/kordoc/releases/tag/v4.18.7",
+      "publishedAt": "2026-10-02T12:54:17Z",
+      "draft": false,
+      "prerelease": false,
+      "assetBytes": 5841764,
+      "assetBytesExact": true,
+      "assetSha256": "46018fab8d4816f52e1438acb088443126f6cb52701ec7d08341f43c70358c3b",
+      "checkedAt": "2026-10-02T12:55:31.913Z"
+    },
+    "artifactGuard": {
+      "version": "4.18.7",
+      "phase": "public",
+      "checkedAt": "2026-10-02T12:52:52.801Z",
+      "sourceCommit": "6d44309859fc6cec67ab8ef4e163c2efeb83af3c",
+      "buildTime": "2026-10-02T12:06:10.586Z",
+      "directories": [
+        {
+          "name": "primary",
+          "files": 142,
+          "treeDigest": "f655b83f5b6d6cb3f48609af85c2cc6559da457f6afc6d67670b732a6138b2f1",
+          "mismatches": []
+        },
+        {
+          "name": "public",
+          "files": 142,
+          "treeDigest": "f655b83f5b6d6cb3f48609af85c2cc6559da457f6afc6d67670b732a6138b2f1",
+          "mismatches": []
+        }
+      ],
+      "reports": [
+        {
+          "name": "score",
+          "pass": true,
+          "generatedAt": "2026-10-02T12:17:07.083Z",
+          "sha256": "a5545405539f96fed1b00305e7af585aa9f96aa020241fba1602ec850ac2c772"
+        },
+        {
+          "name": "roundtrip",
+          "pass": true,
+          "generatedAt": "2026-10-02T12:17:08.639Z",
+          "sha256": "56daa96b8e067e1ff2111e41ef218f35fc61735814948a48120f1ffe4d927775"
+        },
+        {
+          "name": "pdf-table",
+          "pass": true,
+          "generatedAt": "2026-10-02T12:22:35.832Z",
+          "sha256": "499dc89d1268648dc3478efaaf37c821329eec01d5d111756de5d9a75ff17ab8"
+        },
+        {
+          "name": "pdf-text",
+          "pass": true,
+          "generatedAt": "2026-10-02T12:27:21.102Z",
+          "sha256": "e04984245f73432e676c0adacc1d447815e6962d481473b06d7f72c1074bcc34"
+        },
+        {
+          "name": "annex",
+          "pass": true,
+          "generatedAt": "2026-10-02T12:27:31.971Z",
+          "sha256": "a42f8abd3b267122fdb42d3617197777a90bc560bb92ae9c6a3d269a39f60ca7"
+        },
+        {
+          "name": "formats",
+          "pass": true,
+          "generatedAt": "2026-10-02T12:28:00.915Z",
+          "sha256": "3cd0b26292ca2e42522fe79c241bde85c4411653b272395eff66f39774467174"
+        },
+        {
+          "name": "fuzz",
+          "pass": true,
+          "generatedAt": "2026-10-02T12:43:07.084Z",
+          "sha256": "072e309819248817d9478cfb1cf78868b5c0f5dabde3b1750b0969496ac9ce9d"
+        },
+        {
+          "name": "ocr-accuracy",
+          "pass": true,
+          "generatedAt": "2026-10-02T12:47:30.466Z",
+          "sha256": "1a8c52b07cb21967e89c99cec0e2d02ddccc89238aef528fd7926fefd4482fd7"
+        }
+      ]
+    },
+    "sourceGuard": {
+      "version": "4.18.7",
+      "phase": "after",
+      "sourceCommit": "6d44309859fc6cec67ab8ef4e163c2efeb83af3c",
+      "sourceFiles": 569,
+      "sourceTreeDigest": "d1733af986b68ecbc09541b89b7c3c842ea6624a6c4ebefa5ca41deab66580ff",
+      "mismatches": [],
+      "metadataFiles": 4,
+      "metadataMismatches": [],
+      "checkedAt": "2026-10-02T12:47:58.081Z"
+    }
+  },
+  "preservedBaseline": {
+    "releaseEvidence": "docs/release-4.18.6.json",
+    "originalEvidence": "docs/original-audit-4.18.6.json",
+    "scope": "Prior original140-page audit and three source49 sentence repairs belong to4.18.6; no new7 full-document reparse or score increase is claimed here.",
+    "allSemantic100Claimed": false
+  },
+  "knownLimits": [
+    "Editing a newline inside one source XML paragraph in that same multiline cell still has an intentional mapping-ambiguity skip. This prior support gap is outside PR135; own-cell behavior was only statically inferred, not newly reproduced in this task.",
+    "The verified preservation case edits another cell, not the multiline cell itself; it makes no whole-section/ZIP byte-equality claim.",
+    "HTML cell/caption normalization and one-column text paths are outside this GFM cell-row fix.",
+    "Prior original49 isolated definition role ambiguity, original55/68 frame/caption issues and some flowchart/reading-order imperfections remain in the baseline6 audit.",
+    "Five existing platform-limited tests remain skipped; optional fixture-absent suites are recorded separately.",
+    "Global quality metrics remained unchanged; no new overall score increase, all99%, allsemantic100% or statistical speedup is claimed. Observed OCR seconds/page0.96→0.97 are single sequential observations."
+  ],
+  "evidence": {
+    "initialDiff": "/tmp/kordoc-bug-audit-20261002/pr135/initial-diff.patch",
+    "staticReview": "/tmp/kordoc-bug-audit-20261002/pr135/static-review.json",
+    "red": "/tmp/kordoc-bug-audit-20261002/pr135/red-result.json",
+    "green": "/tmp/kordoc-bug-audit-20261002/pr135/green-result.json",
+    "candidateVerification": "/tmp/kordoc-bug-audit-20261002/pr135/verification-4187/final-report.json",
+    "priorOwnCellLimitation": "/tmp/kordoc-bug-audit-20261002/pr135/multiline-edit-static.json",
+    "publicDefaultNative": "/tmp/kordoc-bug-audit-20261002/fresh-png-summary-public-4187.json",
+    "publicSmoke": "/tmp/kordoc-bug-audit-20261002/public-package-smoke-4.18.7.json",
+    "remote": "/tmp/kordoc-bug-audit-20261002/release-remote-proof-4.18.7.json"
+  },
+  "sourceManifest": {
+    "files": 569,
+    "treeDigest": "d1733af986b68ecbc09541b89b7c3c842ea6624a6c4ebefa5ca41deab66580ff",
+    "metadataFiles": 4
+  }
+}

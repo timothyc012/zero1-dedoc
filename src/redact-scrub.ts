@@ -9,6 +9,10 @@ import { redactText, normalizeForDetect, mdMarkerRanges, type RedactRule, type R
 import { nameParticleAt } from "./redact-name-address.js"
 import { deflateSync, inflateSync } from "zlib"
 
+/** PNG 압축 텍스트 청크(zTXt·iTXt) 해제 상한 — 작은 청크가 수 GB 로 풀리는 폭탄으로 개인정보 지우기가 죽지 않게 */
+const PNG_TEXT_MAX = 16 * 1024 * 1024
+import { readZipEntry } from "./hwpx/parser-shared.js"
+
 const require = createRequire(import.meta.url)
 const CFB: { parse(data: Buffer): { FileIndex: Array<{ type?: number; content?: Buffer | Uint8Array }>; FullPaths: string[] } } = require("cfb")
 
@@ -472,7 +476,7 @@ export function scrubImageMeta(buf: Buffer, ctx: ScrubCtx, mode: "mask" | "check
           if (compressed) {
             // 압축 텍스트는 제자리에서 못 가린다 — 재검사(check)에서만 보고해 잔존으로 드러나게
             if (mode === "check") {
-              try { for (const h of findPii(inflateSync(buf.subarray(textStart, dEnd)).toString("utf8"), ctx)) onHit(h) } catch { /* 깨진 청크 */ }
+              try { for (const h of findPii(inflateSync(buf.subarray(textStart, dEnd), { maxOutputLength: PNG_TEXT_MAX }).toString("utf8"), ctx)) onHit(h) } catch { /* 깨진 청크 */ }
             }
             textStart = -1
           }
@@ -481,7 +485,7 @@ export function scrubImageMeta(buf: Buffer, ctx: ScrubCtx, mode: "mask" | "check
       } else if (type === "zTXt" && mode === "check") {
         const k = buf.indexOf(0, dStart)
         try {
-          for (const h of findPii(inflateSync(buf.subarray(k + 2, dEnd)).toString("latin1"), ctx)) onHit(h)
+          for (const h of findPii(inflateSync(buf.subarray(k + 2, dEnd), { maxOutputLength: PNG_TEXT_MAX }).toString("latin1"), ctx)) onHit(h)
         } catch { /* 깨진 청크 */ }
       }
       if (chunkChanged) {
@@ -545,7 +549,7 @@ export async function checkEmbeddedOle(data: Buffer, ctx: ScrubCtx, onHit: (h: R
       if (!zip) { scrubUtf16Runs(c, ctx, "check", onHit); continue }
       for (const [name, z] of Object.entries(zip.files)) {
         if (z.dir) continue
-        const b = Buffer.from(await z.async("uint8array"))
+        const b = Buffer.from(await readZipEntry(z, "uint8array"))
         if (/\.(xml|rels|vml)$/i.test(name)) checkXmlText(b.toString("utf8"), ctx, onHit)
         else scrubUtf16Runs(b, ctx, "check", onHit)
       }

@@ -1,0 +1,952 @@
+{
+  "version": "4.18.4",
+  "status": "published-and-verified",
+  "date": "2026-10-02",
+  "sourceCommit": "47dff0dce083560bb880af7f4458965255987f55",
+  "baselineCommit": "467e4cddc104748ca163d94eace6d2259f35a3e9",
+  "referenceCriteriaChanged": false,
+  "originalEvidence": "docs/original-audit-4.18.4.json",
+  "guiPixelEqualityVerified": false,
+  "tests": {
+    "total": 3181,
+    "passed": 3176,
+    "failed": 0,
+    "skipped": 5
+  },
+  "freshVerification": {
+    "revision": 7,
+    "sourceFiles": 561,
+    "distFiles": 142,
+    "sourceTreeDigest": "82398697d88c775f8e5941a2b2501296f11043eefb7bdc2546a832ea71118b96",
+    "report": "fresh-verification-v7.json",
+    "status": "passed",
+    "pdfSourceModulesPreservedFromV6": 114
+  },
+  "externalOdl": {
+    "documentsPerMode": 200,
+    "referenceFilesByteIdentical": 425,
+    "modes": [
+      {
+        "mode": "default",
+        "baseline": {
+          "overall_mean": 0.960623284045334,
+          "nid_mean": 0.9608749102830914,
+          "nid_s_mean": 0.9647329252682801,
+          "teds_mean": 0.9789524108694445,
+          "teds_s_mean": 0.9906982529854047,
+          "mhs_mean": 0.9467502754472125,
+          "mhs_s_mean": 0.9781551873085683
+        },
+        "candidate": {
+          "overall_mean": 0.9604137464422444,
+          "nid_mean": 0.9605862821494867,
+          "nid_s_mean": 0.9644442971346757,
+          "teds_mean": 0.9789524108694445,
+          "teds_s_mean": 0.9906982529854047,
+          "mhs_mean": 0.9465036767413939,
+          "mhs_s_mean": 0.9781551873085683
+        },
+        "deltaOverall": -0.00020953760308961566,
+        "resources": {
+          "baseline": {
+            "elapsedMs": 104868.598417,
+            "maxRSSBytes": 1888337920
+          },
+          "candidate": {
+            "elapsedMs": 101730.031292,
+            "maxRSSBytes": 1867382784
+          }
+        },
+        "changedDocuments": [
+          "01030000000027",
+          "01030000000037",
+          "01030000000038",
+          "01030000000039",
+          "01030000000108"
+        ]
+      },
+      {
+        "mode": "plain-html",
+        "baseline": {
+          "overall_mean": 0.9722347290173252,
+          "nid_mean": 0.9764292957563357,
+          "nid_s_mean": 0.97623324894195,
+          "teds_mean": 0.9827577018320368,
+          "teds_s_mean": 0.9908039556438265,
+          "mhs_mean": 0.9566125726473823,
+          "mhs_s_mean": 0.9781551873085683
+        },
+        "candidate": {
+          "overall_mean": 0.9723112609156581,
+          "nid_mean": 0.9764924351602375,
+          "nid_s_mean": 0.9762963883458518,
+          "teds_mean": 0.9827577018320368,
+          "teds_s_mean": 0.9908039556438265,
+          "mhs_mean": 0.9567785978761099,
+          "mhs_s_mean": 0.9781551873085683
+        },
+        "deltaOverall": 0.00007653189833289886,
+        "resources": {
+          "baseline": {
+            "elapsedMs": 104773.100834,
+            "maxRSSBytes": 1843281920
+          },
+          "candidate": {
+            "elapsedMs": 102436.288416,
+            "maxRSSBytes": 1884717056
+          }
+        },
+        "changedDocuments": [
+          "01030000000027",
+          "01030000000037",
+          "01030000000038",
+          "01030000000039"
+        ]
+      },
+      {
+        "mode": "native-off",
+        "baseline": {
+          "overall_mean": 0.9373300110698137,
+          "nid_mean": 0.9382549823115746,
+          "nid_s_mean": 0.9437122770592574,
+          "teds_mean": 0.9356993998956048,
+          "teds_s_mean": 0.9430792053663571,
+          "mhs_mean": 0.9332626255178413,
+          "mhs_s_mean": 0.9728147333699835
+        },
+        "candidate": {
+          "overall_mean": 0.9371189902316857,
+          "nid_mean": 0.9379648709429316,
+          "nid_s_mean": 0.9434221656906143,
+          "teds_mean": 0.9356993998956048,
+          "teds_s_mean": 0.9430792053663571,
+          "mhs_mean": 0.9330160268120228,
+          "mhs_s_mean": 0.9728147333699835
+        },
+        "deltaOverall": -0.00021102083812807315,
+        "resources": {
+          "baseline": {
+            "elapsedMs": 8068.87425,
+            "maxRSSBytes": 847233024
+          },
+          "candidate": {
+            "elapsedMs": 7738.021833,
+            "maxRSSBytes": 855703552
+          }
+        },
+        "changedDocuments": [
+          "01030000000037",
+          "01030000000038",
+          "01030000000039",
+          "01030000000108"
+        ]
+      }
+    ],
+    "limitations": [
+      "The restored real underlines in document 01030000000108 are absent from its Markdown ground truth; raw default/native scores decrease despite source-style recovery.",
+      "Timing and RSS are one isolated run per revision, not a statistical performance guarantee."
+    ],
+    "sourceRevision": 6,
+    "reusedForPublicationRevision": 7,
+    "pdfSourceModuleDigestsExact": 114
+  },
+  "limitations": [
+    "Not all benchmark metrics reach 99; raw scores are reported without changing the scoring criteria.",
+    "PDF55 full-width caption/legal-notes rows and PDF68 outer 3x1 frame remain as documented in original evidence.",
+    "Hancom GUI visual gate was unavailable; source PDF rendering was inspected.",
+    "Post-publication original-page review confirmed preserved characters but reading-order regressions in the Worldcup heading and ice-arc page 121; a targeted 4.18.5 follow-up is in progress."
+  ],
+  "gates": {
+    "pages": {
+      "pass": true,
+      "pairs": 10
+    },
+    "score": {
+      "overallPass": true,
+      "hwpx": {
+        "docs": 2286,
+        "tableCount": 9865,
+        "exactCount": 9865,
+        "gates": {
+          "recallMicro": {
+            "value": 1,
+            "threshold": 1,
+            "pass": true
+          },
+          "recallDoc": {
+            "value": 1,
+            "threshold": 1,
+            "failDocs": 0,
+            "pass": true
+          },
+          "missRun": {
+            "failDocs": 0,
+            "threshold": "<20자",
+            "pass": true
+          },
+          "phantom": {
+            "value": 0,
+            "threshold": 0,
+            "pass": true
+          },
+          "blacklist": {
+            "failDocs": 0,
+            "pass": true
+          },
+          "tableExact": {
+            "value": 1,
+            "threshold": 0.9963,
+            "pass": true
+          },
+          "cellF1": {
+            "value": 1,
+            "threshold": 0.9976,
+            "pass": true
+          },
+          "contentNED": {
+            "value": 0.999953,
+            "threshold": 0.9995,
+            "pass": true
+          },
+          "cellExact": {
+            "value": 0.999982,
+            "threshold": 0.9995,
+            "pass": true
+          },
+          "orderAvg": {
+            "value": 1,
+            "threshold": 1,
+            "pass": true
+          },
+          "orderDoc": {
+            "failDocs": 0,
+            "threshold": 1,
+            "pass": true
+          },
+          "eqPresence": {
+            "value": 1,
+            "threshold": 1,
+            "pass": true
+          },
+          "fnPresence": {
+            "value": 1,
+            "threshold": 1,
+            "pass": true
+          },
+          "headerPolicy": {
+            "violations": 0,
+            "pass": true
+          }
+        }
+      },
+      "pdf": {
+        "docs": 1911,
+        "scored": 1729,
+        "gates": {
+          "coverage": {
+            "value": 0.99775,
+            "threshold": 0.9976,
+            "failDocs": 90,
+            "pass": true
+          }
+        },
+        "docsBelowCount": 90
+      },
+      "hwp5": {
+        "pairs": 1120,
+        "gates": {
+          "pairs": 1120,
+          "ok": 1120,
+          "avgCrossNED": 0,
+          "avgHwpxToHwp": 1,
+          "tables": {
+            "ref": 4258,
+            "exact": 4258
+          },
+          "gates": {
+            "pairSimilarity": {
+              "value": 1,
+              "threshold": 1,
+              "pass": true
+            },
+            "pairTableExact": {
+              "value": 1,
+              "threshold": 1,
+              "pass": true
+            },
+            "pairCellF1": {
+              "value": 1,
+              "threshold": 1,
+              "pass": true
+            },
+            "pairCellExact": {
+              "value": 1,
+              "threshold": 1,
+              "pass": true
+            },
+            "pairContentNED": {
+              "value": 1,
+              "threshold": 1,
+              "pass": true
+            },
+            "pairCoverage": {
+              "value": 1,
+              "threshold": 1,
+              "pass": true
+            },
+            "pairErrors": {
+              "value": 0,
+              "threshold": 0,
+              "pass": true
+            }
+          },
+          "pass": true
+        }
+      },
+      "elapsedMs": 640364
+    },
+    "roundtrip": {
+      "pass": true,
+      "aggregate": {
+        "fwdCovMicro": 1,
+        "bwdCovMicro": 1,
+        "tables": {
+          "ref": 68,
+          "exact": 68,
+          "cellTotal": 1897,
+          "cellExact": 1897,
+          "cellExactRate": 1
+        }
+      },
+      "gates": {
+        "fwdCovMicro": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "bwdCovMicro": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "tableExact": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "cellExact": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "genErrors": {
+          "value": 0,
+          "threshold": 0,
+          "pass": true
+        },
+        "headingErrors": {
+          "value": 0,
+          "threshold": 0,
+          "pass": true
+        },
+        "equationErrors": {
+          "value": 0,
+          "threshold": 0,
+          "pass": true
+        },
+        "lineErrors": {
+          "value": 0,
+          "threshold": 0,
+          "pass": true
+        }
+      }
+    },
+    "pdfTable": {
+      "pass": true,
+      "summary": {
+        "pairs": 708,
+        "refTables": 2331,
+        "reordered": 5,
+        "matchedRate": 0.998284,
+        "exactRate": 0.979408,
+        "cellF1": 0.990863,
+        "cellExactRate": 0.985981,
+        "contentNED": 0.982072,
+        "parseErrors": 0,
+        "nested": {
+          "pairs": 29,
+          "refTables": 101,
+          "reordered": 0,
+          "matchedRate": 1,
+          "exactRate": 0.930693,
+          "cellF1": 0.99802,
+          "cellExactRate": 0.981723,
+          "contentNED": 0.990894
+        }
+      },
+      "gates": {
+        "matchedRate": {
+          "value": 0.998284,
+          "threshold": 0.985,
+          "pass": true
+        },
+        "exactRate": {
+          "value": 0.979408,
+          "threshold": 0.932,
+          "pass": true
+        },
+        "cellF1": {
+          "value": 0.990863,
+          "threshold": 0.959,
+          "pass": true
+        },
+        "cellExactRate": {
+          "value": 0.985981,
+          "threshold": 0.935,
+          "pass": true
+        },
+        "contentNED": {
+          "value": 0.982072,
+          "threshold": 0.891,
+          "pass": true
+        },
+        "parseErrors": {
+          "value": 0,
+          "threshold": 0,
+          "pass": true
+        },
+        "reordered": {
+          "value": 5,
+          "threshold": 17,
+          "pass": true
+        },
+        "nestedMatchedRate": {
+          "value": 1,
+          "threshold": 0.92,
+          "pass": true
+        },
+        "nestedExactRate": {
+          "value": 0.930693,
+          "threshold": 0.892,
+          "pass": true
+        },
+        "population": {
+          "value": "pairs 708/refTables 2331",
+          "threshold": "≥ 708/2331",
+          "pass": true
+        }
+      }
+    },
+    "pdfText": {
+      "pass": true,
+      "summary": {
+        "pairs": 744,
+        "refChars": 2857775,
+        "recall": 0.99829,
+        "precision": 0.99581,
+        "order": 0.99152,
+        "spaceF1": 0.98812,
+        "parseErrors": 0,
+        "excluded": 22
+      },
+      "gates": {
+        "recall": {
+          "value": 0.99829,
+          "threshold": 0.9978,
+          "pass": true
+        },
+        "precision": {
+          "value": 0.99581,
+          "threshold": 0.995,
+          "pass": true
+        },
+        "order": {
+          "value": 0.99152,
+          "threshold": 0.9909,
+          "pass": true
+        },
+        "spaceF1": {
+          "value": 0.98812,
+          "threshold": 0.9868,
+          "pass": true
+        },
+        "parseErrors": {
+          "value": 0,
+          "threshold": 0,
+          "pass": true
+        },
+        "population": {
+          "value": 744,
+          "threshold": 744,
+          "pass": true
+        }
+      }
+    },
+    "annex": {
+      "pass": true,
+      "summary": {
+        "hwp": {
+          "docs": 272,
+          "recall": 1,
+          "phantom": 0.00001,
+          "order": 1,
+          "tables": 346,
+          "tableExactCount": 346,
+          "tableExact": 1,
+          "cellF1": 1,
+          "eqRef": 11,
+          "eqHit": 11
+        },
+        "pdf": {
+          "docs": 272,
+          "recall": 0.99965,
+          "phantom": 0.00053,
+          "order": 1,
+          "tables": 346,
+          "tableExactCount": 335,
+          "tableExact": 0.96821,
+          "cellF1": 0.99561,
+          "eqRef": 11,
+          "eqHit": 7
+        }
+      },
+      "gates": {
+        "hwp.tableExact": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "hwp.cellF1": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "hwp.recall": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "pdf.tableExact": {
+          "value": 0.96821,
+          "threshold": 0.968,
+          "pass": true
+        },
+        "pdf.cellF1": {
+          "value": 0.99561,
+          "threshold": 0.995,
+          "pass": true
+        },
+        "pdf.recall": {
+          "value": 0.99965,
+          "threshold": 0.9996,
+          "pass": true
+        },
+        "parseErrors": {
+          "value": 0,
+          "threshold": 0,
+          "pass": true
+        },
+        "population": {
+          "value": 272,
+          "threshold": 272,
+          "pass": true
+        }
+      }
+    },
+    "formats": {
+      "pass": true,
+      "files": 88,
+      "gates": {
+        "parseErrors": {
+          "value": 0,
+          "threshold": 0,
+          "pass": true
+        },
+        "docxRecall": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "xlsxStrRecall": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "hmlRecall": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "xlsxNumRecall": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "xlsStrRecall": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "xlsNumRecall": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "bigStrRecall": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "bigNumRecall": {
+          "value": 1,
+          "threshold": 1,
+          "pass": true
+        },
+        "population": {
+          "value": "docx 36/xlsx 28/xls 15/hml 9/큰 시트 8",
+          "threshold": "≥ 4/6/7/5/4 · 정답지 없음 0",
+          "pass": true
+        }
+      }
+    },
+    "fuzz": {
+      "pass": true,
+      "runs": 23700,
+      "elapsedMs": 901977,
+      "gates": {
+        "crash": {
+          "value": 0,
+          "threshold": 0,
+          "pass": true
+        },
+        "hang": {
+          "value": 0,
+          "threshold": 0,
+          "pass": true
+        },
+        "noCode": {
+          "value": 0,
+          "threshold": 0,
+          "pass": true
+        },
+        "slow": {
+          "value": 0,
+          "threshold": 0,
+          "pass": true
+        },
+        "genInvalid": {
+          "value": 0,
+          "threshold": 0,
+          "pass": true
+        }
+      },
+      "incidents": []
+    },
+    "ocr": {
+      "pass": true,
+      "summary": {
+        "generatedAt": "2026-10-02T07:03:19.432Z",
+        "docs": 53,
+        "skipped": 3,
+        "pages": 102,
+        "skippedPages": [
+          {
+            "doc": "eval-perf-2024.pdf",
+            "page": 5,
+            "inlineGlyphImages": 10,
+            "reason": "텍스트층이 글줄 안 글자를 그림으로 찍음(정답 불완전)"
+          },
+          {
+            "doc": "eval-perf-2024.pdf",
+            "page": 4,
+            "inlineGlyphImages": 9,
+            "reason": "텍스트층이 글줄 안 글자를 그림으로 찍음(정답 불완전)"
+          },
+          {
+            "doc": "nanet-seoul-minutes.pdf",
+            "page": 1,
+            "glyphCoverage": 0.088,
+            "reason": "래스터에 텍스트층 글자가 그려지지 않음(글꼴 미렌더)"
+          },
+          {
+            "doc": "nanet-seoul-minutes.pdf",
+            "page": 2,
+            "glyphCoverage": 0.071,
+            "reason": "래스터에 텍스트층 글자가 그려지지 않음(글꼴 미렌더)"
+          }
+        ],
+        "cerMicro": 0.05218,
+        "cerMedian": 0.0216,
+        "charRecallMicro": 0.98998,
+        "charPrecisionMicro": 0.99357,
+        "charF1": 0.99177,
+        "hangulRecallMicro": 0.99358,
+        "cerMicroStrict": 0.09641,
+        "cerMedianStrict": 0.0719,
+        "secPerPage": 0.96,
+        "tables": {
+          "refTables": 67,
+          "matched": 52,
+          "exact": 22,
+          "matchedRate": 0.7761,
+          "exactRate": 0.3284,
+          "cellF1Mean": 0.5465,
+          "skippedRefTables": 37
+        },
+        "note": "정답=같은 PDF의 클린 텍스트층, 입력=216dpi 렌더 강제 OCR — 실스캔 노이즈/스큐 미반영(상한치). cer=v2 fair 정규화, cerStrict=v1"
+      },
+      "gates": {
+        "cerMicro": {
+          "value": 0.05218,
+          "threshold": "≤ 0.1",
+          "pass": true
+        },
+        "charRecall": {
+          "value": 0.98998,
+          "threshold": "≥ 0.988",
+          "pass": true
+        },
+        "charPrecision": {
+          "value": 0.99357,
+          "threshold": "≥ 0.9915",
+          "pass": true
+        },
+        "hangulRecall": {
+          "value": 0.99358,
+          "threshold": "≥ 0.992",
+          "pass": true
+        },
+        "tableMatched": {
+          "value": 0.7761,
+          "threshold": "≥ 0.76",
+          "pass": true
+        },
+        "tableCellF1": {
+          "value": 0.5465,
+          "threshold": "≥ 0.535",
+          "pass": true
+        },
+        "population": {
+          "value": "53/102",
+          "threshold": "≥ 53/102",
+          "pass": true
+        },
+        "environment": {
+          "value": 0,
+          "threshold": "0 (OCR 미적용 문서)",
+          "pass": true
+        }
+      }
+    },
+    "reflow": {
+      "pass": true,
+      "documents": 59
+    },
+    "redact": {
+      "pass": true,
+      "cases": 313
+    }
+  },
+  "coreComparison": {
+    "baselineCoverage": 0.99776,
+    "candidateCoverage": 0.99775,
+    "baselineFailDocs": 90,
+    "candidateFailDocs": 90,
+    "docs": 1911,
+    "scored": 1729,
+    "coverageChangesAfterColumnRecovery": [
+      {
+        "file": "pdf/goe-school-manual.pdf",
+        "deltaCoveredGrams": 18
+      },
+      {
+        "file": "pdf/goheung-plan2026.pdf",
+        "deltaCoveredGrams": 3
+      },
+      {
+        "file": "pdf/ice-arc-2026.pdf",
+        "deltaCoveredGrams": -2
+      },
+      {
+        "file": "rhwp/basic/Worldcup_FIFA2010_32.pdf",
+        "deltaCoveredGrams": -2
+      }
+    ],
+    "normalizerUnchanged": true,
+    "exactGramCounts": {
+      "baseline": {
+        "scored": 1729,
+        "consensus": 8397766,
+        "covered": 8378932
+      },
+      "firstAttempt": {
+        "scored": 1729,
+        "consensus": 8397766,
+        "covered": 8378873
+      },
+      "final": {
+        "scored": 1729,
+        "consensus": 8397766,
+        "covered": 8378890
+      }
+    }
+  },
+  "packageBuild": {
+    "sourceFilesByteIdentical": 561,
+    "distFiles": 142,
+    "primaryTreeDigest": "92f7c33ef2c397882c88f4399f764adb9405c6dc84cf27043f6b17399a8d8189",
+    "worktreeEsmRuntimeByteIdentical": 55
+  },
+  "previousAttempt": {
+    "command": "npm publish --access public",
+    "sourceCommit": "1b8c86178fe3d67595f45a1b91b1ffb07bc8679f",
+    "published": false,
+    "exitCode": 1,
+    "failedGate": "pdf-text.order",
+    "value": 0.99076,
+    "threshold": 0.9909,
+    "summary": {
+      "pairs": 744,
+      "refChars": 2857775,
+      "recall": 0.99829,
+      "precision": 0.99581,
+      "order": 0.99076,
+      "spaceF1": 0.98812,
+      "parseErrors": 0,
+      "excluded": 22
+    },
+    "elapsedMs": 1239782,
+    "logContentDigest": "c9584de12d61ce4f503fedca728b9c0d3456f2c7ed85493deab0e92d81c1c7a2"
+  },
+  "readingOrderRecovery": {
+    "baselineOrder": 0.99151,
+    "firstAttemptOrder": 0.99076,
+    "finalOrder": 0.99152,
+    "targetDocumentBaselineAndFinal": 0.89362,
+    "criterionThresholdUnchanged": 0.9909,
+    "fullGatePass": true,
+    "pairs": 744,
+    "referenceCharacters": 2857775
+  },
+  "corpusPreservationReview": {
+    "documents": 21,
+    "characterMultisetsExact": 15,
+    "repeatedHeaderChanges": 5,
+    "captionMetadataMovedToParagraph": 1,
+    "newUniqueBodyTextDeletionFound": false
+  },
+  "incomingPullRequests": [
+    {
+      "number": 133,
+      "head": "c0e3423d8bc27f88d723d7b1c887ddb587f51b75",
+      "changes": [
+        "BOM fill JSON",
+        "BOM CLI/MCP profile JSON"
+      ]
+    },
+    {
+      "number": 134,
+      "head": "b5e93a3a2677847c9267031444d3a084f3106840",
+      "changes": [
+        "Electron-as-node CLI argv"
+      ]
+    }
+  ],
+  "normalPublication": {
+    "command": "npm publish --access public",
+    "cwd": "/Users/mong-e/workspace/kordoc",
+    "exitCode": 0,
+    "elapsedMs": 2447717,
+    "scriptsSkipped": false,
+    "log": "/tmp/kordoc-bug-audit-20261002/publish-4.18.4.log",
+    "logContentDigest": "e1d18d2842f93228b2eb7e6448776571b0b57a09063a008cc88d743d7c02e4a1",
+    "allStagesPassed": [
+      "meta",
+      "notices",
+      "typecheck",
+      "test",
+      "build",
+      "pages",
+      "score",
+      "roundtrip",
+      "pdf-table",
+      "pdf-text",
+      "annex",
+      "formats",
+      "fuzz",
+      "reflow",
+      "redact",
+      "ocr"
+    ]
+  },
+  "publicPackage": {
+    "registry": "https://registry.npmjs.org/kordoc",
+    "version": "4.18.4",
+    "latest": "4.18.4",
+    "tarball": "https://registry.npmjs.org/kordoc/-/kordoc-4.18.4.tgz",
+    "integrity": "sha512-pR98lk7JjJf2P6CvWaPbRaC+0+wS7E28zSbw4TsU7GLfQ/ltYQNV6hS1vqjQubtA7Xw3Iz0myQUBvgQB0oFriw==",
+    "shasum": "c4bccb3f1e77fc211776b3135d7a9d4f24193479",
+    "tarballContentDigest": "8c4d4d034b15f170bd54b33dcde3cebef12ed32589fd863c8f21d3959695c211",
+    "tarballBytes": 5831742,
+    "distFilesExact": 142,
+    "unpacked": "/tmp/kordoc-bug-audit-20261002/public-package-4.18.4/unpacked/package",
+    "smoke": {
+      "version": "4.18.4",
+      "packageRoot": "/tmp/kordoc-bug-audit-20261002/public-package-4.18.4/unpacked/package",
+      "esmOriginalFeeTable": [
+        7,
+        4
+      ],
+      "cjsGeneratedOfficialDocument": true,
+      "collisionImagesPreserved": 2,
+      "missingInputCode": "FILE_NOT_FOUND",
+      "cliBomFill": true,
+      "cliBomProfile": true,
+      "electronNodeArgv": true,
+      "status": "passed"
+    },
+    "independentCLI": {
+      "command": "ONNXRUNTIME_NODE_INSTALL=skip npm exec --yes --package=kordoc@4.18.4 -- kordoc --version",
+      "cwd": "/tmp/kordoc-bug-audit-20261002/public-package-4.18.4",
+      "exitCode": 0,
+      "output": "4.18.4",
+      "installOption": "CUDA optional download skipped; native CPU package available"
+    }
+  },
+  "sourceCI": {
+    "run": 36976699153,
+    "conclusion": "success",
+    "nodes": [
+      20,
+      22,
+      24
+    ]
+  },
+  "sourceMirror": {
+    "run": 36976699178,
+    "conclusion": "success",
+    "gitlabMain": "47dff0dce083560bb880af7f4458965255987f55"
+  },
+  "tag": {
+    "name": "v4.18.4",
+    "object": "c44bd741eca82c82d43e5a5da266cd32b77ecb8e",
+    "peeledSource": "47dff0dce083560bb880af7f4458965255987f55",
+    "annotated": true,
+    "githubAndGitlabExact": true,
+    "gitlabRemote": "https://gitlab.aigov.go.kr/chrisryugj/kordoc.git",
+    "mirrorRun": 36976698970,
+    "mirrorConclusion": "success"
+  },
+  "githubRelease": {
+    "url": "https://github.com/chrisryugj/kordoc/releases/tag/v4.18.4",
+    "isDraft": false,
+    "isPrerelease": false,
+    "publishedAt": "2026-10-02T07:08:42Z",
+    "asset": {
+      "url": "https://github.com/chrisryugj/kordoc/releases/download/v4.18.4/kordoc-4.18.4.tgz",
+      "bytes": 5831742,
+      "contentDigest": "8c4d4d034b15f170bd54b33dcde3cebef12ed32589fd863c8f21d3959695c211",
+      "npmLocalAndDownloadedGithubBytesExact": true
+    }
+  }
+}

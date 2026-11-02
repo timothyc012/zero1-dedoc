@@ -1,0 +1,418 @@
+{
+  "schema": "kordoc-hwpx-empty-fields-original-evidence/v1",
+  "date": "2026-10-01",
+  "baselineCommit": "751928c74134869a16f05693b1969745e88440d3",
+  "baselineDistSHA256": "773353e08d451c1e6b23c679669968cf54ec563acd1b32aa8a12491f819d3485",
+  "scope": {
+    "documents": 4,
+    "cases": 16,
+    "physicalTables": 9,
+    "directCells": 181
+  },
+  "documents": [
+    {
+      "file": "licbyl/17337363_주민투표관리규칙_인영신고서.hwpx",
+      "inputSHA256": "b06e6d9fe1e288c5dba199872aedee73458cc9b81302b1905fd3cdc962d3b695",
+      "unchangedFromPriorAudit": true,
+      "tablePopulation": [
+        2,
+        2
+      ],
+      "parserTableCount": 1,
+      "exact": [
+        1,
+        1
+      ]
+    },
+    {
+      "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+      "inputSHA256": "8b4c0d0e834ccca8d4f9b9f73843dbb33130b3bcf8a6761b71d651375900df0c",
+      "unchangedFromPriorAudit": true,
+      "tablePopulation": [
+        59,
+        59
+      ],
+      "parserTableCount": 46,
+      "exact": [
+        46,
+        46
+      ]
+    },
+    {
+      "file": "rhwp/3-09월_교육_통합_2023.hwpx",
+      "inputSHA256": "9ff4ba0f8530621c0ad89be3bc563135cc88f75052949e4d444cfcd715375340",
+      "unchangedFromPriorAudit": true,
+      "tablePopulation": [
+        2,
+        2
+      ],
+      "parserTableCount": 2,
+      "exact": [
+        1,
+        2
+      ]
+    },
+    {
+      "file": "rhwp/3-10월_교육_통합_2022.hwpx",
+      "inputSHA256": "f37246219339c8900b19f3da65afc105fbf6823afe5f2bb357a7e4c2b14b0314",
+      "unchangedFromPriorAudit": true,
+      "tablePopulation": [
+        3,
+        3
+      ],
+      "parserTableCount": 3,
+      "exact": [
+        2,
+        3
+      ]
+    }
+  ],
+  "sourceHashes": {
+    "ref/hwpx-ref.mjs": "71fcbbce45678f3fe429b140d019d4a1ff385c98c30105c35c00decb271c6b01",
+    "ref/visible-tables.mjs": "ecfa81f1c59e6ba0f4e71cacfa055fd9759468d50d0fd25bd695a4c91ea718d3",
+    "ref/policy.mjs": "2179756bb4d9de6b7b2f0a158019c14d6cc4ad850b56f7287c1cf1f1aba664b4",
+    "lib/table-score.mjs": "045eacd817b708791fd9d18c571a7bf158bf8b8055bb5abe2bef0d73d7dc86e5",
+    "lib/normalize.mjs": "6395d4ca11893ef66b28f81f496801ba90256795d677570a63762d01dc86fefa",
+    "lib/align.mjs": "798010a9bc0180246c03895008d5df2b886397bbd1cbe0d6da5ad48f0cb3c71e"
+  },
+  "caseTuples": {
+    "anchorsBeforeFinalTrim": [
+      "r",
+      "c",
+      "rs",
+      "cs",
+      "borderFill",
+      "visibleLeft",
+      "visibleRight",
+      "visibleTop",
+      "visibleBottom",
+      "empty",
+      "hasIrContent"
+    ],
+    "equationCells": [
+      "row",
+      "col",
+      "rowSpan",
+      "colSpan",
+      "scripts"
+    ]
+  },
+  "sourceAppearance": "13 international-form cells have four visible edges borderFill9. One stamp-form cell has top/bottom/left edges, right absent borderFill16; not a padding row.",
+  "checks": {
+    "directAddressSpan": [
+      {
+        "file": "licbyl/17337363_주민투표관리규칙_인영신고서.hwpx",
+        "refIdx": 1,
+        "sourceId": "1877434265",
+        "declaredDims": [
+          3,
+          6
+        ],
+        "keepAllDims": [
+          3,
+          6
+        ],
+        "directCellCount": 10,
+        "overlap": [],
+        "holes": [],
+        "spanMismatches": [],
+        "nestedCount": 0,
+        "equationCount": 0
+      },
+      {
+        "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+        "refIdx": 22,
+        "sourceId": "1951656453",
+        "declaredDims": [
+          4,
+          2
+        ],
+        "keepAllDims": [
+          4,
+          2
+        ],
+        "directCellCount": 7,
+        "overlap": [],
+        "holes": [],
+        "spanMismatches": [],
+        "nestedCount": 0,
+        "equationCount": 0
+      },
+      {
+        "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+        "refIdx": 23,
+        "sourceId": "1951656465",
+        "declaredDims": [
+          7,
+          3
+        ],
+        "keepAllDims": [
+          7,
+          3
+        ],
+        "directCellCount": 19,
+        "overlap": [],
+        "holes": [],
+        "spanMismatches": [],
+        "nestedCount": 0,
+        "equationCount": 0
+      },
+      {
+        "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+        "refIdx": 24,
+        "sourceId": "1951656465",
+        "declaredDims": [
+          7,
+          3
+        ],
+        "keepAllDims": [
+          7,
+          3
+        ],
+        "directCellCount": 19,
+        "overlap": [],
+        "holes": [],
+        "spanMismatches": [],
+        "nestedCount": 0,
+        "equationCount": 0
+      },
+      {
+        "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+        "refIdx": 25,
+        "sourceId": "1951656468",
+        "declaredDims": [
+          22,
+          4
+        ],
+        "keepAllDims": [
+          22,
+          4
+        ],
+        "directCellCount": 55,
+        "overlap": [],
+        "holes": [],
+        "spanMismatches": [],
+        "nestedCount": 0,
+        "equationCount": 0
+      },
+      {
+        "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+        "refIdx": 29,
+        "sourceId": "1951656479",
+        "declaredDims": [
+          13,
+          3
+        ],
+        "keepAllDims": [
+          13,
+          3
+        ],
+        "directCellCount": 31,
+        "overlap": [],
+        "holes": [],
+        "spanMismatches": [],
+        "nestedCount": 0,
+        "equationCount": 0
+      },
+      {
+        "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+        "refIdx": 30,
+        "sourceId": "1951656479",
+        "declaredDims": [
+          13,
+          3
+        ],
+        "keepAllDims": [
+          13,
+          3
+        ],
+        "directCellCount": 31,
+        "overlap": [],
+        "holes": [],
+        "spanMismatches": [],
+        "nestedCount": 0,
+        "equationCount": 0
+      },
+      {
+        "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+        "refIdx": 31,
+        "sourceId": "1951656479",
+        "declaredDims": [
+          13,
+          3
+        ],
+        "keepAllDims": [
+          13,
+          3
+        ],
+        "directCellCount": 31,
+        "overlap": [],
+        "holes": [],
+        "spanMismatches": [],
+        "nestedCount": 0,
+        "equationCount": 0
+      },
+      {
+        "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+        "refIdx": 32,
+        "sourceId": "1951656479",
+        "declaredDims": [
+          13,
+          3
+        ],
+        "keepAllDims": [
+          13,
+          3
+        ],
+        "directCellCount": 31,
+        "overlap": [],
+        "holes": [],
+        "spanMismatches": [],
+        "nestedCount": 0,
+        "equationCount": 0
+      },
+      {
+        "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+        "refIdx": 36,
+        "sourceId": "1951656718",
+        "declaredDims": [
+          19,
+          3
+        ],
+        "keepAllDims": [
+          19,
+          3
+        ],
+        "directCellCount": 45,
+        "overlap": [],
+        "holes": [],
+        "spanMismatches": [],
+        "nestedCount": 0,
+        "equationCount": 0
+      },
+      {
+        "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+        "refIdx": 37,
+        "sourceId": "1951656718",
+        "declaredDims": [
+          19,
+          3
+        ],
+        "keepAllDims": [
+          19,
+          3
+        ],
+        "directCellCount": 45,
+        "overlap": [],
+        "holes": [],
+        "spanMismatches": [],
+        "nestedCount": 0,
+        "equationCount": 0
+      },
+      {
+        "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+        "refIdx": 38,
+        "sourceId": "1951656718",
+        "declaredDims": [
+          19,
+          3
+        ],
+        "keepAllDims": [
+          19,
+          3
+        ],
+        "directCellCount": 45,
+        "overlap": [],
+        "holes": [],
+        "spanMismatches": [],
+        "nestedCount": 0,
+        "equationCount": 0
+      },
+      {
+        "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+        "refIdx": 39,
+        "sourceId": "1951656718",
+        "declaredDims": [
+          19,
+          3
+        ],
+        "keepAllDims": [
+          19,
+          3
+        ],
+        "directCellCount": 45,
+        "overlap": [],
+        "holes": [],
+        "spanMismatches": [],
+        "nestedCount": 0,
+        "equationCount": 0
+      },
+      {
+        "file": "licbyl/18194893_상표법 시행규칙_국제출원서.hwpx",
+        "refIdx": 51,
+        "sourceId": "1951656733",
+        "declaredDims": [
+          3,
+          2
+        ],
+        "keepAllDims": [
+          3,
+          2
+        ],
+        "directCellCount": 6,
+        "overlap": [],
+        "holes": [],
+        "spanMismatches": [],
+        "nestedCount": 0,
+        "equationCount": 0
+      },
+      {
+        "file": "rhwp/3-09월_교육_통합_2023.hwpx",
+        "refIdx": 0,
+        "sourceId": "1315236357",
+        "declaredDims": [
+          2,
+          2
+        ],
+        "keepAllDims": [
+          2,
+          2
+        ],
+        "directCellCount": 4,
+        "overlap": [],
+        "holes": [],
+        "spanMismatches": [],
+        "nestedCount": 0,
+        "equationCount": 10
+      },
+      {
+        "file": "rhwp/3-10월_교육_통합_2022.hwpx",
+        "refIdx": 1,
+        "sourceId": "1123281636",
+        "declaredDims": [
+          2,
+          2
+        ],
+        "keepAllDims": [
+          2,
+          2
+        ],
+        "directCellCount": 4,
+        "overlap": [],
+        "holes": [],
+        "spanMismatches": [],
+        "nestedCount": 0,
+        "equationCount": 10
+      }
+    ],
+    "equations": "Both 2x2 mathematics source tables have four anchors and all ten equation objects preserved each; no parser loss proved.",
+    "nested": "None of the sixteen targeted residual original tables contain nested tables, so no nested-loss claim is made.",
+    "contract": "keepAllCols retains declared dimensions and every direct source anchor span in all sixteen cases. keep alone trims text-empty trailing source columns in two unique tables (3x6 ->3x5,22x4->22x3) as explicitly documented by keepTrailingEmptyCols:false."
+  },
+  "caveats": [
+    "The corrected reference is an auxiliary /tmp-only diagnostic, not a replacement official score.",
+    "Full 9865 corpus count/invariants still need validation before accepting a general reference fix.",
+    "The inyeong form originally has blank border cells at c=2 and c=5; earlier existing global trailing-column policy removes c=5 before visible-band handling. The diagnosed 1x1 is the normalized surviving band, not full physical-form fidelity.",
+    "No need or justification for parser output with negative dimensions, document-ID exceptions, formula-column deletion, table exclusion or forced exact."
+  ]
+}

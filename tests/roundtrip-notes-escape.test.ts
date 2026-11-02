@@ -63,8 +63,10 @@ describe("patchHwpx — 각주 참조 부호가 있는 문단", () => {
     const res = await patchHwpx(original, edited)
     assert.ok(res.success && res.applied === 1, JSON.stringify(res.skipped))
     const ts = tTexts(await sectionXml(res.data!))
-    // 본문 부호 "액체1)" 만 빠지고, 사용자가 띄어 쓴 리터럴 "1)" 은 남는다
-    assert.ok(ts.some(t => t.includes("플라스틱 액체와 같은 원료 1) 를 쓴다")), JSON.stringify(ts))
+    // 본문 부호 "액체1)" 만 빠지고, 사용자가 띄어 쓴 리터럴 "1)" 은 남는다. 바뀐 자리만 고치므로 주석 개체 앞뒤
+    // hp:t 가 각자 제 글을 지킨다: 주석 자리("액체" 뒤)가 문단 끝으로 밀리지 않는다
+    assert.ok(ts.includes("플라스틱 액체") && ts.includes("와 같은 원료 1) 를 쓴다"), JSON.stringify(ts))
+    assert.ok(!ts.some(t => /액체1\)/.test(t)), JSON.stringify(ts))
   })
 
   it("주석 글 수정은 미지원 사유로 보고하고 본문만 적용, 주석 XML 은 그대로", async () => {
@@ -76,6 +78,27 @@ describe("patchHwpx — 각주 참조 부호가 있는 문단", () => {
     const after = await sectionXml(res.data!)
     assert.equal(noteXml(after), noteXml(await sectionXml(original)))
     assert.ok(tTexts(after).some(t => t.includes("같은 재료를")))
+  })
+
+  it("주석 안 표(#149) 문단 — HTML 격자 표기를 주석 수정으로 오인하지 않는다, 표 칸을 고치면 미지원 보고", async () => {
+    const zip = await JSZip.loadAsync(await markdownToHwpx("표 기준\n\n| A | B |\n| --- | --- |\n| C | D |\n"))
+    const xml = await zip.file("Contents/section0.xml")!.async("string")
+    const tblAt = xml.indexOf("<hp:tbl")
+    const pStart = xml.lastIndexOf("<hp:p ", tblAt)
+    const pEnd = xml.indexOf("</hp:p>", xml.indexOf("</hp:tbl>", tblAt)) + "</hp:p>".length
+    const host = `<hp:p paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:t>미주 본문</hp:t>` +
+      `<hp:ctrl><hp:endNote number="1" instId="1"><hp:subList>${xml.slice(pStart, pEnd)}</hp:subList></hp:endNote></hp:ctrl></hp:run></hp:p>`
+    zip.file("Contents/section0.xml", xml.slice(0, pStart) + host + xml.slice(pEnd))
+    const original = await zip.generateAsync({ type: "uint8array" })
+    const parsed = await parseHwpx(toAB(original), { layoutTables: "keep" })
+    assert.ok(parsed.success && parsed.markdown.includes("미주 본문1) (주: <table>"), parsed.success ? parsed.markdown : "")
+    const res = await patchHwpx(original, parsed.markdown.replace("미주 본문", "고친 미주 본문"))
+    assert.ok(res.success && res.applied === 1, JSON.stringify(res.skipped))
+    assert.deepEqual(res.skipped, [])
+    assert.ok(tTexts(await sectionXml(res.data!)).includes("고친 미주 본문"))
+    const cellEdit = await patchHwpx(original, parsed.markdown.replace("미주 본문", "고친 미주 본문").replace("<td>D</td>", "<td>E</td>"))
+    assert.ok(cellEdit.success && cellEdit.applied === 1)
+    assert.ok(cellEdit.skipped.some(s => s.reason.includes("각주 텍스트 수정은 미지원")), JSON.stringify(cellEdit.skipped))
   })
 
   it("세션 API 도 부호를 뺀다 (patcher 와 같은 매핑)", async () => {

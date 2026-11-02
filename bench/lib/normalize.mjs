@@ -29,14 +29,13 @@ const PUA_BMP = {
 }
 const PUA_SUPP = {
   0xf003b: "↓", 0xf02ef: "·", 0xf0854: "《", 0xf0855: "》",
-  0xf00da: "▸", 0xf080f: "━", 0xf0827: "■", 0xf03c5: "□",
+  0xf00da: "[예]", 0xf080f: "━", 0xf0827: "■", 0xf03c5: "□",
   // 한컴 PDF 대조로 확정된 표 (rhwp 44cabad9 verified_hancom_pua)
   0xf012b: "(인)", 0xf00e1: "(인)", 0xf02fc: "►", 0xf031c: "■", 0xf03a0: "↵",
   0xf03ef: "한", 0xf03f0: "글", 0xf03f1: "과", 0xf03f2: "컴", 0xf03f3: "퓨", 0xf03f4: "터",
   // rhwp VERIFIED_HANCOM_PUA_DISPLAY 후속분 — 파서 pua.ts 에 먼저 들어가고 미러가 뒤처져 있었다
   // (2025 행정업무운영 편람 "(예시: [1], ⊞, ⊟ 등)" — 한컴 PDF 35쪽 렌더로 확인, v4.14.3 동기화)
-  0xf0090: "✺", 0xf0288: "⓪", 0xf0289: "①", 0xf028a: "②", 0xf028c: "④", 0xf028d: "⑤",
-  0xf028e: "⑥", 0xf028f: "⑦", 0xf0290: "⑧", 0xf0291: "⑨", 0xf02ec: "◇", 0xf02fb: "▸",
+  0xf0090: "✺", 0xf02ec: "◇", 0xf02fb: "▸",
   0xf03a7: "⊟", 0xf03a8: "⊞", 0xf03da: "□", 0xf03ff: "□",
   0xf0806: "┌", 0xf0807: "┬", 0xf0808: "┐", 0xf080c: "└", 0xf080e: "┘", 0xf0810: "│",
   0xf081c: "┈", 0xf0832: "═", 0xf0848: "━",
@@ -62,20 +61,31 @@ const WINGDINGS = [
   "⇧", "⇩", "⬄", "⇳", "⬀", "⬁", "⬃", "⬂", "🢬", "🢭", "✗", "✔", "☒", "☑", "",
 ]
 
-// 사각 안 숫자 ①~⑳ (rhwp b74b5098) — 파서가 텍스트 표면에서 표준 원문자로 옮긴다
-const BOXED_NUM_START = 0xf02b1
-const BOXED_NUM_END = 0xf02c4
+// 한컴 번호 글리프 (2026-10-17 채점 기준 변경 — 한컴 글꼴 6종의 글리프 모양): 원 F0288~F0291 = 원 안 0~9 이자 두 자리 번호의
+// 십의 자리 조각, F0292~F029B = 일의 자리 숫자, 네모 F02B0~F02B9 = 네모 안 0~9, F02BA~F02C2 = 왼쪽에 1~9 를 든 네모(십의 자리 조각),
+// F02C3~F02CC = 일의 자리 숫자. 이어진 [십의 자리][일의 자리] 두 조각은 두 자리 번호(글자 겹치기 원문 F0289 + F0298 = ⑯).
+// 종전 미러는 F02B1~F02C4 를 ①~⑳ 으로 이어 매겼다. 둘러싸인 숫자는 원 숫자로(파서 정책과 같은 표면 — whitelist: pua-map)
+export const ENCLOSED = n => n === 0 ? "⓪" : n <= 20 ? String.fromCodePoint(0x245f + n) : n <= 35 ? String.fromCodePoint(0x323c + n)
+  : n <= 50 ? String.fromCodePoint(0x328d + n) : `(${n})`
+const TENS = c => (c >= 0xf0288 && c <= 0xf0291 ? c - 0xf0288 : c >= 0xf02ba && c <= 0xf02c2 ? c - 0xf02b9 : -1)
+const UNITS = c => (c >= 0xf0292 && c <= 0xf029b ? c - 0xf0292 : c >= 0xf02c3 && c <= 0xf02cc ? c - 0xf02c3 : -1)
+function puaNumber(c) {
+  if (TENS(c) >= 0) return ENCLOSED(TENS(c))
+  if (c >= 0xf02b0 && c <= 0xf02b9) return ENCLOSED(c - 0xf02b0)
+  return UNITS(c) >= 0 ? String(UNITS(c)) : undefined
+}
 
 function mapPua(s) {
   if (!/[\uF020-\uF0FF\u{F0000}-\u{F09FF}]/u.test(s)) return s
   let out = ""
-  for (const ch of s) {
-    const code = ch.codePointAt(0)
-    if (code >= 0xf020 && code <= 0xf0ff) out += PUA_BMP[code - 0xf000] ?? ((code >= 0xf021 && WINGDINGS[code - 0xf021]) || ch)
-    else if (code >= BOXED_NUM_START && code <= BOXED_NUM_END) {
-      out += String.fromCodePoint(0x2460 + (code - BOXED_NUM_START))
-    } else if (code >= 0xf0000 && code <= 0xf09ff) out += PUA_SUPP[code] ?? ch
-    else out += ch
+  const cs = [...s]
+  for (let i = 0; i < cs.length; i++) {
+    const code = cs[i].codePointAt(0)
+    const t = TENS(code), u = i + 1 < cs.length ? UNITS(cs[i + 1].codePointAt(0)) : -1
+    if (t >= 0 && u >= 0) { out += ENCLOSED(t * 10 + u); i++; continue }
+    if (code >= 0xf020 && code <= 0xf0ff) out += PUA_BMP[code - 0xf000] ?? ((code >= 0xf021 && WINGDINGS[code - 0xf021]) || cs[i])
+    else if (code >= 0xf0000 && code <= 0xf09ff) out += puaNumber(code) ?? PUA_SUPP[code] ?? cs[i]
+    else out += cs[i]
   }
   return out
 }
@@ -90,6 +100,8 @@ export function normText(s) {
     // IR 은 리터럴 $ 를 \$ 로 담는다(escapeLiteralDollar, v4.14.3) — 표 칸처럼 마크다운을 거치지 않는
     // IR 글도 원문과 같은 꼴로. 원문에 "\$" 가 있어도 양쪽 동일 적용이라 대칭
     .replace(/\\\$/g, "$")
+    // 원문 글자 "<sub>"·"</sup>"·"<u>" 도 IR 은 \< 로 담는다(escapeLiteralTags, #122) — 원문과 같은 꼴로 (아래에서 양쪽 같이 걷힌다)
+    .replace(/\\<(?=\/?(?:u|sup|sub)>)/g, "<")
     // 밑줄 태그 <u>…</u> — PDF 파서가 보존하는 서식 마커(v4.7.0)로 콘텐츠가 아니다.
     // hwpx GT는 밑줄을 방출하지 않으므로 태그를 남기면 서식 보존이 감점되는 역전이
     // 생긴다. <img>/표 태그와 동일하게 채점 전 제거 — 양쪽 동일 적용이라 대칭.

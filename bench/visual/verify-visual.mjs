@@ -10,7 +10,7 @@
  * 소실·오배치까지 잡는다 — aHash만으로는 15mm 도장이 9비트라 임계 미달 (gate-2,
  * 수치 근거는 hash-lib.mjs 헤더).
  *
- * 요구: macOS + Hancom Office HWP.app (GUI 세션). CI 불가 — 발행 전 로컬 실행.
+ * 요구: macOS + Hancom Office HWP.app (GUI 세션). CI 불가 — 조판 문제 재현 시 선택 실행, 배포 필수 아님.
  * 사용:
  *   node bench/visual/verify-visual.mjs             # 관찰 (거리 출력)
  *   node bench/visual/verify-visual.mjs --update    # baseline 갱신 (후 눈으로 확인)

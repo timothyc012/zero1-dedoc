@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url"
 import { patchHwp, splitParaText } from "../src/roundtrip/hwp5-patch.js"
 import { parseHwp5Document } from "../src/hwp5/parser.js"
 import { FLAG_ENCRYPTED, readRecords, TAG_PARA_HEADER, TAG_PARA_TEXT, TAG_CHAR_SHAPE } from "../src/hwp5/record.js"
-import { FLAG_COMPRESSED } from "../src/hwp5/record.js"
+import { FLAG_COMPRESSED, FLAG_TRACK_CHANGES } from "../src/hwp5/record.js"
 import { deflateRawSync, inflateRawSync } from "node:zlib"
 
 const require = createRequire(import.meta.url)
@@ -205,7 +205,7 @@ function anchorParagraph(text: string, level = 0): Buffer {
 }
 
 /** 합성 HWP 파일 (무압축, CFB) */
-function buildHwp(sectionParts: Buffer[], flags = 0): Uint8Array {
+function buildHwp(sectionParts: Buffer[], flags = 0, docInfo = Buffer.alloc(0)): Uint8Array {
   const fileHeader = Buffer.alloc(256)
   fileHeader.write("HWP Document File", 0, "ascii")
   fileHeader[35] = 5
@@ -213,7 +213,7 @@ function buildHwp(sectionParts: Buffer[], flags = 0): Uint8Array {
 
   const cfb = CFB.utils.cfb_new()
   CFB.utils.cfb_add(cfb, "/FileHeader", fileHeader)
-  CFB.utils.cfb_add(cfb, "/DocInfo", Buffer.alloc(0))
+  CFB.utils.cfb_add(cfb, "/DocInfo", docInfo)
   CFB.utils.cfb_add(cfb, "/BodyText/Section0", Buffer.concat(sectionParts))
   CFB.utils.cfb_add(cfb, "/PrvText", utf16("미리보기"))
   return new Uint8Array(CFB.write(cfb, { type: "buffer" }) as Buffer)
@@ -272,6 +272,326 @@ describe("patchHwp — 문단 텍스트 교체", () => {
     assert.equal(r.success, true)
     assert.equal(r.applied, 0)
     assert.deepEqual(Buffer.from(r.data!), Buffer.from(hwp))
+  })
+})
+
+describe("patchHwp — 글머리표 문단 (#179)", () => {
+  // 문단 모양 0 보통 · 1 글머리표 1번. 글머리표 글자는 PUA(U+F09F) — 파서는 IR 글 앞에 그대로 붙이고 마크다운엔 표시값 "•" 로 낸다
+  const paraShape = (headType: number, numberingId: number): Buffer => {
+    const b = Buffer.alloc(54); b.writeUInt32LE((headType << 23) >>> 0, 0); b.writeUInt16LE(numberingId, 30); return b
+  }
+  const bulletRec = Buffer.alloc(20); bulletRec.writeUInt16LE(0xf09f, 12)
+  const docInfo = Buffer.concat([rec(0x19, 0, paraShape(0, 0)), rec(0x19, 0, paraShape(3, 1)), rec(0x18, 0, bulletRec)])
+  const bulleted = (text: string): Buffer => { const p = paragraph(text); p.writeUInt16LE(1, 4 + 8); return p } // PARA_HEADER paraShapeId
+  const hwp = buildHwp([paragraph("첫 문단"), bulleted("구축된 A 기반"), paragraph("끝 문단")], 0, docInfo)
+  const md = parseHwp5Document(Buffer.from(hwp)).markdown
+  const reread = (data: Uint8Array): string => parseHwp5Document(Buffer.from(data)).markdown
+
+  it("마크다운의 글머리표(표시값)는 떼고 글만 고친다 — 글머리표가 두 번 나오지 않는다", async () => {
+    assert.ok(md.includes("• 구축된 A 기반"), md)
+    const r = await patchHwp(hwp, md.replace("• 구축된 A 기반", "• 구축된 A 기반 B"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.deepEqual(r.skipped, [])
+    const out = reread(r.data!)
+    assert.ok(out.includes("• 구축된 A 기반 B"), out)
+    assert.ok(!out.includes("• •"), out)
+  })
+
+  it("글머리표 앞에 넣은 글은 글머리표 뒤에 넣고 알린다 — 기호는 문단 모양", async () => {
+    const r = await patchHwp(hwp, md.replace("• 구축된 A 기반", "[표시] • 구축된 A 기반"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.ok(r.skipped.length > 0 && r.skipped.every(s => s.partial && s.reason.includes("앞에 넣은 글")), JSON.stringify(r.skipped))
+    const out = reread(r.data!)
+    assert.ok(out.includes("• [표시] 구축된 A 기반") && !out.includes("• •"), out)
+  })
+
+  it("글머리표를 지운 줄은 글만 적용하고 알린다 — 글머리표는 문단 모양이라 남는다", async () => {
+    const r = await patchHwp(hwp, md.replace("• 구축된 A 기반", "구축된 A 기반 C"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.ok(r.skipped.every(s => s.partial), JSON.stringify(r.skipped))
+    assert.ok(reread(r.data!).includes("• 구축된 A 기반 C"))
+  })
+})
+
+describe("patchHwp — 굵은 조각이 있는 표 칸", () => {
+  const charShape = (attr: number): Buffer => { const b = Buffer.alloc(74); b.writeUInt32LE(100, 42); b.writeUInt32LE(attr, 46); return b }
+  const docInfo = Buffer.concat([rec(0x15, 0, charShape(0)), rec(0x15, 0, charShape(0x02))]) // 글자 모양 0 보통 · 1 굵게
+  function styled(text: string, runs: Array<[number, number]>): Buffer {
+    const header = Buffer.alloc(24)
+    header.writeUInt32LE(text.length + 1, 0)
+    header.writeUInt16LE(runs.length, 12)
+    header.writeUInt16LE(1, 16)
+    const cs = Buffer.alloc(runs.length * 8)
+    runs.forEach(([p, id], k) => { cs.writeUInt32LE(p, k * 8); cs.writeUInt32LE(id, k * 8 + 4) })
+    return Buffer.concat([rec(0x42, 2, header), rec(0x43, 3, Buffer.concat([utf16(text), Buffer.from([0x0d, 0x00])])), rec(0x44, 3, cs), rec(0x45, 3, lineSeg36())])
+  }
+  function table(cells: Buffer[][]): Buffer {
+    const anchorHeader = Buffer.alloc(24)
+    const ctrlChar = Buffer.alloc(16)
+    ctrlChar.writeUInt16LE(0x0b, 0)
+    ctrlChar.write(" lbt", 2, "ascii")
+    ctrlChar.writeUInt16LE(0x0b, 14)
+    const anchorText = Buffer.concat([ctrlChar, Buffer.from([0x0d, 0x00])])
+    anchorHeader.writeUInt32LE(anchorText.length / 2, 0)
+    anchorHeader.writeUInt32LE(1 << 11, 4)
+    anchorHeader.writeUInt16LE(1, 12)
+    anchorHeader.writeUInt16LE(1, 16)
+    const tableData = Buffer.alloc(8)
+    tableData.writeUInt16LE(2, 4)
+    tableData.writeUInt16LE(2, 6)
+    const parts = [rec(0x42, 0, anchorHeader), rec(0x43, 1, anchorText), rec(0x44, 1, Buffer.alloc(8)), rec(0x45, 1, Buffer.alloc(36)),
+      rec(0x47, 1, Buffer.concat([Buffer.from(" lbt", "ascii"), Buffer.alloc(42)])), rec(0x4d, 2, tableData)]
+    for (let r = 0; r < 2; r++) for (let c = 0; c < 2; c++) {
+      const lh = Buffer.alloc(34)
+      lh.writeUInt16LE(1, 0); lh.writeUInt16LE(c, 8); lh.writeUInt16LE(r, 10); lh.writeUInt16LE(1, 12); lh.writeUInt16LE(1, 14)
+      parts.push(rec(0x48, 2, lh), cells[r][c])
+    }
+    return Buffer.concat(parts)
+  }
+
+  it("칸 글의 강조 표지는 걷고 글만 고친다 — 굵은 조각 run 은 그대로", async () => {
+    const hwp = buildHwp([table([[styled("구분", [[0, 0]]), styled("성명 홍길동", [[0, 0], [3, 1]])], [styled("가", [[0, 0]]), styled("나", [[0, 0]])]])], 0, docInfo)
+    const md = parseHwp5Document(Buffer.from(hwp), { layoutTables: "keep" }).markdown
+    assert.ok(md.includes("성명 **홍길동**"), md)
+    // 같은 표의 다른 칸도 고친다 — 표 경로가 한 칸이라도 고치면 원문 글 찾기로 넘어가지 않으므로 표 경로가 바뀐 자리만 써야 한다
+    const r = await patchHwp(hwp, md.replace("성명 **홍길동**", "성명 **김철수**").replace("| 구분 |", "| 구분2 |"))
+    assert.equal(r.applied, 2, JSON.stringify(r.skipped))
+    const out = parseHwp5Document(Buffer.from(r.data!), { layoutTables: "keep" }).markdown
+    assert.ok(out.includes("성명 **김철수**"), out)
+  })
+
+  it("칸 굵은 조각 끝 표지 밖에 붙인 글은 굵게를 물려받지 않는다", async () => {
+    const hwp = buildHwp([table([[styled("구분", [[0, 0]]), styled("성명 홍길동", [[0, 0], [3, 1]])], [styled("가", [[0, 0]]), styled("나", [[0, 0]])]])], 0, docInfo)
+    const md = parseHwp5Document(Buffer.from(hwp), { layoutTables: "keep" }).markdown
+    const r = await patchHwp(hwp, md.replace("성명 **홍길동**", "성명 **홍길동** 귀하"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.deepEqual(r.skipped, [])
+    assert.ok(parseHwp5Document(Buffer.from(r.data!), { layoutTables: "keep" }).markdown.includes("성명 **홍길동** 귀하"))
+  })
+})
+
+describe("patchHwp — 붙인 글의 서식은 마크다운대로", () => {
+  const charShape = (attr: number): Buffer => { const b = Buffer.alloc(74); b.writeUInt32LE(100, 42); b.writeUInt32LE(attr, 46); return b }
+  // 글자 모양 0 보통 · 1 굵게 · 2 위첨자
+  const docInfo = Buffer.concat([rec(0x15, 0, charShape(0)), rec(0x15, 0, charShape(0x02)), rec(0x15, 0, charShape(1 << 15))])
+  function styled(text: string, runs: Array<[number, number]>): Buffer {
+    const header = Buffer.alloc(24)
+    header.writeUInt32LE(text.length + 1, 0)
+    header.writeUInt16LE(runs.length, 12)
+    header.writeUInt16LE(1, 16)
+    const cs = Buffer.alloc(runs.length * 8)
+    runs.forEach(([p, id], k) => { cs.writeUInt32LE(p, k * 8); cs.writeUInt32LE(id, k * 8 + 4) })
+    return Buffer.concat([rec(0x42, 0, header), rec(0x43, 1, Buffer.concat([utf16(text), Buffer.from([0x0d, 0x00])])), rec(0x44, 1, cs), rec(0x45, 1, lineSeg36())])
+  }
+  const reread = (data: Uint8Array): string => parseHwp5Document(Buffer.from(data)).markdown
+
+  it("굵은 문단 끝 표지 밖에 붙인 글은 굵게를 물려받지 않는다 — 표지 안이면 굵게", async () => {
+    const hwp = buildHwp([paragraph("첫 문단"), styled("굵은 제목입니다", [[0, 1]]), paragraph("끝 문단")], 0, docInfo)
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    assert.ok(md.includes("**굵은 제목입니다**"), md)
+    const r = await patchHwp(hwp, md.replace("**굵은 제목입니다**", "**굵은 제목입니다** 붙인 글"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.deepEqual(r.skipped, [])
+    assert.ok(reread(r.data!).includes("**굵은 제목입니다** 붙인 글"), reread(r.data!))
+    const r2 = await patchHwp(hwp, md.replace("**굵은 제목입니다**", "**굵은 제목입니다 안쪽**"))
+    assert.ok(reread(r2.data!).includes("**굵은 제목입니다 안쪽**"))
+  })
+
+  it("굵게만 뺀 짝 글자 모양이 없으면 DocInfo 에 만들어 붙이고 ID_MAPPINGS 개수를 올린다", async () => {
+    // 글자 모양 0 굵게(크기 100) · 1 보통(크기 200) — 0 의 굵게 뺀 짝이 없다
+    const big = (attr: number): Buffer => { const b = charShape(attr); b.writeUInt32LE(200, 42); return b }
+    const idMappings = Buffer.alloc(72); idMappings.writeInt32LE(2, 36)
+    const di = Buffer.concat([rec(0x11, 0, idMappings), rec(0x15, 0, charShape(0x02)), rec(0x15, 0, big(0)), rec(0x19, 0, Buffer.alloc(54))])
+    const hwp = buildHwp([paragraph("첫 문단"), styled("굵은 제목입니다", [[0, 0]]), paragraph("끝 문단")], 0, di)
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    assert.ok(md.includes("**굵은 제목입니다**"), md)
+    const r = await patchHwp(hwp, md.replace("**굵은 제목입니다**", "**굵은 제목입니다** 붙인 글"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.deepEqual(r.skipped, [])
+    assert.ok(reread(r.data!).includes("**굵은 제목입니다** 붙인 글"), reread(r.data!))
+    const out = CFB.read(Buffer.from(r.data!), { type: "buffer" })
+    const recs = readRecords(Buffer.from(CFB.find(out, "/DocInfo").content))
+    assert.equal(recs.filter(x => x.tagId === 0x15).length, 3)
+    assert.equal(recs.find(x => x.tagId === 0x11)!.data.readInt32LE(36), 3)
+    assert.equal(recs[3].tagId, 0x15) // 마지막 CHAR_SHAPE 바로 뒤
+    assert.equal(recs[3].data.readUInt32LE(46), 0) // 굵게 뺀 사본
+  })
+
+  const pairsOf = (data: Uint8Array, startsWith: string): number[][] => {
+    const recs = readRecords(Buffer.from(CFB.find(CFB.read(Buffer.from(data), { type: "buffer" }), "/BodyText/Section0").content))
+    const ti = recs.findIndex(x => x.tagId === TAG_PARA_TEXT && x.data.toString("utf16le").startsWith(startsWith))
+    const cs = recs[ti + 1].data
+    const out: number[][] = []
+    for (let o = 0; o + 8 <= cs.length; o += 8) out.push([cs.readUInt32LE(o), cs.readUInt32LE(o + 4)])
+    return out
+  }
+
+  it("굵게 없던 문단에 새로 쓴 굵은 낱말은 굵게로 — DocInfo 에 굵게를 더한 글자 모양을 만든다", async () => {
+    const idMappings = Buffer.alloc(72); idMappings.writeInt32LE(1, 36)
+    const di = Buffer.concat([rec(0x11, 0, idMappings), rec(0x15, 0, charShape(0)), rec(0x19, 0, Buffer.alloc(54))])
+    const hwp = buildHwp([paragraph("첫 문단"), styled("보통 문단입니다", [[0, 0]]), paragraph("끝 문단")], 0, di)
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    const r = await patchHwp(hwp, md.replace("보통 문단입니다", "보통 **강조** 문단입니다"))
+    assert.deepEqual(r.skipped, [])
+    assert.ok(reread(r.data!).includes("보통 **강조** 문단입니다"), reread(r.data!))
+    const recs = readRecords(Buffer.from(CFB.find(CFB.read(Buffer.from(r.data!), { type: "buffer" }), "/DocInfo").content))
+    assert.equal(recs.filter(x => x.tagId === 0x15).length, 2)
+    assert.equal(recs.find(x => x.tagId === 0x11)!.data.readInt32LE(36), 2)
+    assert.equal(recs[2].data.readUInt32LE(46) & 0x2, 0x2) // 새 글자 모양은 굵게
+    assert.deepEqual(pairsOf(r.data!, "보통"), [[0, 0], [3, 1], [5, 0]])
+  })
+
+  it("바뀌지 않은 글의 강조를 뗀 편집은 글만 고치고 부분 적용으로 알린다 (HWPX 와 같다)", async () => {
+    const hwp = buildHwp([paragraph("첫 문단"), styled("굵은 제목입니다", [[0, 1]]), paragraph("끝 문단")], 0, docInfo)
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    const r = await patchHwp(hwp, md.replace("**굵은 제목입니다**", "굵은 제목입니다 수정"))
+    assert.equal(r.applied, 1)
+    assert.ok(r.skipped.some(s => s.partial && /강조/.test(s.reason)), JSON.stringify(r.skipped))
+  })
+
+  it("한 문단 두 곳을 고쳐도 사이 글의 글자 모양은 그대로 — 바뀐 낱말 자리만 고친다", async () => {
+    // "가운데"만 큰 글자(마크다운에 안 보이는 모양) — 종전엔 처음~끝을 한 덩어리로 다시 써 가운데 run 이 사라졌다
+    const big = (attr: number): Buffer => { const b = charShape(attr); b.writeUInt32LE(200, 42); return b }
+    const di = Buffer.concat([rec(0x15, 0, charShape(0)), rec(0x15, 0, big(0))])
+    const hwp = buildHwp([paragraph("첫 문단"), styled("처음 가운데 끝", [[0, 0], [3, 1], [6, 0]]), paragraph("끝 문단")], 0, di)
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    assert.ok(md.includes("처음 가운데 끝"), md)
+    const r = await patchHwp(hwp, md.replace("처음 가운데 끝", "앞변경 가운데 뒤변경"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.ok(reread(r.data!).includes("앞변경 가운데 뒤변경"), reread(r.data!))
+    assert.deepEqual(pairsOf(r.data!, "앞변경"), [[0, 0], [4, 1], [7, 0]])
+  })
+
+  it("문단 끝에 붙인 글의 글자 모양은 끝 표시까지 덮는다 — 끝 표시만 남은 run 을 두지 않는다", async () => {
+    // 끝 표시만 남은 run 이 생기면 run 수가 늘어 파서의 대표 글자 모양(run 최빈값)이 바뀌고 제목 판정이 뒤집혔다
+    const hwp = buildHwp([paragraph("첫 문단"), styled("굵은 제목", [[0, 1]]), paragraph("끝 문단")], 0, docInfo)
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    const r = await patchHwp(hwp, md.replace("**굵은 제목**", "**굵은 제목** 붙인 글"))
+    assert.deepEqual(r.skipped, [])
+    assert.ok(reread(r.data!).includes("**굵은 제목** 붙인 글"), reread(r.data!))
+    assert.deepEqual(pairsOf(r.data!, "굵은 제목"), [[0, 1], [5, 0]])
+  })
+
+  it("한컴 PUA 기호가 든 문단도 바뀐 자리만 고친다 — 기호는 원문 그대로, 굵은 기호 뒤에 붙인 글은 보통", async () => {
+    // U+F02B1 은 IR 에 "①" 로 보인다 — 종전엔 원문과 맞대지 못해 문단을 통째 다시 써 기호가 "①" 로 바뀌고 문단 전체가 굵어졌다
+    const hwp = buildHwp([paragraph("첫 문단"), styled("\u{F02B1} 대금 지급기한 단축", [[0, 1], [2, 0]]), paragraph("끝 문단")], 0, docInfo)
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    assert.ok(md.includes("**①** 대금 지급기한 단축"), md)
+    const r = await patchHwp(hwp, md.replace("**①** 대금 지급기한 단축", "**①** 대금 지급기한 단축 수정"))
+    assert.deepEqual(r.skipped, [])
+    assert.ok(reread(r.data!).includes("**①** 대금 지급기한 단축 수정"), reread(r.data!))
+    assert.deepEqual(pairsOf(r.data!, "\u{F02B1}"), [[0, 1], [2, 0]])
+  })
+
+  it("강제 줄바꿈 문단 끝에 붙인 글 — 마크다운 맨 줄바꿈을 줄바꿈으로 맞대 바뀐 자리만 고친다", async () => {
+    // 줄바꿈 문단은 HWPX 처럼 강조 표지를 내지 않는다 — 표지가 안 보이니 붙인 글은 들어간 run(굵게) 모양을 받는다
+    const hwp = buildHwp([paragraph("첫 문단"), styled("붙임 1. 지침\n2. 질의응답", [[0, 1]]), paragraph("끝 문단")], 0, docInfo)
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    assert.ok(md.includes("붙임 1. 지침\n2. 질의응답") && !md.includes("**붙임"), md)
+    const r = await patchHwp(hwp, md.replace("붙임 1. 지침\n2. 질의응답", "붙임 1. 지침\n2. 질의응답 수정"))
+    assert.deepEqual(r.skipped, [])
+    assert.equal(r.verification?.stats.modified, 0, reread(r.data!))
+    assert.deepEqual(pairsOf(r.data!, "붙임"), [[0, 1]])
+  })
+
+  it("이중 공백이 마크다운에 그대로 보이는 문단도 고친다 — 원문 띄어쓰기는 그대로", async () => {
+    const hwp = buildHwp([paragraph("첫 문단"), styled("Ι  세금포인트 혜택  Ι", [[0, 1]]), paragraph("끝 문단")], 0, docInfo)
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    assert.ok(md.includes("**Ι  세금포인트 혜택  Ι**"), md)
+    const r = await patchHwp(hwp, md.replace("**Ι  세금포인트 혜택  Ι**", "**Ι  세금포인트 혜택  Ι** 수정"))
+    assert.deepEqual(r.skipped, [])
+    assert.ok(reread(r.data!).includes("**Ι  세금포인트 혜택  Ι** 수정"), reread(r.data!))
+  })
+
+  it("문단 끝 표시만 위첨자인 문단 끝에 붙인 글은 마지막 글자 모양을 받는다", async () => {
+    const hwp = buildHwp([paragraph("첫 문단"), styled("보통 글자 문단입니다", [[0, 0], [11, 2]]), paragraph("끝 문단")], 0, docInfo)
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    assert.ok(md.includes("보통 글자 문단입니다") && !md.includes("<sup>"), md)
+    const r = await patchHwp(hwp, md.replace("보통 글자 문단입니다", "보통 글자 문단입니다 수정"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    const out = reread(r.data!)
+    assert.ok(out.includes("보통 글자 문단입니다 수정") && !out.includes("<sup>"), out)
+  })
+})
+
+describe("patchHwp — 1열 표 여러 줄 칸", () => {
+  /** 1열 표 — 칸마다 문단 여러 개(줄) */
+  function columnTable(rows: string[][]): Buffer {
+    const anchorHeader = Buffer.alloc(24)
+    const ctrlChar = Buffer.alloc(16)
+    ctrlChar.writeUInt16LE(0x0b, 0)
+    ctrlChar.write(" lbt", 2, "ascii")
+    ctrlChar.writeUInt16LE(0x0b, 14)
+    const anchorText = Buffer.concat([ctrlChar, Buffer.from([0x0d, 0x00])])
+    anchorHeader.writeUInt32LE(anchorText.length / 2, 0)
+    anchorHeader.writeUInt32LE(1 << 11, 4)
+    anchorHeader.writeUInt16LE(1, 12)
+    anchorHeader.writeUInt16LE(1, 16)
+    const tableData = Buffer.alloc(8)
+    tableData.writeUInt16LE(rows.length, 4)
+    tableData.writeUInt16LE(1, 6)
+    const parts = [rec(0x42, 0, anchorHeader), rec(0x43, 1, anchorText), rec(0x44, 1, Buffer.alloc(8)), rec(0x45, 1, Buffer.alloc(36)),
+      rec(0x47, 1, Buffer.concat([Buffer.from(" lbt", "ascii"), Buffer.alloc(42)])), rec(0x4d, 2, tableData)]
+    rows.forEach((lines, r) => {
+      const lh = Buffer.alloc(34)
+      lh.writeUInt16LE(lines.length, 0); lh.writeUInt16LE(0, 8); lh.writeUInt16LE(r, 10); lh.writeUInt16LE(1, 12); lh.writeUInt16LE(1, 14)
+      parts.push(rec(0x48, 2, lh), ...lines.map(l => paragraph(l, 2)))
+    })
+    return Buffer.concat(parts)
+  }
+
+  it("여러 줄 칸(제목 상자)의 한 줄을 표 좌표로 고친다 — builder 처럼 칸 줄을 따로 재현", async () => {
+    const hwp = buildHwp([paragraph("머리"), columnTable([["법무부 위원회 발족", "및 조사 권고"], ["- 신뢰 회복의 첫걸음 -"]])])
+    const md = parseHwp5Document(Buffer.from(hwp), { layoutTables: "keep" }).markdown
+    assert.ok(md.includes("법무부 위원회 발족\n및 조사 권고\n- 신뢰 회복의 첫걸음 -"), JSON.stringify(md))
+    const edited = md.replace("및 조사 권고", "및 조사 권고 수정")
+    const r = await patchHwp(hwp, edited)
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.deepEqual(r.skipped, [])
+    assert.equal(parseHwp5Document(Buffer.from(r.data!), { layoutTables: "keep" }).markdown, edited)
+  })
+})
+
+const LICBYL = join(dirname(fileURLToPath(import.meta.url)), "..", "bench", "corpus", "licbyl")
+const licDoc = existsSync(LICBYL) ? readdirSync(LICBYL).find(f => f.startsWith("16414867_") && f.endsWith(".hwp")) : undefined
+describe("patchHwp — 1열 표 여러 줄 칸(실문서)", { skip: !licDoc }, () => {
+  it("별지 서식 \"(뒤쪽) 유의사항\" 상자의 줄을 표 좌표로 고친다", async () => {
+    const hwp = new Uint8Array(readFileSync(join(LICBYL, licDoc!)))
+    const md = parseHwp5Document(Buffer.from(hwp), { layoutTables: "keep" }).markdown
+    const unit = md.split("\n\n").find(u => u.startsWith("(뒤쪽)") && u.includes("유의사항"))
+    assert.ok(unit, md.slice(0, 400))
+    const edited = md.replace(unit!, unit!.replace(/\s*$/, "") + " 수정")
+    const r = await patchHwp(hwp, edited)
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.deepEqual(r.skipped.filter(s => !s.partial), [])
+  })
+})
+
+const PAIRS = join(dirname(fileURLToPath(import.meta.url)), "..", "bench", "corpus", "pairs")
+const p05 = existsSync(PAIRS) ? readdirSync(PAIRS).find(f => f.startsWith("pair05-") && f.endsWith(".hwp")) : undefined
+describe("patchHwp — 칸 안 중첩 표(실문서)", { skip: !p05 }, () => {
+  it("응시원서 칸 안 표의 칸 글을 고친다 — 소스맵 칸의 중첩 표로 재귀 (종전 \"셀 내 중첩표 수정은 HWP5 미지원\")", async () => {
+    const hwp = new Uint8Array(readFileSync(join(PAIRS, p05!)))
+    const md = parseHwp5Document(Buffer.from(hwp), { layoutTables: "keep" }).markdown
+    const cell = "<th>해외통계포털 업무지원</th>"
+    assert.ok(md.includes(cell), "코퍼스 문서 꼴이 바뀜")
+    const r = await patchHwp(hwp, md.replace(cell, "<th>해외통계포털 업무지원 수정</th>"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.deepEqual(r.skipped.filter(s => !s.partial), [])
+    assert.ok(parseHwp5Document(Buffer.from(r.data!), { layoutTables: "keep" }).markdown.includes("<th>해외통계포털 업무지원 수정</th>"))
+  })
+})
+
+describe("patchHwp — 같은 글 문단", () => {
+  it("같은 글이 본문과 표 칸에 함께 있어도 본문끼리 등장 순서로 짝짓는다 (칸은 표 경로 몫)", async () => {
+    const hwp = buildHwp([paragraph("연구소장 귀하"), table2x2([["연구소장 귀하", "가"], ["나", "다"]]), paragraph("연구소장 귀하")])
+    const md = parseHwp5Document(Buffer.from(hwp), { layoutTables: "keep" }).markdown
+    assert.equal(md.split("연구소장 귀하").length - 1, 3, md)
+    const i = md.lastIndexOf("연구소장 귀하")
+    const edited = md.slice(0, i) + "연구소장 귀하 수정" + md.slice(i + "연구소장 귀하".length)
+    const r = await patchHwp(hwp, edited)
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.equal(parseHwp5Document(Buffer.from(r.data!), { layoutTables: "keep" }).markdown, edited)
   })
 })
 
@@ -487,10 +807,10 @@ describe("patchHwp — 셀 다중줄 (강제 줄바꿈 0x0a)", () => {
     assert.equal(recs[idx - 1].data.readUInt32LE(0), 6, "nChars = 5글자 + 문단끝 1")
   })
 
-  it("다중줄 채움은 LINE_SEG를 줄 수만큼 합성 — 1세그면 한컴이 줄바꿈을 씹음(실측)", async () => {
+  it("keepLineseg: 다중줄 채움은 LINE_SEG를 줄 수만큼 합성 — 1세그면 한컴이 줄바꿈을 씹음(실측)", async () => {
     const hwp = buildHwp([table2x2([["주소", "서울"], ["점수", "80"]])])
     const md = parseHwp5Document(Buffer.from(hwp)).markdown
-    const r = await patchHwp(hwp, md.replace("| 주소 | 서울 |", "| 주소 | 가나<br>다라 |"))
+    const r = await patchHwp(hwp, md.replace("| 주소 | 서울 |", "| 주소 | 가나<br>다라 |"), { keepLineseg: true })
     assert.equal(r.applied, 1, `${JSON.stringify(r.skipped)}`)
     const cfb = CFB.parse(Buffer.from(r.data!))
     const recs = readRecords(Buffer.from(CFB.find(cfb, "/BodyText/Section0").content))
@@ -514,10 +834,10 @@ describe("patchHwp — 셀 다중줄 (강제 줄바꿈 0x0a)", () => {
     assert.ok(re.includes("오른쪽") && re.includes("둘째줄"), `병합 반영: ${re}`)
   })
 
-  it("빈 문단(PARA_TEXT 생략형) 셀에 <br> 다중줄 채움 — 삽입 경로도 LINE_SEG 합성 (§4b)", async () => {
+  it("keepLineseg: 빈 문단(PARA_TEXT 생략형) 셀에 <br> 다중줄 채움 — 삽입 경로도 LINE_SEG 합성 (§4b)", async () => {
     const hwp = buildHwp([table2x2([["항목", null], ["점수", "80"]])])
     const md = parseHwp5Document(Buffer.from(hwp)).markdown
-    const r = await patchHwp(hwp, md.replace("| 항목 |  |", "| 항목 | 첫줄<br>둘째줄 |"))
+    const r = await patchHwp(hwp, md.replace("| 항목 |  |", "| 항목 | 첫줄<br>둘째줄 |"), { keepLineseg: true })
     assert.equal(r.applied, 1, `${JSON.stringify(r.skipped)}`)
     const re = parseHwp5Document(Buffer.from(r.data!)).markdown
     assert.ok(re.includes("첫줄<br>둘째줄"), `채움 반영: ${re}`)
@@ -655,10 +975,10 @@ describe("patchHwp — 개체 앵커 문단 (선두 control 보존)", () => {
     assert.ok(lastPos < nChars, `CHAR_SHAPE 마지막 pos(${lastPos}) < nChars(${nChars})`)
   })
 
-  it("개체 문단 LINE_SEG는 원본 그대로 보존 (단일화하지 않음)", async () => {
+  it("keepLineseg: 개체 문단 LINE_SEG는 원본 그대로 보존 (단일화하지 않음)", async () => {
     const hwp = buildHwp([anchorParagraph("줄 레이아웃 보존 문단")])
     const md = parseHwp5Document(Buffer.from(hwp)).markdown
-    const r = await patchHwp(hwp, md.replace("줄 레이아웃 보존 문단", "줄 레이아웃 보존"))
+    const r = await patchHwp(hwp, md.replace("줄 레이아웃 보존 문단", "줄 레이아웃 보존"), { keepLineseg: true })
     assert.equal(r.applied, 1)
     // LINE_SEG(0x45) 레코드 바이트가 원본과 동일해야 함
     const orig = CFB.read(Buffer.from(hwp), { type: "buffer" })
@@ -673,12 +993,72 @@ describe("patchHwp — 개체 앵커 문단 (선두 control 보존)", () => {
   })
 })
 
+describe("patchHwp — 빈 표 visual 무수정", () => {
+  const fill = Buffer.alloc(26)
+  for (let k = 0; k < 4; k++) fill[2 + 6 * k] = 1
+  const table = Buffer.concat(readRecords(table2x2([["", ""], ["", ""]])).map(r => {
+    if (r.tagId === 0x48) r.data.writeUInt16LE(1, 32)
+    return rec(r.tagId, r.level, r.data)
+  }))
+  const hwp = buildHwp([paragraph("첫 안내"), table, paragraph("끝 안내")], 0, rec(0x14, 0, fill))
+  const visual = parseHwp5Document(Buffer.from(hwp)).markdown
+  const keep = parseHwp5Document(Buffer.from(hwp), { layoutTables: "keep" }).markdown
+
+  it("HTML 빈 표를 포함한 동일 visual 출력은 바이트 보존과 잔차 없는 검증", async () => {
+    assert.notEqual(keep, visual)
+    assert.ok(visual.includes("<table>"), visual)
+    const r = await patchHwp(hwp, visual)
+    assert.equal(r.success, true, r.error)
+    assert.equal(r.applied, 0)
+    assert.deepEqual(r.skipped, [])
+    assert.deepEqual(Buffer.from(r.data!), Buffer.from(hwp))
+    assert.equal(r.verification?.stats.added, 0)
+    assert.equal(r.verification?.stats.removed, 0)
+    assert.equal(r.verification?.stats.modified, 0)
+  })
+
+  it("verify:false도 바이트를 보존하고 검증 필드는 생략", async () => {
+    const r = await patchHwp(hwp, visual, { verify: false })
+    assert.equal(r.success, true, r.error)
+    assert.equal(r.applied, 0)
+    assert.deepEqual(Buffer.from(r.data!), Buffer.from(hwp))
+    assert.equal(r.verification, undefined)
+  })
+
+  it("실제 visual 편집은 기존 원본 구조 모드 요구를 유지", async () => {
+    const r = await patchHwp(hwp, visual.replace("첫 안내", "바꾼 안내"))
+    assert.equal(r.success, false)
+    assert.equal(r.applied, 0)
+    assert.equal(r.data, undefined)
+    assert.match(r.error!, /keep-layout-tables/)
+  })
+})
+
 describe("patchHwp — 안전 게이트", () => {
-  it("컨트롤 문자(탭) 포함 문단은 graceful skip — 파일은 그대로", async () => {
+  it("컨트롤 문자(탭) 포함 문단 — 바뀐 자리가 글자만 덮으면 그 바이트만 바꾸고 탭은 그대로 둔다", async () => {
     const hwp = buildHwp([paragraphWithTab("탭이 있는 문단")])
     const md = parseHwp5Document(Buffer.from(hwp)).markdown
-    const target = md.split("\n\n").find(u => u.includes("탭이 있는 문단"))!
-    const r = await patchHwp(hwp, md.replace(target, "탭 없는 새 문단"))
+    const r = await patchHwp(hwp, md.replace("탭이 있는 문단", "탭이 없는 문단"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    const recs = readRecords(Buffer.from(CFB.find(CFB.parse(Buffer.from(r.data!)), "/BodyText/Section0")!.content))
+    const text = recs.find(x => x.tagId === 0x43)!.data
+    assert.equal(text.readUInt16LE(0), 0x09, "앞 탭 보존")
+    assert.equal(text.subarray(16).toString("utf16le"), "탭이 없는 문단\r")
+    assert.equal(recs.find(x => x.tagId === 0x42)!.data.readUInt32LE(0), text.length / 2, "nChars")
+  })
+
+  it("편집이 제어 문자에 걸치면 graceful skip — 파일은 그대로", async () => {
+    const tab = Buffer.alloc(16); tab.writeUInt16LE(0x09, 0)
+    const textData = Buffer.concat([utf16("앞글"), tab, utf16("뒤글"), Buffer.from([0x0d, 0x00])])
+    const header = Buffer.alloc(24)
+    header.writeUInt32LE(textData.length / 2, 0)
+    header.writeUInt32LE(1 << 9, 4)
+    header.writeUInt16LE(1, 12)
+    header.writeUInt16LE(1, 16)
+    const hwp = buildHwp([Buffer.concat([rec(0x42, 0, header), rec(0x43, 1, textData), rec(0x44, 1, Buffer.alloc(8)), rec(0x45, 1, Buffer.alloc(36))])])
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    const target = md.split("\n\n").find(u => u.includes("앞글"))!
+    const r = await patchHwp(hwp, md.replace(target, "앞글바꿈뒤글"))
     assert.equal(r.success, true)
     assert.equal(r.applied, 0)
     assert.ok(r.skipped.length >= 1)
@@ -690,6 +1070,21 @@ describe("patchHwp — 안전 게이트", () => {
     const r = await patchHwp(hwp, "아무 마크다운")
     assert.equal(r.success, false)
     assert.match(r.error!, /암호화|배포용|DRM/)
+  })
+
+  it("변경 추적 문서는 고친 본문이 한글에 보이도록 추적 표시를 끄고 알린다", async () => {
+    const hwp = buildHwp([paragraph("고칠 문단"), paragraph("그대로")], FLAG_TRACK_CHANGES)
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    const r = await patchHwp(hwp, md.replace("고칠 문단", "고친 문단"))
+    assert.equal(r.success, true)
+    assert.equal(r.applied, 1)
+    const flags = Buffer.from(CFB.find(CFB.parse(Buffer.from(r.data!)), "/FileHeader").content).readUInt32LE(36)
+    assert.equal(flags & FLAG_TRACK_CHANGES, 0)
+    assert.match(r.warnings?.[0] ?? "", /변경 내용 추적/)
+    // 고친 것이 없으면 원본 그대로(추적 표시 유지)
+    const noop = await patchHwp(hwp, md)
+    assert.deepEqual(Buffer.from(noop.data!), Buffer.from(hwp))
+    assert.equal(noop.warnings, undefined)
   })
 
   it("블록 추가/삭제는 skip으로 보고", async () => {
@@ -765,10 +1160,10 @@ describe("patchHwp — HTML 병합셀 표", () => {
 })
 
 describe("patchHwp — 본문 문단 다중줄 (<br> 규약, §4b)", () => {
-  it("단일줄 문단을 <br> 다중줄로 수정 — 0x000a 기록 + LINE_SEG 합성", async () => {
+  it("keepLineseg: 단일줄 문단을 <br> 다중줄로 수정 — 0x000a 기록 + LINE_SEG 합성", async () => {
     const hwp = buildHwp([paragraph("주소 입력란")])
     const md = parseHwp5Document(Buffer.from(hwp)).markdown
-    const r = await patchHwp(hwp, md.replace("주소 입력란", "서울시 광진구<br>아차산로 123"))
+    const r = await patchHwp(hwp, md.replace("주소 입력란", "서울시 광진구<br>아차산로 123"), { keepLineseg: true })
     assert.equal(r.applied, 1, `${JSON.stringify(r.skipped)}`)
     const re = parseHwp5Document(Buffer.from(r.data!)).markdown
     assert.ok(re.includes("서울시 광진구\n아차산로 123"), `다중줄 반영: ${re}`)
@@ -789,13 +1184,14 @@ describe("patchHwp — 본문 문단 다중줄 (<br> 규약, §4b)", () => {
     assert.deepEqual(Buffer.from(r.data!), Buffer.from(hwp), "no-op 바이트 불변")
   })
 
-  it("원본 다중줄 문단 수정에 <br> 없으면 skip (soft-wrap 접힘과 구분 불가)", async () => {
+  it("원본 다중줄 문단 수정에 <br> 없어도 바뀐 자리만 고쳐 줄바꿈을 지킨다 (원문 글로 찾아 고치기)", async () => {
     const hwp = buildHwp([paragraph("가나\n다라")])
     const md = parseHwp5Document(Buffer.from(hwp)).markdown
     const r = await patchHwp(hwp, md.replace("다라", "다라 수정"))
     assert.equal(r.success, true)
-    assert.equal(r.applied, 0)
-    assert.ok(r.skipped.some(s => s.reason.includes("<br>")), JSON.stringify(r.skipped))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.deepEqual(r.skipped, [])
+    assert.ok(parseHwp5Document(Buffer.from(r.data!)).markdown.includes("가나\n다라 수정"))
   })
 
   it("원본 다중줄 문단을 <br> 표기로 수정하면 적용된다", async () => {
@@ -867,14 +1263,14 @@ function crc32Ref(buf: Buffer): number {
   return (c ^ 0xffffffff) >>> 0
 }
 
-describe("patchHwp — soft-wrap LINE_SEG 정리 (#71)", () => {
+describe("patchHwp — soft-wrap LINE_SEG 정리 (#71, keepLineseg)", () => {
   const section0Records = (data: Uint8Array) =>
     readRecords(Buffer.from(CFB.find(CFB.parse(Buffer.from(data)), "/BodyText/Section0")!.content))
 
-  it("2세그 문단의 단일행 축소 치환 — 범위 밖 세그먼트 제거 + lineSegCount 갱신", async () => {
+  it("keepLineseg: 2세그 문단의 단일행 축소 치환 — 범위 밖 세그먼트 제거 + lineSegCount 갱신", async () => {
     const hwp = buildHwp([softWrapParagraph("닭가슴살샌드위치일이삼사오육", [0, 10])]) // 14자, nChars 15
     const md = parseHwp5Document(Buffer.from(hwp)).markdown
-    const r = await patchHwp(hwp, md.replace("닭가슴살샌드위치일이삼사오육", "닭가슴살샌드위치")) // 8자, nChars 9
+    const r = await patchHwp(hwp, md.replace("닭가슴살샌드위치일이삼사오육", "닭가슴살샌드위치"), { keepLineseg: true }) // 8자, nChars 9
     assert.equal(r.success, true)
     assert.equal(r.applied, 1)
     const recs = section0Records(r.data!)
@@ -890,12 +1286,12 @@ describe("patchHwp — soft-wrap LINE_SEG 정리 (#71)", () => {
     assert.ok(parseHwp5Document(Buffer.from(r.data!)).markdown.includes("닭가슴살샌드위치"))
   })
 
-  it("3세그 문단 축소 — 유효 범위 세그는 보존, 초과분만 제거", async () => {
+  it("keepLineseg: 3세그 문단 축소 — 유효 범위 세그는 보존, 초과분만 제거", async () => {
     const text = "가나다라마바사아자차카타파하일이삼사오육칠팔구십" // 24자, nChars 25
     const hwp = buildHwp([softWrapParagraph(text, [0, 10, 20])])
     const md = parseHwp5Document(Buffer.from(hwp)).markdown
     const shorter = "가나다라마바사아자차카타파하" // 14자 → nChars 15: seg 10 유효, seg 20 제거
-    const r = await patchHwp(hwp, md.replace(text, shorter))
+    const r = await patchHwp(hwp, md.replace(text, shorter), { keepLineseg: true })
     assert.equal(r.success, true)
     const recs = section0Records(r.data!)
     const hi = recs.findIndex(rc => rc.tagId === TAG_PARA_HEADER)
@@ -905,17 +1301,83 @@ describe("patchHwp — soft-wrap LINE_SEG 정리 (#71)", () => {
     assert.equal(ls.data.readUInt32LE(36), 10, "유효한 둘째 세그 textpos 보존")
   })
 
-  it("확장 치환은 LINE_SEG 원본 유지 — 전 세그 유효 범위", async () => {
+  it("keepLineseg: 확장 치환은 LINE_SEG 원본 유지 — 전 세그 유효 범위", async () => {
     const hwp = buildHwp([softWrapParagraph("닭가슴살샌드위치일이삼사오육", [0, 10])])
     const md = parseHwp5Document(Buffer.from(hwp)).markdown
     const longer = "닭가슴살샌드위치일이삼사오육칠팔구십" // 18자
-    const r = await patchHwp(hwp, md.replace("닭가슴살샌드위치일이삼사오육", longer))
+    const r = await patchHwp(hwp, md.replace("닭가슴살샌드위치일이삼사오육", longer), { keepLineseg: true })
     assert.equal(r.success, true)
     const recs = section0Records(r.data!)
     const hi = recs.findIndex(rc => rc.tagId === TAG_PARA_HEADER)
     const ls = recs.find(rc => rc.tagId === 0x45)!
     assert.equal(ls.data.length, 72, "확장은 세그 원본 유지")
     assert.equal(recs[hi].data.readUInt16LE(16), 2)
+  })
+})
+
+describe("patchHwp — 글이 바뀐 문단의 LINE_SEG 삭제 (#167)", () => {
+  const section0Records = (data: Uint8Array) =>
+    readRecords(Buffer.from(CFB.find(CFB.parse(Buffer.from(data)), "/BodyText/Section0")!.content))
+  /** 문단 머리 hi 의 LINE_SEG 자식 레코드 (없으면 undefined) */
+  const segOf = (recs: ReturnType<typeof readRecords>, hi: number) => {
+    for (let j = hi + 1; j < recs.length && recs[j].level > recs[hi].level; j++) {
+      if (recs[j].tagId === 0x45 && recs[j].level === recs[hi].level + 1) return recs[j]
+    }
+    return undefined
+  }
+  const text = "닭가슴살샌드위치일이삼사오육" // 14자, 원본 줄 나눔 [0, 10]
+
+  for (const [label, next] of [["축소", "다른글로바꿈"], ["같은 길이", "가나다라마바사아자차카타파하"], ["확장", "가나다라마바사아자차카타파하일이삼사"]]) {
+    it(`${label} 치환 — 바뀐 문단은 LINE_SEG 를 빼고 lineSegCount 0, 손대지 않은 문단은 바이트 그대로`, async () => {
+      const hwp = buildHwp([softWrapParagraph(text, [0, 10]), paragraph("그대로 둘 문단")])
+      const md = parseHwp5Document(Buffer.from(hwp)).markdown
+      const r = await patchHwp(hwp, md.replace(text, next))
+      assert.equal(r.success, true)
+      assert.equal(r.applied, 1, `${JSON.stringify(r.skipped)}`)
+      const before = section0Records(hwp)
+      const recs = section0Records(r.data!)
+      const [h0, h1] = recs.flatMap((rc, i) => rc.tagId === TAG_PARA_HEADER ? [i] : [])
+      assert.equal(segOf(recs, h0), undefined, "바뀐 문단의 LINE_SEG 제거")
+      assert.equal(recs[h0].data.readUInt16LE(16), 0, "PARA_HEADER lineSegCount = 0")
+      const [, b1] = before.flatMap((rc, i) => rc.tagId === TAG_PARA_HEADER ? [i] : [])
+      assert.ok(segOf(recs, h1)!.data.equals(segOf(before, b1)!.data), "손대지 않은 문단의 LINE_SEG 보존")
+      assert.equal(recs[h1].data.readUInt16LE(16), 1)
+      assert.ok(parseHwp5Document(Buffer.from(r.data!)).markdown.includes(next))
+    })
+  }
+
+  it("LINE_SEG 를 뺀 패치본도 다시 패치된다", async () => {
+    const hwp = buildHwp([softWrapParagraph(text, [0, 10])])
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    const r1 = await patchHwp(hwp, md.replace(text, "첫 번째 수정"))
+    const md1 = parseHwp5Document(Buffer.from(r1.data!)).markdown
+    const r2 = await patchHwp(r1.data!, md1.replace("첫 번째 수정", "두 번째 수정"))
+    assert.equal(r2.applied, 1, `${JSON.stringify(r2.skipped)}`)
+    assert.ok(parseHwp5Document(Buffer.from(r2.data!)).markdown.includes("두 번째 수정"))
+  })
+
+  it("<br> 다중줄도 합성 대신 LINE_SEG 를 뺀다 — 강제 줄바꿈은 0x000a 로 남음", async () => {
+    const hwp = buildHwp([paragraph("주소 입력란")])
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    const r = await patchHwp(hwp, md.replace("주소 입력란", "서울시 광진구<br>아차산로 123"))
+    assert.equal(r.applied, 1, `${JSON.stringify(r.skipped)}`)
+    const recs = section0Records(r.data!)
+    const hi = recs.findIndex(rc => rc.tagId === TAG_PARA_HEADER)
+    assert.equal(segOf(recs, hi), undefined)
+    assert.equal(recs[hi].data.readUInt16LE(16), 0)
+    assert.ok(parseHwp5Document(Buffer.from(r.data!)).markdown.includes("서울시 광진구\n아차산로 123"))
+  })
+
+  it("빈 문단(PARA_TEXT 생략형) 셀 채움도 LINE_SEG 를 뺀다", async () => {
+    const hwp = buildHwp([table2x2([["항목", null], ["점수", "80"]])])
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    const r = await patchHwp(hwp, md.replace("| 항목 |  |", "| 항목 | 채운 값 |"))
+    assert.equal(r.applied, 1, `${JSON.stringify(r.skipped)}`)
+    const recs = section0Records(r.data!)
+    const ti = recs.findIndex(rc => rc.tagId === TAG_PARA_TEXT && rc.data.toString("utf16le").startsWith("채운 값"))
+    assert.ok(ti > 0)
+    assert.equal(segOf(recs, ti - 1), undefined)
+    assert.equal(recs[ti - 1].data.readUInt16LE(16), 0)
   })
 })
 
@@ -955,3 +1417,153 @@ describe("patchHwp — 압축 스트림 꼬리 (#71)", () => {
   })
 })
 
+
+describe("patchHwp: 균등 띄어쓰기·글자 모양 run (바뀐 자리만 고친다)", () => {
+  /** 여러 글자 모양 run 문단: runs: [시작 위치, 글자 모양 id] */
+  function styledParagraph(text: string, runs: Array<[number, number]>): Buffer {
+    const header = Buffer.alloc(24)
+    header.writeUInt32LE(text.length + 1, 0)
+    header.writeUInt16LE(runs.length, 12)
+    header.writeUInt16LE(1, 16)
+    const cs = Buffer.alloc(runs.length * 8)
+    runs.forEach(([p, id], k) => { cs.writeUInt32LE(p, k * 8); cs.writeUInt32LE(id, k * 8 + 4) })
+    return Buffer.concat([
+      rec(0x42, 0, header),
+      rec(0x43, 1, Buffer.concat([utf16(text), Buffer.from([0x0d, 0x00])])),
+      rec(0x44, 1, cs),
+      rec(0x45, 1, lineSeg36()),
+    ])
+  }
+
+  function paraRecords(data: Uint8Array, needle: string): { text: string; cs: Array<[number, number]> } {
+    const cfb = CFB.read(Buffer.from(data), { type: "buffer" })
+    const si = cfb.FullPaths.findIndex((x: string) => /BodyText\/Section0$/i.test(x))
+    const recs = readRecords(Buffer.from(cfb.FileIndex[si].content as Uint8Array))
+    for (let i = 0; i < recs.length; i++) {
+      if (recs[i].tagId !== TAG_PARA_TEXT) continue
+      const text = recs[i].data.toString("utf16le").replace(/\r$/, "")
+      if (!text.includes(needle)) continue
+      const csRec = recs[i + 1]
+      const cs: Array<[number, number]> = []
+      for (let o = 0; o + 8 <= csRec.data.length; o += 8) cs.push([csRec.data.readUInt32LE(o), csRec.data.readUInt32LE(o + 4)])
+      return { text, cs }
+    }
+    throw new Error(`문단 없음: ${needle}`)
+  }
+
+  it("마크다운이 접어 보인 \"대    상\" 은 고치지 않은 자리에서 원문 띄어쓰기 그대로, 굵은 값 run 은 위치만 밀린다", async () => {
+    // "대    상: " 8자 보통(1) · "9세 " 굵게(2) · "여성" 보통(1)
+    const hwp = buildHwp([styledParagraph("대    상: 9세 여성", [[0, 1], [8, 2], [11, 1]]), paragraph("다음 문단")])
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    assert.ok(md.includes("대 상: 9세 여성"), md)
+    const r = await patchHwp(hwp, md.replace("대 상: 9세 여성", "대 상: 12세 여성"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    const { text, cs } = paraRecords(r.data!, "여성")
+    assert.equal(text, "대    상: 12세 여성", "균등 띄어쓰기 보존")
+    assert.deepEqual(cs, [[0, 1], [8, 2], [12, 1]], "굵은 값 run 유지, 뒤 run 은 길이 차만큼")
+  })
+})
+
+describe("patchHwp — 미기입 누름틀 문단 (안내문은 파서처럼 빼고 맞대고, 그 자리에 쓴 값은 누름틀에 채운다)", () => {
+  const GUIDE = "이곳을 마우스로 누르고 내용을 입력하세요."
+  function clickHereParagraph(label: string, level = 0): Buffer {
+    const ext = (ch: number): Buffer => { const b = Buffer.alloc(16); b.writeUInt16LE(ch, 0); b.write("klc%", 2, "ascii"); b.writeUInt16LE(ch, 14); return b }
+    const textData = Buffer.concat([utf16(label), ext(0x03), utf16(GUIDE), ext(0x04), Buffer.from([0x0d, 0x00])])
+    const header = Buffer.alloc(24)
+    header.writeUInt32LE(textData.length / 2, 0)
+    header.writeUInt32LE((1 << 3) | (1 << 4), 4) // ctrlMask: 필드 시작·끝
+    header.writeUInt16LE(3, 12)
+    header.writeUInt16LE(1, 16)
+    // 글자 모양: 라벨 0 · 안내문 7(한글이 빨간 기울임을 따로 건다) · 누름틀 끝부터 0
+    const cs = Buffer.alloc(24)
+    cs.writeUInt32LE(0, 0); cs.writeUInt32LE(0, 4)
+    cs.writeUInt32LE(label.length + 8, 8); cs.writeUInt32LE(7, 12)
+    cs.writeUInt32LE(label.length + 8 + GUIDE.length, 16); cs.writeUInt32LE(0, 20)
+    const command = `Clickhere:set:${GUIDE.length + 38}:Direction:wstring:${GUIDE.length}:${GUIDE} HelpState:wstring:0:  `
+    const head = Buffer.alloc(7)
+    head.writeUInt32LE(1, 0) // 속성 bit 15(내용 수정됨) 꺼짐 — 미기입
+    head.writeUInt16LE(command.length, 5)
+    return Buffer.concat([
+      rec(0x42, level, header),
+      rec(0x43, level + 1, textData),
+      rec(0x44, level + 1, cs),
+      rec(0x45, level + 1, lineSeg36()),
+      rec(0x47, level + 1, Buffer.concat([Buffer.from("klc%", "ascii"), head, utf16(command), Buffer.alloc(4)])),
+    ])
+  }
+
+  /** 2×2 표 — 칸 문단을 레코드째 받는다 (table2x2 와 같은 꼴) */
+  function tableOf(cellParas: Buffer[][]): Buffer {
+    const anchorHeader = Buffer.alloc(24)
+    const ctrlChar = Buffer.alloc(16)
+    ctrlChar.writeUInt16LE(0x0b, 0)
+    ctrlChar.write(" lbt", 2, "ascii")
+    ctrlChar.writeUInt16LE(0x0b, 14)
+    const anchorText = Buffer.concat([ctrlChar, Buffer.from([0x0d, 0x00])])
+    anchorHeader.writeUInt32LE(anchorText.length / 2, 0)
+    anchorHeader.writeUInt32LE(1 << 11, 4)
+    anchorHeader.writeUInt16LE(1, 12)
+    anchorHeader.writeUInt16LE(1, 16)
+    const tableData = Buffer.alloc(8)
+    tableData.writeUInt16LE(2, 4)
+    tableData.writeUInt16LE(2, 6)
+    const parts = [rec(0x42, 0, anchorHeader), rec(0x43, 1, anchorText), rec(0x44, 1, Buffer.alloc(8)), rec(0x45, 1, Buffer.alloc(36)),
+      rec(0x47, 1, Buffer.concat([Buffer.from(" lbt", "ascii"), Buffer.alloc(42)])), rec(0x4d, 2, tableData)]
+    for (let r = 0; r < 2; r++) for (let c = 0; c < 2; c++) {
+      const lh = Buffer.alloc(34)
+      lh.writeUInt16LE(1, 0); lh.writeUInt16LE(c, 8); lh.writeUInt16LE(r, 10); lh.writeUInt16LE(1, 12); lh.writeUInt16LE(1, 14)
+      parts.push(rec(0x48, 2, lh), cellParas[r][c])
+    }
+    return Buffer.concat(parts)
+  }
+
+  const section = (data: Uint8Array) => {
+    const cfb = CFB.read(Buffer.from(data), { type: "buffer" })
+    const si = cfb.FullPaths.findIndex((x: string) => /BodyText\/Section0$/i.test(x))
+    return readRecords(Buffer.from(cfb.FileIndex[si].content as Uint8Array))
+  }
+
+  it("라벨 옆에 쓴 값은 안내문 대신 누름틀 안에 넣고 수정 표시를 켠다 — 한글에서 눌러 입력한 것과 같다", async () => {
+    const hwp = buildHwp([paragraph("머리 문단"), clickHereParagraph("성명 : "), paragraph("끝 문단")])
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    assert.ok(md.includes("성명 :") && !md.includes(GUIDE), md)
+    const r = await patchHwp(hwp, md.replace("성명 :", "성명 : 홍길동"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.ok(parseHwp5Document(Buffer.from(r.data!)).markdown.includes("성명 : 홍길동"))
+    const recs = section(r.data!)
+    const text = recs.find(x => x.tagId === TAG_PARA_TEXT && x.data.toString("utf16le").startsWith("성명"))!.data
+    // "성명 : " + 누름틀 시작(8) + 값 + 누름틀 끝(8) + 문단 끝 — 안내문은 값으로 바뀐다
+    assert.equal(text.subarray(10 + 16, 10 + 16 + 6).toString("utf16le"), "홍길동")
+    assert.equal(text.readUInt16LE(10 + 16 + 6), 0x04)
+    assert.ok(!text.toString("utf16le").includes(GUIDE))
+    const ctrl = recs.find(x => x.tagId === 0x47 && x.data.subarray(0, 4).toString("ascii") === "klc%")!
+    assert.ok(ctrl.data.readUInt32LE(4) & (1 << 15), "수정됨 비트")
+    // 값은 안내문의 빨간 기울임(7)이 아니라 앞 라벨 모양(0) — 한글이 직접 채운 누름틀처럼 한 run 으로 합쳐진다
+    const csRec = recs[recs.indexOf(recs.find(x => x.tagId === TAG_PARA_TEXT && x.data.toString("utf16le").startsWith("성명"))!) + 1]
+    assert.deepEqual([...csRec.data], [0, 0, 0, 0, 0, 0, 0, 0])
+  })
+
+  it("누름틀만 든 표 칸(마크다운에선 빈칸)에 쓴 값도 누름틀에 채운다", async () => {
+    const hwp = buildHwp([tableOf([[paragraph("성명", 2), clickHereParagraph("", 2)], [paragraph("직업", 2), paragraph("회사원", 2)]])])
+    const md = parseHwp5Document(Buffer.from(hwp), { layoutTables: "keep" }).markdown
+    assert.ok(!md.includes(GUIDE), md)
+    const edited = md.replace(/\| 성명 \|\s*\|/, "| 성명 | 홍길동 |")
+    assert.notEqual(edited, md, md)
+    const r = await patchHwp(hwp, edited)
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.ok(parseHwp5Document(Buffer.from(r.data!), { layoutTables: "keep" }).markdown.includes("| 성명 | 홍길동 |"))
+    const recs = section(r.data!)
+    assert.ok(!recs.some(x => x.tagId === TAG_PARA_TEXT && x.data.toString("utf16le").includes(GUIDE)))
+    assert.ok(recs.find(x => x.tagId === 0x47 && x.data.subarray(0, 4).toString("ascii") === "klc%")!.data.readUInt32LE(4) & (1 << 15))
+  })
+
+  it("누름틀과 떨어진 자리를 고치면 안내문은 그대로 둔다", async () => {
+    const hwp = buildHwp([clickHereParagraph("신청인 성명 : ")])
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    const r = await patchHwp(hwp, md.replace("신청인 성명 :", "대표자 성명 :"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    const recs = section(r.data!)
+    assert.ok(recs.find(x => x.tagId === TAG_PARA_TEXT)!.data.toString("utf16le").includes(GUIDE))
+    assert.equal(recs.find(x => x.tagId === 0x47)!.data.readUInt32LE(4) & (1 << 15), 0)
+  })
+})

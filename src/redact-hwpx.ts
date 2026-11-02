@@ -29,6 +29,7 @@ import {
   type ScrubCtx, type ScrubResult, type RedactFileHit, type RedactWhere,
 } from "./redact-scrub.js"
 import { normalizeForDetect, type RedactHit } from "./redact.js"
+import { readZipEntry } from "./hwpx/parser-shared.js"
 
 type Pos = [number, number] | null
 
@@ -403,7 +404,7 @@ export async function scrubHwpx(original: Uint8Array, ctx: ScrubCtx, mode: "mask
   for (const [name, entry] of Object.entries(zip.files)) {
     if (entry.dir || name === "mimetype") continue
     if (isPreviewImage(name)) { previews.push(name); continue }
-    const bytes = Buffer.from(await entry.async("uint8array"))
+    const bytes = Buffer.from(await readZipEntry(entry, "uint8array"))
     if (isXmlName(name) || /^BinData\/.*\.svg$/i.test(name)) {
       const dec = decode(bytes)
       if (!dec) { unscanned.push(name); continue }
@@ -442,7 +443,7 @@ export async function scrubHwpx(original: Uint8Array, ctx: ScrubCtx, mode: "mask
   if (mode === "mask") {
     if (hits.length > 0 || ctx.literals.length > 0) {
       for (const name of previews) {
-        const blank = blankPreviewImage(await zip.file(name)!.async("uint8array"))
+        const blank = blankPreviewImage(await readZipEntry(zip.file(name)!, "uint8array"))
         if (blank) replacements.set(name, blank)
         else warnings.push(`${name}: 형식을 몰라 미리보기 이미지를 지우지 못했습니다 — 첫 쪽 렌더에 PII 가 보일 수 있습니다`)
       }

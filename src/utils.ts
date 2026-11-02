@@ -108,6 +108,9 @@ export function precheckZipSize(
   buffer: ArrayBuffer,
   maxUncompressedSize = 256 * 1024 * 1024, // parser-shared MAX_DECOMPRESS_SIZE 와 동기
   maxEntries = 500,
+  /** 그림·개체 파트(엔트리 이름 re) — skip 이면 합계에서 뺀다(파서가 풀지 않는다), 아니면 한도 초과 메시지에 크기를 적는다 (#108).
+   *  never — 파서가 어느 때도 풀지 않는 파트(동영상·음성·OLE 임베드)는 늘 뺀다: 110MB 동영상 하나로 발표 자료가 통째 거부됐다 */
+  media?: { re: RegExp; skip: boolean; never?: RegExp },
 ): { totalUncompressed: number; entryCount: number } {
   try {
     const data = new DataView(buffer)
@@ -129,18 +132,32 @@ export function precheckZipSize(
     if (cdOffset + cdSize > len) return { totalUncompressed: 0, entryCount }
 
     let totalUncompressed = 0
+    let mediaUncompressed = 0
     let pos = cdOffset
     for (let i = 0; i < entryCount && pos + 46 <= cdOffset + cdSize; i++) {
       if (data.getUint32(pos, true) !== 0x02014b50) break
-      totalUncompressed += data.getUint32(pos + 24, true)
+      // 비압축 크기는 중앙 디렉터리와 지역 헤더 중 큰 값 — JSZip 은 지역 헤더 크기로 풀고(readZipEntry 가 그 크기를 넘으면 끊는다),
+      // 한쪽만 작게 속여 합계 검사를 비켜 가지 못하게 둘 다 본다
+      const localOff = data.getUint32(pos + 42, true)
+      const localSize = localOff + 30 <= len && data.getUint32(localOff, true) === 0x04034b50 ? data.getUint32(localOff + 22, true) : 0
+      const size = Math.max(data.getUint32(pos + 24, true), localSize)
       const nameLen = data.getUint16(pos + 28, true)
       const extraLen = data.getUint16(pos + 30, true)
       const commentLen = data.getUint16(pos + 32, true)
+      // 이름이 버퍼 밖이면 그림 파트로 치지 않는다(합계에서 빠지지 않게)
+      const isMedia = !!media && pos + 46 + nameLen <= len &&
+        media.re.test(new TextDecoder().decode(new Uint8Array(buffer, pos + 46, nameLen)))
+      const never = isMedia && !!media?.never && media.never.test(new TextDecoder().decode(new Uint8Array(buffer, pos + 46, nameLen)))
+      if (isMedia && !never) mediaUncompressed += size
+      if (!(isMedia && (media?.skip || never))) totalUncompressed += size
       pos += 46 + nameLen + extraLen + commentLen
     }
 
     if (totalUncompressed > maxUncompressedSize) {
-      throw new KordocError(`ZIP 비압축 크기 초과: ${(totalUncompressed / 1024 / 1024).toFixed(1)}MB (최대 ${maxUncompressedSize / 1024 / 1024}MB)`)
+      const mb = (n: number) => (n / 1024 / 1024).toFixed(1)
+      const mediaNote = media && !media.skip && mediaUncompressed > 0
+        ? ` — 그림·개체 파트가 ${mb(mediaUncompressed)}MB, 이미지 추출을 끄면(images: false·--no-images) 세지 않는다` : ""
+      throw new KordocError(`ZIP 비압축 크기 초과: ${mb(totalUncompressed)}MB (최대 ${maxUncompressedSize / 1024 / 1024}MB)${mediaNote}`)
     }
 
     return { totalUncompressed, entryCount }
@@ -223,7 +240,7 @@ import type { ErrorCode } from "./types.js"
 
 /** 에러를 구조화된 ErrorCode로 분류 — KordocError 메시지 패턴 매칭 */
 /** 선택 의존 설치 실패 안내 꼬리 — 네트워크가 막힌 linux/x64 에서 onnxruntime-node 설치 스크립트가 CUDA 바이너리를 받다 실패하면
- *  npm 이 sharp·@huggingface/transformers 까지 선택 의존 설치에서 뺀다(#99). npx 캐시 실행은 npm install 로 못 고친다 */
+ *  npm 이 sharp·@huggingface/tokenizers 까지 선택 의존 설치에서 뺀다(#99). npx 캐시 실행은 npm install 로 못 고친다 */
 export const OPTIONAL_DEP_INSTALL_HINT =
   " 네트워크가 제한된 linux/x64 에서 npx 로 설치했다면 onnxruntime-node 의 CUDA 다운로드 실패로 함께 빠졌을 수 있습니다 — " +
   "`ONNXRUNTIME_NODE_INSTALL=skip npx -y kordoc@^4 …` 로 다시 설치하세요."
@@ -245,4 +262,10 @@ export function classifyError(err: unknown): ErrorCode {
   if (msg.includes("섹션") && (msg.includes("찾을 수 없") || msg.includes("없음"))) return "NO_SECTIONS"
   if (msg.includes("시그니처") || msg.includes("복구할 수 없")) return "CORRUPTED"
   return "PARSE_ERROR"
+}
+
+/** ZIP 파트 경로의 확장자 — 마지막 경로 조각에서만, 없으면 "bin". "ppt/media.v2/image1" 의 "v2/image1" 이 그림 파일 이름에 들어가
+ *  저장 경로가 깨졌다 */
+export function partExtension(path: string): string {
+  return (/\.([A-Za-z0-9]{1,5})$/.exec(path.slice(path.lastIndexOf("/") + 1))?.[1] ?? "bin").toLowerCase()
 }

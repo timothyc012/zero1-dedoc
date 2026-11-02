@@ -3,6 +3,37 @@ import assert from "node:assert/strict"
 import { detectColumnGutter, detectPersistentColumnGutter, orderByGutter, type ColRect } from "../src/pdf/two-column.js"
 import { extractPageBlocksFallback } from "../src/pdf/page-blocks.js"
 import type { NormItem } from "../src/pdf/text-line.js"
+import { splitImagePanels } from "../src/pdf/image-panels.js"
+
+describe("그림을 포함한 3단 리플릿", () => {
+  const items: NormItem[] = [
+    item("Left title", 44, 570, 178), item("Left first", 30, 540, 200), item("Left middle", 30, 200, 200), item("Left final", 30, 30, 200),
+    item("Middle heading", 306, 539, 178), item("Middle caption first", 355, 85, 141), item("Middle caption second", 350, 72, 155), item("Middle caption final", 392, 31, 70),
+    item("Right title", 542, 491, 233), item("Right subtitle", 553, 461, 217), item("Right date", 635, 400, 51),
+  ]
+  const figures = [rect(528, 8, 264, 612), rect(276, 309, 240, 235), rect(292, 104, 208, 208)]
+  it("중간 단 그림 아래 설명을 오른쪽 표지보다 먼저 읽는다", () => {
+    const blocks = extractPageBlocksFallback(items, 1, true, true, undefined, figures)
+    const text = blocks.map(b => b.text ?? "").join("\n")
+    assert.ok(text.indexOf("Middle caption final") < text.indexOf("Right title"), text)
+    assert.ok(text.indexOf("Left final") < text.indexOf("Middle heading"), text)
+    for (const source of items) assert.ok(text.includes(source.text), source.text)
+  })
+  it("그림이 있어도 같은 행으로 정렬된 3열 표는 분리하지 않는다", () => {
+    const tableItems: NormItem[] = []
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 3; c++) {
+      tableItems.push(item(r === 0 ? ["구분", "항목", "내용"][c] : ["항목" + r, "종류" + r, "값" + r][c], 30 + c * 300, 500 - r * 100, 150))
+    }
+    const baseline = extractPageBlocksFallback(tableItems, 1, true, true)
+    const withFigure = extractPageBlocksFallback(tableItems, 1, true, true, undefined, [rect(630, 50, 150, 100)])
+    assert.deepEqual(withFigure, baseline)
+    assert.equal(withFigure[0].table?.cols, 3)
+  })
+  it("전폭 제목이 여러 텍스트 조각으로 나뉘어도 단을 가르지 않는다", () => {
+    const title = [item("제목 앞", 30, 650, 215), item("제목 중간", 265, 650, 280), item("제목 끝", 565, 650, 215)]
+    assert.equal(splitImagePanels([...title, ...items], figures), null)
+  })
+})
 
 /**
  * #64 — 2단 시험지 읽기 순서. 좌표 모델은 이슈 제보 블록 덤프(2026학년도 수능
@@ -60,6 +91,23 @@ describe("detectColumnGutter", () => {
     assert.ok(gx! > 398 && gx! < 440, `거터 x=${gx}는 단 사이(398~440)여야 함`)
   })
 
+  it("전폭 줄이 대부분인 한 단 본문에서 낱말 조각만으로 보이는 거터 → null", () => {
+    // 줄 대부분은 전폭 한 아이템(거터를 가로지름), 글꼴이 바뀐 낱말에서 갈린 조각만 좌·우에 남아 가운데가 비어 보인다 (ODL 003)
+    const page = (fullRows: (i: number) => boolean) => {
+      const rects: ColRect[] = []
+      for (let i = 0; i < 56; i++) {
+        const y = 900 - i * 14
+        if (i % 4 === 0) rects.push(rect(60, y, 180, 11))
+        else if (i % 4 === 2) rects.push(rect(300, y, 260, 11))
+        else if (fullRows(i)) rects.push(rect(60, y, 500, 11))
+      }
+      return rects
+    }
+    assert.equal(detectColumnGutter(page(() => true)), null)
+    // 같은 조각 사이에 전폭 줄이 몇 줄뿐이면(제목·캡션) 2단이다
+    assert.notEqual(detectColumnGutter(page(i => i === 1 || i === 29)), null)
+  })
+
   it("전폭 프로즈(단일 컬럼) → null", () => {
     const rects: ColRect[] = []
     for (let i = 0; i < 20; i++) {
@@ -91,6 +139,20 @@ describe("detectColumnGutter", () => {
       rects.push(rect(420, 900 - i * 30, 250, 12)) // 동일 베이스라인
     }
     assert.equal(detectColumnGutter(rects), null)
+  })
+
+  it("같은 줄 격자에 맞춘 두 단 산문(양 단 문단 첫 줄 들여쓰기 꼴이 같다) → 거터", () => {
+    // 속기록·시험지: 좌우 단 줄이 같은 높이에 서서 행 짝 가드에 걸렸다 — 문단 첫 줄은 10pt 들여 쓴다
+    const rects: ColRect[] = []
+    for (let i = 0; i < 24; i++) {
+      const indent = i % 6 === 0 ? 10 : 0
+      rects.push(rect(50 + indent, 900 - i * 16, 237 - indent, 11))
+      rects.push(rect(309 + (i % 6 === 3 ? 10 : 0), 900 - i * 16, 237 - (i % 6 === 3 ? 10 : 0), 11))
+    }
+    const gx = detectColumnGutter(rects)
+    assert.ok(gx !== null && gx > 287 && gx < 309, String(gx))
+    // 단 사이 빈 띠가 넓어 띠마다 고른 거터 자리가 10pt 넘게 달라도 같은 거터다
+    assert.notEqual(detectPersistentColumnGutter(rects), null)
   })
 
   it("우측 상단 작은 사이드바(서명란류) → null", () => {

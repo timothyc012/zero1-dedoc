@@ -8,8 +8,10 @@
  */
 
 import type { IRBlock, IRCell, IRTable } from "../types.js"
-import { CLIP_TABLES, CONT_PARTS, EMPTY_PARTS, TABLE_COLXS } from "./table-meta.js"
-import { mergeCrossPageTables } from "./table-parts.js"
+import { CELL_LINES, CLIP_TABLES, CONT_PARTS, EMPTY_PARTS, IMAGE_CELLS, TABLE_COLXS, TABLE_TAIL } from "./table-meta.js"
+import { joinSplitParts, mergeCrossPageTables } from "./table-parts.js"
+import { joinCellEdges } from "./cell-edges.js"
+import { markContinuedText } from "./table-pages.js"
 
 /** 조각의 좌우 변과 앞 표 열 경계를 같은 것으로 보는 거리 (pt) — 격자 열 경계는 클립 좌표 묶음(0.3pt)의 평균 */
 const COL_MATCH_TOL = 0.5
@@ -41,7 +43,7 @@ export function mergeContinuedCells(blocks: IRBlock[], pageHeights?: Map<number,
   for (let j = blocks.length - 1; j > 0; j--) {
     const part = blocks[j]
     const from = part.table ? CONT_PARTS.get(part.table) : undefined
-    if (!from || !part.table) continue
+    if (!from || !part.table) { unwrapContinuedTable(blocks, j, pageHeights, true); continue }
     // 앞 표 — 사이 글은 앞 쪽 꼬리말·이 쪽 머리말 띠뿐이다 (clip-cells 가 조각을 쪽 첫 내용, 앞 칸을 쪽 마지막 내용으로 골랐다)
     let i = j - 1
     while (i >= 0 && blocks[i].type !== "table") i--
@@ -52,9 +54,17 @@ export function mergeContinuedCells(blocks: IRBlock[], pageHeights?: Map<number,
     if (!cell || !add) continue
     const at = cell.blocks || add.blocks ? cellBlocks(cell, prev.pageNumber).length : -1
     if (cell.blocks || add.blocks) cell.blocks = [...cellBlocks(cell, prev.pageNumber), ...cellBlocks(add, part.pageNumber)]
+    else if (part.pageNumber) markContinuedText(cell, add, part.pageNumber)
     cell.text = [cell.text, add.text].filter(s => s.trim()).join("\n")
-    // 앞 쪽 조각이 빈 칸뿐이던 표(쪽 끝에 머리 행만 남은 칸)도 이어진 글을 받았으면 더는 빈 조각이 아니다 — 쪽 넘김 잇기가 버리지 않게
-    if (cell.text.trim() || cell.blocks?.length) EMPTY_PARTS.delete(prev.table)
+    if (IMAGE_CELLS.has(add)) IMAGE_CELLS.add(cell)
+    joinCellEdges(cell, add)
+    // 표는 이 조각이 놓인 쪽에서 끝난다 — 다음 쪽 표 조각이 이 칸의 나머지로 시작하면(세 쪽에 걸친 칸) 쪽 넘김 잇기가 여기서 잇는다.
+    // 칸 글줄도 이어 붙여 끝줄이 이 조각의 끝줄이 되게 한다 (글 이어짐 판정)
+    const lines = CELL_LINES.get(add)
+    if (lines?.length) CELL_LINES.set(cell, [...(CELL_LINES.get(cell) ?? []), ...lines])
+    if (part.pageNumber && part.bbox) TABLE_TAIL.set(prev.table, TABLE_TAIL.get(part.table) ?? { page: part.pageNumber, y: part.bbox.y, height: part.bbox.height })
+    // 앞 쪽 조각이 빈 칸뿐이던 표(쪽 끝에 머리 행만 남은 칸)도 이어진 글·그림을 받았으면 더는 빈 조각이 아니다 — 쪽 넘김 잇기가 버리지 않게
+    if (cell.text.trim() || cell.blocks?.length || IMAGE_CELLS.has(cell)) EMPTY_PARTS.delete(prev.table)
     blocks.splice(j, 1)
     // 칸 안에서 쪽 경계로 갈린 표 (반제품 아이스팩 기준 틀의 2×2 계산 예시: 첫 행만 앞 쪽에 남은 것)
     if (cell.blocks && at > 0) {
@@ -69,7 +79,7 @@ export function mergeContinuedCells(blocks: IRBlock[], pageHeights?: Map<number,
 /** 이어진 바깥 칸의 다음 쪽 전체 클립이 1×1 감싸개가 되면 그 안의 표 머리/본문이
  * 서로 다른 깊이에 놓인다. 두 표의 열 경계와 쪽 끝·첫머리 위치가 맞을 때만 감싸개를
  * 풀어 기존 쪽 넘김 표 병합에 넘긴다. 감싸개 안의 뒤 문단·표 순서는 그대로 둔다. */
-function unwrapContinuedTable(blocks: IRBlock[], at: number, pageHeights?: Map<number, number>): void {
+function unwrapContinuedTable(blocks: IRBlock[], at: number, pageHeights?: Map<number, number>, splitOnly = false): void {
   const prev = blocks[at - 1], frame = blocks[at]
   if (!prev?.table || !frame?.table || frame.table.rows !== 1 || frame.table.cols !== 1 || !CLIP_TABLES.has(frame.table)) return
   const inner = frame.table.cells[0]?.[0]?.blocks
@@ -81,6 +91,8 @@ function unwrapContinuedTable(blocks: IRBlock[], at: number, pageHeights?: Map<n
   const ph = pageHeights?.get(prev.pageNumber), nh = pageHeights?.get(next.pageNumber)
   if (!ph || !nh || prev.bbox.y > ph * CONTINUED_TABLE_PAGE_BAND
     || next.bbox.y + next.bbox.height < nh * (1 - CONTINUED_TABLE_PAGE_BAND)) return
+  // 바깥 칸 이어짐 표시가 없을 때는 유일한 안쪽 표의 행 분할까지 확인해야 감싸개를 푼다.
+  if (splitOnly && (inner.length !== 1 || !joinSplitParts(prev.table, px, next.table, nx, 0, prev.bbox.y)?.split)) return
   blocks.splice(at, 1, ...inner)
 }
 
@@ -95,8 +107,10 @@ function fillNestedContinuation(blocks: IRBlock[], at: number): void {
   const xs = TABLE_COLXS.get(u)
   const cell = xs ? lastRowCell(t, xs[0], xs[xs.length - 1]) : undefined
   const add = u.cells[0]?.[0]
-  if (!cell || !add || cell.text.trim() || cell.blocks?.length) return
+  if (!cell || !add || cell.text.trim() || cell.blocks?.length || IMAGE_CELLS.has(cell)) return
   cell.text = add.text
   if (add.blocks) cell.blocks = add.blocks
+  if (IMAGE_CELLS.has(add)) IMAGE_CELLS.add(cell)
+  joinCellEdges(cell, add)
   blocks.splice(at, 1)
 }

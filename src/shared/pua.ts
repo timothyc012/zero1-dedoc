@@ -10,6 +10,7 @@
  */
 
 import { wingdingsChar } from "./symbol-fonts.js"
+import { circledNumber } from "./numbering.js"
 
 /** BMP Symbol 영역 (U+F020~U+F0FF) 매핑 — 키는 (code - 0xF000) */
 const BMP_SYMBOL_MAP: Record<number, string> = {
@@ -77,7 +78,9 @@ const SUPPLEMENTARY_MAP: Record<number, string> = {
   0xf02ef: "·", // ·
   0xf0854: "《", // 《
   0xf0855: "》", // 》
-  0xf00da: "▸", // ▸
+  // 네모 안 "예" — 예시 표지(편람 "[예] 여자(女子)", 시험지 "관계([예]단풍 철:철 성분)"). 한컴 글꼴 6종의 글리프와
+  // 시험지 PDF 에 찍힌 윤곽 모두 네모 안 예다(종전 ▸)
+  0xf00da: "[예]",
   0xf080f: "━", // ━
   0xf0827: "■", // ■
   0xf03c5: "□", // □ 글머리 — HWP3→HWP5 한컴 변환본 보존 코드, 한컴오피스 표시값 (rhwp #1105)
@@ -100,15 +103,7 @@ const SUPPLEMENTARY_MAP: Record<number, string> = {
   // 빠져 있던 항목. 매핑이 없으면 sanitizeText 가 지워 글자가 사라진다 —
   // hwp3-sample11 한 문서에서만 괘선 조각·원문자 57자가 그렇게 증발했다.
   0xf0090: "✺", // 물방울 asterisk 글머리
-  0xf0288: "⓪", // 별도 글리프 원숫자 — ③(F028B)는 근거 문서가 리터럴을 써 rhwp 표에도 없다
-  0xf0289: "①",
-  0xf028a: "②",
-  0xf028c: "④",
-  0xf028d: "⑤",
-  0xf028e: "⑥",
-  0xf028f: "⑦",
-  0xf0290: "⑧",
-  0xf0291: "⑨",
+  // 원 숫자·네모 숫자(U+F0288~F029B·F02B0~F02CC)는 아래 번호 글리프 규칙
   0xf02ec: "◇", // 작은 빈 마름모 글머리
   0xf02fb: "▸", // 중첩 표 글머리
   0xf03a7: "⊟", // 둥근 네모 안 −
@@ -126,11 +121,65 @@ const SUPPLEMENTARY_MAP: Record<number, string> = {
   0xf0848: "━", // 굵은 가로 막대 글머리
 }
 
-/** 사각 안 숫자 ①~⑳ (U+F02B1~F02C4) — 한컴 전용 글리프.
- *  렌더는 사각 글리프를 위해 원문 유지가 맞지만, 마크다운은 폰트 없는 소비자(RAG·grep)가
- *  읽으므로 둘러싸인 숫자로 옮긴다 (rhwp b74b5098 / #3385 — 실문서에서 5건 유출 확인). */
-const BOXED_NUMBER_START = 0xf02b1
-const BOXED_NUMBER_END = 0xf02c4
+/** 둘러싸인 숫자 n → 원 숫자 ⓪①~㊿ (51 이상은 괄호 숫자 — 번호 시퀀스 규칙 numbering.ts circledNumber 와 같다) */
+export function enclosedNumber(n: number): string {
+  return n === 0 ? "⓪" : circledNumber(n - 1)
+}
+
+/** 한컴 번호 글리프 (한컴 글꼴 6종의 글리프 모양):
+ *  원 U+F0288~F0291 = 원 안 0~9 (숫자가 왼쪽 — 두 자리 번호의 십의 자리 조각도 된다), U+F0292~F029B = 일의 자리 숫자 0~9,
+ *  네모 U+F02B0~F02B9 = 네모 안 0~9, U+F02BA~F02C2 = 왼쪽에 1~9 를 든 네모(십의 자리 조각), U+F02C3~F02CC = 일의 자리 숫자 0~9.
+ *  두 자리 번호는 십의 자리 조각과 일의 자리 숫자를 글자 겹치기로 겹친다(원문 F0289 + F0298 = ⑯, F02BA + F02C3 = 네모 10) —
+ *  이어진 두 조각은 한 번호로 옮긴다(mapPuaText). 종전 표는 U+F02B1~F02C4 를 ①~⑳ 으로 이어 매겨 조각을 번호로 읽었다.
+ *  네모 숫자도 마크다운은 폰트 없는 소비자(RAG·grep)가 읽으므로 둘러싸인 숫자(원 숫자)로 옮긴다 (rhwp b74b5098 / #3385) */
+function tensDigit(code: number): number | undefined {
+  if (code >= 0xf0288 && code <= 0xf0291) return code - 0xf0288
+  if (code >= 0xf02ba && code <= 0xf02c2) return code - 0xf02b9
+  return undefined
+}
+function unitsDigit(code: number): number | undefined {
+  if (code >= 0xf0292 && code <= 0xf029b) return code - 0xf0292
+  if (code >= 0xf02c3 && code <= 0xf02cc) return code - 0xf02c3
+  return undefined
+}
+function numberGlyph(code: number): string | undefined {
+  const t = tensDigit(code)
+  if (t !== undefined) return enclosedNumber(t)
+  if (code >= 0xf02b0 && code <= 0xf02b9) return enclosedNumber(code - 0xf02b0)
+  const u = unitsDigit(code)
+  return u === undefined ? undefined : String(u)
+}
+
+/**
+ * 글자 겹치기 도형 안 글 → 맨 숫자. HWP 는 원·네모 겹치기 글을 원 숫자(②)나 위 PUA 번호 조각(원·네모 안 숫자, 두 자리 번호의 십·일의
+ * 자리)으로 담고, 한글이 HWPX 로 저장할 때는 맨 숫자로 담는다 — 도형은 circleType 이 그린다(한글 저장 짝: ② + 원 → "2"). 조각을
+ * 그대로 옮기면 한글이 펼쳐 놓아 뒤 조각이 네모 밖으로 밀렸다(#178). 글이 전부 숫자 글리프일 때만 바꾸고 아니면 그대로
+ */
+export function composeDigits(text: string): string {
+  let out = ""
+  for (const c of text) {
+    const code = c.codePointAt(0)!
+    const d = code >= 0x2460 && code <= 0x2473 ? code - 0x245f
+      : code === 0x24ea ? 0
+      : code >= 0xf02b0 && code <= 0xf02b9 ? code - 0xf02b0
+      : tensDigit(code) ?? unitsDigit(code)
+    if (d === undefined) return text
+    out += String(d)
+  }
+  return out || text
+}
+
+/** 이어진 두 글자가 두 자리 번호의 십의 자리 조각 + 일의 자리 숫자면 그 번호(원 숫자) */
+export function pairedNumber(a: string, b: string): string | undefined {
+  const t = tensDigit(a.codePointAt(0) ?? 0), u = unitsDigit(b.codePointAt(0) ?? 0)
+  return t !== undefined && u !== undefined ? enclosedNumber(t * 10 + u) : undefined
+}
+
+/** 글자 겹치기(HWPX hp:compose · HWP5 tcps)의 글 — 둘러싼 도형(원·사각형 …) 안 숫자는 원 숫자, 그 밖은 겹친 글 그대로
+ *  (두 자리 번호 조각은 mapPuaText 가 한 번호로 합친다) */
+export function composeText(chars: string, enclosed: boolean): string {
+  return enclosed && /^\d{1,2}$/.test(chars) ? enclosedNumber(Number(chars)) : chars
+}
 
 /** 단일 코드포인트 매핑 — 매핑 없으면 원본 유지 */
 function mapPuaChar(code: number): string | undefined {
@@ -141,11 +190,8 @@ function mapPuaChar(code: number): string | undefined {
     // (KTUG 표 U+E0BC~F8F7 5,660자)은 이 구간에 한 자도 없어 충돌하지 않는다
     return BMP_SYMBOL_MAP[code - 0xf000] ?? wingdingsChar(code - 0xf000)
   }
-  if (code >= BOXED_NUMBER_START && code <= BOXED_NUMBER_END) {
-    return String.fromCodePoint(0x2460 + (code - BOXED_NUMBER_START))
-  }
   if (code >= 0xf0000 && code <= 0xf09ff) {
-    return SUPPLEMENTARY_MAP[code]
+    return numberGlyph(code) ?? SUPPLEMENTARY_MAP[code]
   }
   return undefined
 }
@@ -157,9 +203,11 @@ function mapPuaChar(code: number): string | undefined {
  */
 export function mapPuaText(text: string): string {
   let out = ""
-  for (const ch of text) {
-    const code = ch.codePointAt(0)!
-    out += mapPuaChar(code) ?? ch
+  const chars = Array.from(text)
+  for (let i = 0; i < chars.length; i++) {
+    const pair = i + 1 < chars.length ? pairedNumber(chars[i], chars[i + 1]) : undefined
+    if (pair !== undefined) { out += pair; i++; continue }
+    out += mapPuaChar(chars[i].codePointAt(0)!) ?? chars[i]
   }
   return out
 }

@@ -17,8 +17,8 @@ jobs:
       matrix:
         node-version: [20, 22, 24]
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
@@ -27,16 +27,121 @@ jobs:
           # onnxruntime-node 설치 스크립트의 CUDA 바이너리(api.nuget.org)는 CPU 추론에 필요 없다. 다운로드 타임아웃으로
           # npm ci 가 실패하던 것(2026-09-23 두 번 연속) 방지
           ONNXRUNTIME_NODE_INSTALL: skip
+      # 알려진 취약점이 하나라도 있으면 멈춘다(운영·개발 의존성 모두) — 클론해 npm ci 한 환경에서 보안 점검에 걸리지 않게
+      - run: npm audit --audit-level=low
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  # Java·Python SDK — Node 24 로 한 번 빌드한 dist/ 를 두 SDK 잡이 artifact 로 받아 쓴다(기존 Node 매트릭스와 분리)
+  engine-dist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+        env:
+          ONNXRUNTIME_NODE_INSTALL: skip
+      - run: npm run build
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: engine-dist
+          path: dist/
+          retention-days: 1
+
+  python-sdk:
+    needs: engine-dist
+    runs-on: ubuntu-latest
+    # 지원 하한과 최신 — 3.14 는 run_coroutine_threadsafe 가 첫 걸음 전 취소를 바로 건다(동기 close 를 Ctrl-C 로 끊는 경로)
+    strategy:
+      matrix:
+        python: ["3.11", "3.14"]
+    env:
+      KORDOC_CLI: ${{ github.workspace }}/dist/cli.js
+      KORDOC_SDK_FIXTURES: ${{ github.workspace }}/.sdk-fixtures
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+      # 엔진 실행 의존성 + 합성 문서 생성(tsx)
+      - run: npm ci
+        env:
+          ONNXRUNTIME_NODE_INSTALL: skip
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: engine-dist
+          path: dist/
+      - run: node --import tsx tests/fixtures/sdk-docs.ts "$KORDOC_SDK_FIXTURES"
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: ${{ matrix.python }}
+      - name: 테스트 (실제 엔진·Node parse() 결과 동등성·장애 주입)
+        working-directory: sdk/python
+        run: |
+          python -m pip install -e '.[test]'
+          python -m pytest -W error::pytest.PytestUnraisableExceptionWarning
+      # wheel 이 돌아도 sdist 가 깨질 수 있어 둘 다 설치해 본다
+      - name: wheel·sdist 를 각각 빈 가상환경에서 설치해 실제 파싱
+        working-directory: sdk/python
+        run: |
+          python -m build -o "$RUNNER_TEMP/pydist"
+          for dist in whl tar.gz; do
+            python -m venv "$RUNNER_TEMP/consume-$dist"
+            "$RUNNER_TEMP/consume-$dist/bin/pip" install "$RUNNER_TEMP"/pydist/kordoc-*."$dist"
+            "$RUNNER_TEMP/consume-$dist/bin/python" examples/parse_document.py "$KORDOC_SDK_FIXTURES/중첩 표.hwpx" --gfm | grep -q '<!-- <table id="t1" /> -->'
+          done
+
+  java-sdk:
+    needs: engine-dist
+    runs-on: ubuntu-latest
+    env:
+      KORDOC_CLI: ${{ github.workspace }}/dist/cli.js
+      KORDOC_SDK_FIXTURES: ${{ github.workspace }}/.sdk-fixtures
+      # JVM 이 한국어 파일 경로를 다루려면 UTF-8 locale 이 필요하다
+      LANG: C.UTF-8
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+        env:
+          ONNXRUNTIME_NODE_INSTALL: skip
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: engine-dist
+          path: dist/
+      - run: node --import tsx tests/fixtures/sdk-docs.ts "$KORDOC_SDK_FIXTURES"
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+          cache-dependency-path: sdk/java/kordoc-pom.xml
+      # kordoc-pom.xml 은 pom.xml 이름이 아니라 GitLab 미러 보안 검사가 건너뛴다 — Java 의존성(전이 포함) 취약점은 여기서 막는다
+      - uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
+        with:
+          scan-args: |-
+            --lockfile=pom.xml:sdk/java/kordoc-pom.xml
+      - name: 테스트·JAR·sources JAR (실제 엔진·Node parse() 결과 동등성·장애 주입)
+        run: mvn -B -f sdk/java/kordoc-pom.xml install
+      - name: 별도 Maven 예제가 설치한 JAR 로 실제 파싱
+        run: |
+          mvn -B -q -f sdk/java/examples/consumer/consumer-pom.xml compile exec:java -Dexec.args="'$KORDOC_SDK_FIXTURES/중첩 표.hwpx' --gfm" > "$RUNNER_TEMP/java-example.md"
+          grep -q '<!-- <table id="t1" /> -->' "$RUNNER_TEMP/java-example.md"
 
   windows-ocr:
     name: Windows OCR backend checks
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24
           cache: npm

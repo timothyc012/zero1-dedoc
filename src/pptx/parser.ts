@@ -1,295 +1,491 @@
 /**
- * Minimal PPTX text/table parser.
+ * PPTX (Office Open XML Presentation) 파서
  *
- * PPTX is an OOXML ZIP package. We follow presentation.xml relationship order
- * and emit slide-local IR blocks so pageNumber remains the slide locator.
+ * ZIP + XML 구조를 jszip + xmldom으로 파싱하여 IRBlock[]로 변환.
+ * 슬라이드 1장 = 1쪽(pageNumber, presentation.xml 의 p:sldIdLst 순서).
+ * p:sp → heading(제목 개체 틀)/list(본문 개체 틀·글머리표)/paragraph, a:tbl → table, p:pic → image,
+ * 발표자 노트 → 인용(quote) 문단. 쪽 번호·날짜·바닥글 개체 틀은 내용이 아니라 버린다.
  */
 
 import JSZip from "jszip"
 import { DOMParser } from "@xmldom/xmldom"
-import type { DocumentMetadata, IRBlock, ParseOptions, ParseWarning } from "../types.js"
-import { blocksToMarkdown } from "../table/builder.js"
-import { KordocError, precheckZipSize, unzipLimitBytes } from "../utils.js"
+import type {
+  CellContext, IRBlock, DocumentMetadata, InternalParseResult,
+  ParseOptions, ParseWarning, ExtractedImage,
+} from "../types.js"
+import { KordocError, partExtension, precheckZipSize, unzipLimitBytes, stripDtd } from "../utils.js"
 import { parsePageRange } from "../page-range.js"
+import { blocksToMarkdown, buildTable, escapeLiteralDollar } from "../table/builder.js"
+import { escapeLiteralTags, tidyScriptTags, wrapScript } from "../script-tags.js"
+import { detectImageMime } from "../hwp5/images.js"
+import { localName, findChildByLocalName, childrenByLocalName, elementChildren, rawTextContent, MAX_XML_DEPTH } from "../shared/xml.js"
+import { readZipEntry } from "../hwpx/parser-shared.js"
 
-const RELS_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
-const MAX_PPTX_UNCOMPRESSED = unzipLimitBytes(100 * 1024 * 1024)
-const MAX_SLIDES = 1000
+/** ZIP 압축 해제 누적 최대 크기 (100MB) — ZIP bomb 방지 (DOCX 와 같은 값) */
+const MAX_DECOMPRESS_SIZE = unzipLimitBytes(100 * 1024 * 1024)
+/** 그림·개체 파트 — images:false 면 풀지 않으니 ZIP 상한에서도 뺀다 (DOCX #108 과 같은 규약) */
+const MEDIA_PART_RE = /^ppt\/(?:media|embeddings)\//
+/** 그림이 아닌 미디어·OLE 임베드 — 파서가 어느 때도 풀지 않는다(ZIP 상한에서 늘 뺀다) */
+const NEVER_READ_RE = /^ppt\/(?:embeddings\/.*|media\/.+\.(?:mp4|m4v|mov|avi|wmv|mpe?g|mkv|webm|mp3|wav|m4a|wma|aac|ogg|flac|mid|bin))$/i
+/** ZIP 엔트리 상한 — 슬라이드마다 slide·rels·notes·notes rels 네 파트에 그림이 붙어
+ *  HWPX·DOCX 기본(500)으로는 200장 남짓한 보통 발표 자료도 막힌다 */
+const MAX_ZIP_ENTRIES = 10000
+/** 슬라이드 수 상한 — sldIdLst 를 부풀린 악성 파일 방지 */
+const MAX_SLIDES = 2000
 
-function local(el: Element): string {
-  return el.localName || el.tagName.replace(/^[^:]+:/, "")
+/** 내용이 아닌 개체 틀 — 쪽 번호·날짜·바닥글·머리글, 노트의 슬라이드 그림 */
+const SKIP_PLACEHOLDERS = new Set(["sldNum", "dt", "ftr", "hdr", "sldImg"])
+/** 글머리표가 기본으로 켜진 개체 틀 (type 없는 ph 의 기본값은 "obj") */
+const BULLET_PLACEHOLDERS = new Set(["body", "obj"])
+
+const REL_NOTES = "/notesSlide"
+const REL_IMAGE = "/image"
+const SLIDE_PART_RE = /^ppt\/slides\/slide(\d+)\.xml$/
+
+const IMAGE_MIME: Record<string, string> = {
+  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+  gif: "image/gif", bmp: "image/bmp", wmf: "image/wmf", emf: "image/emf",
+  tif: "image/tiff", tiff: "image/tiff", svg: "image/svg+xml",
 }
 
-function children(el: Element, name?: string): Element[] {
-  const out: Element[] = []
-  for (let i = 0; i < el.childNodes.length; i++) {
-    const node = el.childNodes[i]
-    if (node.nodeType !== 1) continue
-    const child = node as Element
-    if (!name || local(child) === name) out.push(child)
+// ─── XML 헬퍼 ──────────────────────────────────────────
+
+function parseXml(text: string): Document {
+  return new DOMParser().parseFromString(stripDtd(text), "text/xml") as unknown as Document
+}
+
+/** 네임스페이스 접두사 무시 속성 조회 — r:id·r:embed 등 */
+function getAttr(el: Element, name: string): string | null {
+  const attrs = el.attributes
+  for (let i = 0; i < attrs.length; i++) {
+    const attr = attrs[i]
+    if (attr.localName === name || attr.name === name) return attr.value
   }
-  return out
+  return null
 }
 
-function descendants(el: Element, name: string): Element[] {
-  const out: Element[] = []
-  const walk = (node: Element) => {
-    for (const child of children(node)) {
-      if (local(child) === name) out.push(child)
-      walk(child)
-    }
+const NS_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+
+/** 관계 참조 속성(r:id) — p:sldId 는 접두사 없는 id(슬라이드 번호)도 함께 가져 localName 만으로는 못 가른다 */
+function getRelId(el: Element): string | null {
+  const attrs = el.attributes
+  for (let i = 0; i < attrs.length; i++) {
+    const attr = attrs[i]
+    if (attr.localName === "id" && (attr.namespaceURI === NS_REL || attr.name === "r:id")) return attr.value
   }
-  walk(el)
-  return out
+  return null
 }
 
-function textOf(el: Element): string {
-  const paragraphs = descendants(el, "p")
-  if (paragraphs.length) return paragraphs
-    .map(paragraph => descendants(paragraph, "t").map(t => t.textContent ?? "").join("").trim())
-    .filter(Boolean).join("\n")
-  return descendants(el, "t").map(t => t.textContent ?? "").join("").trim()
-}
-
-function parseXml(xml: string): Document {
-  return new DOMParser().parseFromString(xml, "text/xml") as unknown as Document
-}
-
-function relationshipMap(xml: string): Map<string, { type: string; target: string }> {
-  const root = parseXml(xml).documentElement
-  const map = new Map<string, { type: string; target: string }>()
-  for (const rel of descendants(root, "Relationship")) {
-    const id = rel.getAttribute("Id")
-    const type = rel.getAttribute("Type")
-    const target = rel.getAttribute("Target")
-    if (id && type && target) map.set(id, { type, target })
+/** 자식 경로를 localName 으로 따라간다 — 하나라도 없으면 null */
+function findPath(el: Element | null, ...names: string[]): Element | null {
+  for (const name of names) {
+    if (!el) return null
+    el = findChildByLocalName(el, name)
   }
-  return map
+  return el
 }
 
-function resolvePart(base: string, target: string): string {
-  const parts = base.split("/")
-  parts.pop()
-  for (const segment of target.split("/")) {
-    if (!segment || segment === ".") continue
-    if (segment === "..") parts.pop()
-    else parts.push(segment)
+/** 파트 기준 상대 경로 → ZIP 절대 경로 ("../media/a.png", "/ppt/slides/slide1.xml" 모두) */
+function resolvePart(baseDir: string, target: string): string {
+  if (target.startsWith("/")) return target.slice(1)
+  const parts = baseDir ? baseDir.split("/") : []
+  for (const seg of target.split("/")) {
+    if (seg === "..") parts.pop()
+    else if (seg && seg !== ".") parts.push(seg)
   }
   return parts.join("/")
 }
 
-function slideOrder(presentation: Document, rels: Map<string, { type: string; target: string }>): string[] {
-  const list = descendants(presentation.documentElement, "sldIdLst")[0]
-  if (!list) return []
-  const out: string[] = []
-  for (const id of children(list, "sldId")) {
-    const relId = id.getAttribute("r:id") || id.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id")
-    const relation = relId ? rels.get(relId) : undefined
-    if (relation?.target) out.push(resolvePart("ppt/presentation.xml", relation.target))
+interface Rel { type: string; target: string }
+
+/** 파트의 관계(.rels) — rId → { type, 절대 경로 }. 외부 링크는 뺀다 */
+async function readRels(zip: JSZip, part: string): Promise<Map<string, Rel>> {
+  const map = new Map<string, Rel>()
+  const slash = part.lastIndexOf("/")
+  const dir = slash >= 0 ? part.slice(0, slash) : ""
+  const file = zip.file(`${dir ? dir + "/" : ""}_rels/${part.slice(slash + 1)}.rels`)
+  if (!file) return map
+  const doc = parseXml(await readZipEntry(file, "text"))
+  for (const rel of childrenByLocalName(doc.documentElement, "Relationship")) {
+    const id = getAttr(rel, "Id")
+    const target = getAttr(rel, "Target")
+    if (!id || !target || getAttr(rel, "TargetMode") === "External") continue
+    map.set(id, { type: getAttr(rel, "Type") ?? "", target: resolvePart(dir, target) })
+  }
+  return map
+}
+
+/** 발표 순서대로 슬라이드 파트 — presentation.xml 이 없거나 비면 파일 번호 순 */
+async function slideParts(zip: JSZip): Promise<string[]> {
+  const ordered: string[] = []
+  const presFile = zip.file("ppt/presentation.xml")
+  if (presFile) {
+    const pres = parseXml(await readZipEntry(presFile, "text"))
+    const rels = await readRels(zip, "ppt/presentation.xml")
+    const list = findChildByLocalName(pres.documentElement, "sldIdLst")
+    for (const sld of list ? childrenByLocalName(list, "sldId") : []) {
+      const target = rels.get(getRelId(sld) ?? "")?.target
+      if (target && zip.file(target)) ordered.push(target)
+    }
+  }
+  if (ordered.length === 0) {
+    const names = Object.keys(zip.files).filter(n => SLIDE_PART_RE.test(n))
+    names.sort((a, b) => Number(SLIDE_PART_RE.exec(a)![1]) - Number(SLIDE_PART_RE.exec(b)![1]))
+    ordered.push(...names)
+  }
+  if (ordered.length > MAX_SLIDES) throw new KordocError(`PPTX 슬라이드 수 초과: ${ordered.length} (최대 ${MAX_SLIDES})`)
+  return ordered
+}
+
+// ─── 글 ────────────────────────────────────────────────
+
+/** a:p 한 문단의 글 — a:r·a:fld 의 a:t, 줄바꿈 a:br 은 공백. IR 규약대로 리터럴 $ 는 \$, 태그 꼴 "<sub>" 는 \<sub>
+ *  (escapeLiteralDollar·escapeLiteralTags — 그대로 두면 "$10 ~ $20" 이 마크다운에서 수식이 된다) */
+function paragraphText(p: Element): string {
+  let text = ""
+  for (const child of elementChildren(p)) {
+    const name = localName(child)
+    if (name === "r" || name === "fld") {
+      const t = findChildByLocalName(child, "t")
+      // 위·아래첨자 — a:rPr baseline(1/1000 %, 양수 위·음수 아래). 펴면 "10⁴" 가 "104" 로 값이 바뀐다 (DOCX·HWPX 와 같은 표지)
+      const rPr = findChildByLocalName(child, "rPr")
+      const baseline = Number(rPr ? getAttr(rPr, "baseline") ?? 0 : 0)
+      if (t) text += wrapScript(escapeLiteralTags(escapeLiteralDollar(rawTextContent(t))), baseline > 0 ? "sup" : baseline < 0 ? "sub" : null)
+    } else if (name === "br") {
+      text += " "
+    }
+  }
+  return tidyScriptTags(text.replace(/\s+/g, " ").trim())
+}
+
+type Bullet = "none" | "ordered" | "unordered" | undefined
+
+interface Para { text: string; lvl: number; bullet: Bullet }
+
+/** a:txBody 의 문단들 — 빈 문단은 뺀다. 글머리표는 a:pPr 에 적힌 것만(없으면 상속 = undefined) */
+function bodyParagraphs(txBody: Element): Para[] {
+  const out: Para[] = []
+  for (const p of childrenByLocalName(txBody, "p")) {
+    const text = paragraphText(p)
+    if (!text) continue
+    const pPr = findChildByLocalName(p, "pPr")
+    let bullet: Bullet
+    if (pPr) {
+      if (findChildByLocalName(pPr, "buNone")) bullet = "none"
+      else if (findChildByLocalName(pPr, "buAutoNum")) bullet = "ordered"
+      else if (findChildByLocalName(pPr, "buChar") || findChildByLocalName(pPr, "buBlip")) bullet = "unordered"
+    }
+    const lvl = Math.max(0, parseInt(pPr ? getAttr(pPr, "lvl") ?? "0" : "0", 10) || 0)
+    out.push({ text, lvl, bullet })
   }
   return out
 }
 
-function tableBlock(frame: Element, pageNumber: number): IRBlock | null {
-  const table = descendants(frame, "tbl")[0]
-  if (!table) return null
-  const sourceRows = children(table, "tr").map(row => children(row, "tc"))
-  if (!sourceRows.length) return null
-  const prop = (cell: Element, name: string): string | null =>
-    children(cell, "tcPr")[0]?.getAttribute(name) ?? cell.getAttribute(name)
-  const span = (cell: Element, name: string): number => {
-    const raw = prop(cell, name)
-    const value = raw ? Number.parseInt(raw, 10) : 1
-    return Number.isFinite(value) && value > 0 ? value : 1
-  }
-  const continuation = (cell: Element): boolean =>
-    prop(cell, "hMerge") === "1" || prop(cell, "hMerge") === "true" ||
-    prop(cell, "vMerge") === "1" || prop(cell, "vMerge") === "true"
-  const grid = children(table, "tblGrid")[0]
-  const physicalCols = grid ? children(grid, "gridCol").length : 0
-  if (physicalCols > 0 || sourceRows.some(row => row.some(continuation))) {
-    // DrawingML records one <a:tc> per physical grid column. hMerge/vMerge
-    // cells are continuation markers, not new cells following the span anchor.
-    const cols = physicalCols || Math.max(...sourceRows.map(row => row.length))
-    const empty = () => ({ text: "", colSpan: 1, rowSpan: 1 })
-    const cells = Array.from({ length: sourceRows.length }, () => Array.from({ length: cols }, empty))
-    for (let r = 0; r < sourceRows.length; r++) for (let c = 0; c < Math.min(sourceRows[r].length, cols); c++) {
-      const source = sourceRows[r][c]
-      if (continuation(source)) continue
-      const colSpan = Math.min(span(source, "gridSpan"), cols - c)
-      const rowSpan = Math.min(span(source, "rowSpan"), sourceRows.length - r)
-      cells[r][c] = { text: textOf(source), colSpan, rowSpan }
+/** 개체 틀 종류 — 개체 틀이 아니면 null, type 이 없으면 "obj" (OOXML 기본값) */
+function placeholderType(sp: Element): string | null {
+  const ph = findPath(sp, "nvSpPr", "nvPr", "ph")
+  return ph ? getAttr(ph, "type") ?? "obj" : null
+}
+
+/** 문단 → 블록. 글머리 문단은 list 로, 수준 1 이상은 바로 앞 list 의 children 으로 (blocksToMarkdown 의 2단 목록) */
+function pushParagraphs(paras: Para[], bulletDefault: boolean, page: number, out: IRBlock[]): void {
+  let lastList: IRBlock | null = null
+  for (const para of paras) {
+    const bullet = para.bullet ?? (bulletDefault ? "unordered" : "none")
+    if (bullet === "none") {
+      out.push({ type: "paragraph", text: para.text, pageNumber: page })
+      lastList = null
+      continue
     }
-    return { type: "table", pageNumber, table: { rows: cells.length, cols, cells, hasHeader: cells.length > 1 } }
+    const item: IRBlock = { type: "list", text: para.text, listType: bullet, pageNumber: page }
+    if (para.lvl > 0 && lastList) {
+      ;(lastList.children ??= []).push(item)
+    } else {
+      out.push(item)
+      lastList = item
+    }
   }
-  const placed: Array<Array<{ text: string; colSpan: number; rowSpan: number }>> = []
-  let maxCols = 0
-  for (let r = 0; r < sourceRows.length; r++) {
-    const row = placed[r] ?? (placed[r] = [])
-    let cursor = 0
-    for (const cell of sourceRows[r]) {
-      while (row[cursor]) cursor++
-      const colSpan = span(cell, "gridSpan")
-      const rowSpan = span(cell, "rowSpan")
-      const value = { text: textOf(cell), colSpan, rowSpan }
-      for (let dr = 0; dr < rowSpan; dr++) {
-        const target = placed[r + dr] ?? (placed[r + dr] = [])
-        for (let dc = 0; dc < colSpan; dc++) target[cursor + dc] = dr === 0 && dc === 0 ? value : { text: "", colSpan: 1, rowSpan: 1 }
+}
+
+// ─── 표 ────────────────────────────────────────────────
+
+/** a:tbl → 표 블록. 병합 연속 칸(hMerge·vMerge)은 원점 칸의 gridSpan·rowSpan 이 덮으므로 뺀다 */
+function parseTable(tbl: Element, page: number, keepEmptyCols?: boolean): IRBlock | null {
+  const rows = childrenByLocalName(tbl, "tr")
+  if (rows.length === 0) return null
+  const cellRows: CellContext[][] = rows.map((tr, r) => {
+    const cells: CellContext[] = []
+    childrenByLocalName(tr, "tc").forEach((tc, c) => {
+      if (getAttr(tc, "hMerge") === "1" || getAttr(tc, "vMerge") === "1") return
+      const txBody = findChildByLocalName(tc, "txBody")
+      const text = txBody ? bodyParagraphs(txBody).map(p => p.text).join("\n") : ""
+      cells.push({
+        text,
+        colSpan: Math.max(1, parseInt(getAttr(tc, "gridSpan") ?? "1", 10) || 1),
+        rowSpan: Math.max(1, parseInt(getAttr(tc, "rowSpan") ?? "1", 10) || 1),
+        colAddr: c,
+        rowAddr: r,
+      })
+    })
+    return cells
+  })
+  const table = buildTable(cellRows, { keepAnchoredEmptyCols: keepEmptyCols })
+  if (table.rows === 0 || table.cols === 0) return null
+  return { type: "table", table, pageNumber: page }
+}
+
+// ─── 슬라이드 ───────────────────────────────────────────
+
+interface SlideContext {
+  zip: JSZip
+  rels: Map<string, Rel>
+  page: number
+  warnings: ParseWarning[]
+  options?: ParseOptions
+  /** 그림 파트 → 파일명 (같은 그림을 여러 슬라이드가 쓰면 한 번만 저장) */
+  imageNames: Map<string, string>
+  images: ExtractedImage[]
+}
+
+async function pictureBlock(pic: Element, ctx: SlideContext): Promise<IRBlock | null> {
+  const blip = findPath(pic, "blipFill", "blip")
+  const embed = blip ? getAttr(blip, "embed") : null
+  const rel = embed ? ctx.rels.get(embed) : undefined
+  if (!rel || !rel.type.endsWith(REL_IMAGE)) return null
+  let filename = ctx.imageNames.get(rel.target)
+  if (!filename) {
+    const file = ctx.zip.file(rel.target)
+    if (!file) return null
+    const ext = partExtension(rel.target)
+    filename = `image_${String(ctx.imageNames.size + 1).padStart(3, "0")}.${ext}`
+    try {
+      // 삼항 안 await 는 CJS 빌드(sucrase)가 못 읽는다 — if 로
+      if (ctx.options?.images !== false) {
+        const data = await readZipEntry(file, "uint8array")
+        ctx.images.push({ filename, data, mimeType: IMAGE_MIME[ext] ?? detectImageMime(data) ?? "application/octet-stream", source: rel.target })
       }
-      cursor += colSpan
-      maxCols = Math.max(maxCols, cursor)
+    } catch (err) {
+      ctx.warnings.push({
+        page: ctx.page, code: "SKIPPED_IMAGE",
+        message: `PPTX 이미지 추출 실패 (${rel.target}): ${err instanceof Error ? err.message : String(err)}`,
+      })
+      return null
     }
+    ctx.imageNames.set(rel.target, filename)
   }
-  const cells = placed.map(row => Array.from({ length: maxCols }, (_, i) => row[i] ?? { text: "", colSpan: 1, rowSpan: 1 }))
-  return { type: "table", pageNumber, table: {
-    rows: cells.length, cols: maxCols, cells,
-    hasHeader: cells.length > 1,
-  } }
+  return { type: "image", text: filename, pageNumber: ctx.page }
 }
 
-function shapeBlock(shape: Element, pageNumber: number): IRBlock | null {
-  const text = textOf(shape)
-  if (!text) return null
-  const placeholder = descendants(shape, "ph")[0]
-  const type = placeholder?.getAttribute("type")
-  if (type === "title" || type === "ctrTitle") return { type: "heading", level: 1, text, pageNumber }
-  if (type === "subTitle") return { type: "heading", level: 2, text, pageNumber }
-  return { type: "paragraph", text, pageNumber }
-}
-
-async function slideNotes(zip: JSZip, slidePath: string): Promise<string | undefined> {
-  const relsPath = resolvePart(slidePath, `_rels/${slidePath.split("/").at(-1)}.rels`)
-  const relsFile = zip.file(relsPath)
-  if (!relsFile) return undefined
-  const rels = relationshipMap(await relsFile.async("text"))
-  const note = [...rels.values()].find(value => value.type.endsWith("/notesSlide"))
-  if (!note) return undefined
-  const notesPath = resolvePart(slidePath, note.target)
-  const notesFile = zip.file(notesPath)
-  if (!notesFile) return undefined
-  const root = parseXml(await notesFile.async("text")).documentElement
-  const tree = descendants(root, "spTree")[0]
-  const text = tree ? children(tree, "sp")
-    .filter(shape => !["sldNum", "dt", "hdr", "ftr"].includes(descendants(shape, "ph")[0]?.getAttribute("type") ?? ""))
-    .map(textOf).filter(Boolean).join("\n") : ""
-  return text || undefined
-}
+// ─── 그룹 안 보이는 순서 (fork) ─────────────────────────
 
 type Point = { x: number; y: number }
 type PointTransform = (point: Point) => Point
 
-function directTransform(shape: Element): Element | undefined {
-  const kind = local(shape)
-  const parent = kind === "grpSp" ? children(shape, "grpSpPr")[0]
-    : kind === "graphicFrame" ? shape : children(shape, "spPr")[0]
-  return parent ? children(parent, "xfrm")[0] : undefined
+/** 도형 자신의 a:xfrm — 그룹은 grpSpPr, 표 틀은 p:xfrm, 나머지는 spPr */
+function directTransform(shape: Element): Element | null {
+  const kind = localName(shape)
+  const holder = kind === "grpSp" ? findChildByLocalName(shape, "grpSpPr")
+    : kind === "graphicFrame" ? shape : findChildByLocalName(shape, "spPr")
+  return holder ? findChildByLocalName(holder, "xfrm") : null
 }
 
 function visualCenter(shape: Element): Point | null {
-  const transform = directTransform(shape)
-  const off = transform ? children(transform, "off")[0] : undefined
-  const ext = transform ? children(transform, "ext")[0] : undefined
+  const xfrm = directTransform(shape)
+  const off = xfrm ? findChildByLocalName(xfrm, "off") : null
+  const ext = xfrm ? findChildByLocalName(xfrm, "ext") : null
   if (!off || !ext) return null
-  const x = Number(off.getAttribute("x")), y = Number(off.getAttribute("y"))
-  const width = Number(ext.getAttribute("cx")), height = Number(ext.getAttribute("cy"))
-  return [x, y, width, height].every(Number.isFinite) ? { x: x + width / 2, y: y + height / 2 } : null
+  const x = Number(getAttr(off, "x")), y = Number(getAttr(off, "y"))
+  const w = Number(getAttr(ext, "cx")), h = Number(getAttr(ext, "cy"))
+  return [x, y, w, h].every(Number.isFinite) ? { x: x + w / 2, y: y + h / 2 } : null
 }
 
+/** 그룹 자식 좌표(chOff·chExt) → 부모 좌표 — 축척·뒤집기(flipH·flipV)·회전(rot) */
 function groupToParent(group: Element): PointTransform {
-  const transform = directTransform(group)
-  const off = transform ? children(transform, "off")[0] : undefined
-  const ext = transform ? children(transform, "ext")[0] : undefined
-  const childOff = transform ? children(transform, "chOff")[0] : undefined
-  const childExt = transform ? children(transform, "chExt")[0] : undefined
-  if (!transform || !off || !ext || !childOff || !childExt) return point => point
-  const ox = Number(off.getAttribute("x")), oy = Number(off.getAttribute("y"))
-  const width = Number(ext.getAttribute("cx")), height = Number(ext.getAttribute("cy"))
-  const cx = Number(childOff.getAttribute("x")), cy = Number(childOff.getAttribute("y"))
-  const cw = Number(childExt.getAttribute("cx")), ch = Number(childExt.getAttribute("cy"))
-  const degrees = Number(transform.getAttribute("rot") ?? 0) / 60000
-  if (![ox, oy, width, height, cx, cy, cw, ch, degrees].every(Number.isFinite) || cw <= 0 || ch <= 0) return point => point
-  const angle = degrees * Math.PI / 180, cos = Math.cos(angle), sin = Math.sin(angle)
-  return point => {
-    let x = ox + (point.x - cx) * width / cw
-    let y = oy + (point.y - cy) * height / ch
-    if (["1", "true"].includes(transform.getAttribute("flipH") ?? "")) x = 2 * ox + width - x
-    if (["1", "true"].includes(transform.getAttribute("flipV") ?? "")) y = 2 * oy + height - y
-    const dx = x - (ox + width / 2), dy = y - (oy + height / 2)
-    return { x: ox + width / 2 + dx * cos - dy * sin, y: oy + height / 2 + dx * sin + dy * cos }
+  const xfrm = directTransform(group)
+  const off = xfrm ? findChildByLocalName(xfrm, "off") : null
+  const ext = xfrm ? findChildByLocalName(xfrm, "ext") : null
+  const chOff = xfrm ? findChildByLocalName(xfrm, "chOff") : null
+  const chExt = xfrm ? findChildByLocalName(xfrm, "chExt") : null
+  if (!xfrm || !off || !ext || !chOff || !chExt) return p => p
+  const ox = Number(getAttr(off, "x")), oy = Number(getAttr(off, "y"))
+  const w = Number(getAttr(ext, "cx")), h = Number(getAttr(ext, "cy"))
+  const cx = Number(getAttr(chOff, "x")), cy = Number(getAttr(chOff, "y"))
+  const cw = Number(getAttr(chExt, "cx")), ch = Number(getAttr(chExt, "cy"))
+  const deg = Number(getAttr(xfrm, "rot") ?? 0) / 60000
+  if (![ox, oy, w, h, cx, cy, cw, ch, deg].every(Number.isFinite) || cw <= 0 || ch <= 0) return p => p
+  const flipH = ["1", "true"].includes(getAttr(xfrm, "flipH") ?? "")
+  const flipV = ["1", "true"].includes(getAttr(xfrm, "flipV") ?? "")
+  const rad = deg * Math.PI / 180, cos = Math.cos(rad), sin = Math.sin(rad)
+  return p => {
+    let x = ox + (p.x - cx) * w / cw
+    let y = oy + (p.y - cy) * h / ch
+    if (flipH) x = 2 * ox + w - x
+    if (flipV) y = 2 * oy + h - y
+    const dx = x - (ox + w / 2), dy = y - (oy + h / 2)
+    return { x: ox + w / 2 + dx * cos - dy * sin, y: oy + h / 2 + dx * sin + dy * cos }
   }
 }
 
+const GROUP_SHAPES = new Set(["sp", "graphicFrame", "grpSp", "pic", "cxnSp"])
+
+/** 그룹 자식을 슬라이드에 보이는 순서(위→아래 띠, 띠 안 왼→오)로. 좌표 없는 자식이 하나라도 있으면 XML 순서 */
 function groupChildrenInVisualOrder(group: Element, toSlide: PointTransform): Element[] {
-  const visible = children(group).filter(child => ["sp", "graphicFrame", "grpSp", "pic", "cxnSp"].includes(local(child)))
-  const positioned = visible.map((shape, index) => ({ shape, index, point: visualCenter(shape) }))
-  if (positioned.some(item => !item.point)) return visible // preserve source order when geometry is incomplete
-  return positioned.sort((a, b) => {
+  const kids = elementChildren(group)
+  const placed = kids.filter(k => GROUP_SHAPES.has(localName(k)) || localName(k) === "AlternateContent")
+    .map((shape, index) => ({ shape, index, point: visualCenter(shape) }))
+  if (placed.some(item => !item.point)) return kids
+  return placed.sort((a, b) => {
     const pa = toSlide(a.point!), pb = toSlide(b.point!)
-    const rowA = Math.floor(pa.y / 50000), rowB = Math.floor(pb.y / 50000)
-    return rowA - rowB || pa.x - pb.x || a.index - b.index
+    return Math.floor(pa.y / 50000) - Math.floor(pb.y / 50000) || pa.x - pb.x || a.index - b.index
   }).map(item => item.shape)
 }
 
-function slideShapeBlocks(root: Element, pageNumber: number, warnings: ParseWarning[], toSlide: PointTransform = point => point): IRBlock[] {
-  const blocks: IRBlock[] = []
-  const shapes = local(root) === "grpSp" ? groupChildrenInVisualOrder(root, toSlide) : children(root)
-  for (const shape of shapes) {
-    const kind = local(shape)
-    if (kind === "sp") {
-      const block = shapeBlock(shape, pageNumber)
-      if (block) blocks.push(block)
-    } else if (kind === "graphicFrame") {
-      const table = tableBlock(shape, pageNumber)
-      if (table) blocks.push(table)
-      else warnings.push({ page: pageNumber, code: "UNSUPPORTED_ELEMENT", message: "PPTX graphic frame is not a table (chart/SmartArt data was not extracted)" })
-    } else if (kind === "grpSp") {
-      const fromGroup = groupToParent(shape)
-      blocks.push(...slideShapeBlocks(shape, pageNumber, warnings, point => toSlide(fromGroup(point))))
-    } else if (kind === "pic") {
-      const name = descendants(shape, "cNvPr")[0]?.getAttribute("descr") || descendants(shape, "cNvPr")[0]?.getAttribute("name") || "image"
-      warnings.push({ page: pageNumber, code: "UNSUPPORTED_ELEMENT", message: `PPTX image content was not OCR-parsed: ${name}` })
-    } else if (kind === "cxnSp") {
-      warnings.push({ page: pageNumber, code: "UNSUPPORTED_ELEMENT", message: "PPTX connector shape has no text payload" })
+/** p:spTree 를 그리는 순서대로 — 그룹(p:grpSp)은 펼치고(자식은 보이는 순서) mc:AlternateContent 는 Choice 쪽을 본다 */
+async function walkShapes(tree: Element, ctx: SlideContext, out: IRBlock[], depth = 0, toSlide: PointTransform = p => p): Promise<void> {
+  if (depth > MAX_XML_DEPTH) return
+  const kids = localName(tree) === "grpSp" ? groupChildrenInVisualOrder(tree, toSlide) : elementChildren(tree)
+  for (const el of kids) {
+    switch (localName(el)) {
+      case "grpSp": {
+        const fromGroup = groupToParent(el)
+        await walkShapes(el, ctx, out, depth + 1, p => toSlide(fromGroup(p)))
+        break
+      }
+      case "AlternateContent": {
+        const choice = findChildByLocalName(el, "Choice")
+        if (choice) await walkShapes(choice, ctx, out, depth + 1, toSlide)
+        break
+      }
+      case "sp": {
+        const ph = placeholderType(el)
+        const txBody = findChildByLocalName(el, "txBody")
+        if ((ph && SKIP_PLACEHOLDERS.has(ph)) || !txBody) break
+        const paras = bodyParagraphs(txBody)
+        if (paras.length === 0) break
+        if (ph === "title" || ph === "ctrTitle") {
+          out.push({ type: "heading", level: ph === "ctrTitle" ? 1 : 2, text: paras.map(p => p.text).join(" "), pageNumber: ctx.page })
+        } else {
+          pushParagraphs(paras, ph !== null && BULLET_PLACEHOLDERS.has(ph), ctx.page, out)
+        }
+        break
+      }
+      case "graphicFrame": {
+        const data = findPath(el, "graphic", "graphicData")
+        const tbl = data ? findChildByLocalName(data, "tbl") : null
+        if (tbl) {
+          const block = parseTable(tbl, ctx.page, ctx.options?.keepTrailingEmptyCols)
+          if (block) out.push(block)
+        } else if (data) {
+          const uri = getAttr(data, "uri") ?? ""
+          const kind = /chart/i.test(uri) ? "차트" : /diagram/i.test(uri) ? "SmartArt" : "개체"
+          ctx.warnings.push({ page: ctx.page, code: "UNSUPPORTED_ELEMENT", message: `PPTX ${kind}의 글은 읽지 않습니다 (${ctx.page}쪽)` })
+        }
+        break
+      }
+      case "pic": {
+        const warned = ctx.warnings.length
+        const block = await pictureBlock(el, ctx)
+        if (block) out.push(block)
+        else if (ctx.warnings.length === warned) {
+          // 연결 그림 없는 그림 개체(외부 링크·빈 blipFill) — 조용히 빼지 않고 알린다 (추출 실패는 pictureBlock 이 이미 경고)
+          const nv = findPath(el, "nvPicPr", "cNvPr")
+          const name = (nv && (getAttr(nv, "descr") || getAttr(nv, "name"))) || "image"
+          ctx.warnings.push({ page: ctx.page, code: "UNSUPPORTED_ELEMENT", message: `PPTX 그림을 읽지 못했습니다 (${ctx.page}쪽): ${name}` })
+        }
+        break
+      }
     }
   }
-  return blocks
 }
 
-export async function parsePptxDocument(buffer: ArrayBuffer, options?: ParseOptions): Promise<{
-  markdown: string
-  blocks: IRBlock[]
-  metadata?: DocumentMetadata
-  warnings: ParseWarning[]
-}> {
-  precheckZipSize(buffer, MAX_PPTX_UNCOMPRESSED)
-  const zip = await JSZip.loadAsync(buffer)
-  const presentationFile = zip.file("ppt/presentation.xml")
-  const relsFile = zip.file("ppt/_rels/presentation.xml.rels")
-  if (!presentationFile || !relsFile) throw new KordocError("PPTX presentation parts are missing")
-  const order = slideOrder(parseXml(await presentationFile.async("text")), relationshipMap(await relsFile.async("text")))
-  if (order.length > MAX_SLIDES) throw new KordocError(`PPTX slide count exceeds ${MAX_SLIDES}`)
-  const pageFilter = options?.pages ? parsePageRange(options.pages, order.length) : null
-  const blocks: IRBlock[] = []
-  const warnings: ParseWarning[] = []
-  for (let index = 0; index < order.length; index++) {
-    if (pageFilter && !pageFilter.has(index + 1)) continue
-    const slidePath = order[index]
-    const file = zip.file(slidePath)
-    if (!file) { warnings.push({ code: "PARTIAL_PARSE", message: `Missing slide part: ${slidePath}` }); continue }
-    const root = parseXml(await file.async("text")).documentElement
-    const tree = descendants(root, "spTree")[0]
-    if (tree) blocks.push(...slideShapeBlocks(tree, index + 1, warnings))
-    const notes = await slideNotes(zip, slidePath)
-    if (notes) blocks.push({ type: "paragraph", text: notes, pageNumber: index + 1 })
+/** 발표자 노트 — 노트 슬라이드의 본문 개체 틀·개체 틀 아닌 글상자 글 (쪽 번호·날짜·머리글·바닥글·슬라이드 그림 틀은 뺀다) */
+async function notesText(zip: JSZip, rels: Map<string, Rel>): Promise<string> {
+  const rel = [...rels.values()].find(r => r.type.endsWith(REL_NOTES))
+  const file = rel ? zip.file(rel.target) : null
+  if (!file) return ""
+  const tree = findPath(parseXml(await readZipEntry(file, "text")).documentElement, "cSld", "spTree")
+  const texts: string[] = []
+  for (const sp of tree ? childrenByLocalName(tree, "sp") : []) {
+    const ph = placeholderType(sp)
+    const txBody = findChildByLocalName(sp, "txBody")
+    if (txBody && !(ph && SKIP_PLACEHOLDERS.has(ph))) texts.push(...bodyParagraphs(txBody).map(p => p.text))
   }
-  const titleFile = zip.file("docProps/core.xml")
-  const title = titleFile
-    ? descendants(parseXml(await titleFile.async("text")).documentElement, "title")[0]?.textContent?.trim() ?? ""
-    : ""
+  return texts.join(" ")
+}
+
+// ─── 진입점 ────────────────────────────────────────────
+
+export async function parsePptxDocument(
+  buffer: ArrayBuffer,
+  options?: ParseOptions,
+): Promise<InternalParseResult> {
+  // ZIP bomb 사전 검사
+  precheckZipSize(buffer, MAX_DECOMPRESS_SIZE, MAX_ZIP_ENTRIES, { re: MEDIA_PART_RE, skip: options?.images === false, never: NEVER_READ_RE })
+
+  const zip = await JSZip.loadAsync(buffer)
+  if (!zip.file("ppt/presentation.xml")) {
+    throw new KordocError("유효하지 않은 PPTX 파일: ppt/presentation.xml이 없습니다")
+  }
+  const warnings: ParseWarning[] = []
+  const blocks: IRBlock[] = []
+  const imageNames = new Map<string, string>()
+  const images: ExtractedImage[] = []
+
+  const slides = await slideParts(zip)
+  // 쪽 범위(-p·pages) — 슬라이드 1장 = 1쪽. 종전엔 범위를 무시하고 모든 슬라이드를 냈다
+  const pageFilter = options?.pages ? parsePageRange(options.pages, slides.length) : null
+  for (let i = 0; i < slides.length; i++) {
+    const page = i + 1
+    if (pageFilter && !pageFilter.has(page)) continue
+    const root = parseXml(await readZipEntry(zip.file(slides[i])!, "text")).documentElement
+    // 숨긴 슬라이드(show="0")는 발표에 나오지 않는다 — 쪽 번호는 유지하고 글만 뺀다
+    if (getAttr(root, "show") === "0") {
+      warnings.push({ page, code: "HIDDEN_TEXT_FILTERED", message: `PPTX 숨긴 슬라이드 ${page}쪽을 건너뜁니다` })
+      continue
+    }
+    const rels = await readRels(zip, slides[i])
+    const tree = findPath(root, "cSld", "spTree")
+    if (tree) await walkShapes(tree, { zip, rels, page, warnings, options, imageNames, images }, blocks)
+    const notes = await notesText(zip, rels)
+    if (notes) blocks.push({ type: "paragraph", text: `발표자 노트: ${notes}`, quote: true, pageNumber: page })
+  }
+
+  // 메타데이터 — DOCX 와 같은 docProps/core.xml
+  // 슬라이드는 실제 표시 쪽이라 pageMode "layout"
+  const metadata: DocumentMetadata = { pageCount: slides.length, pageMode: "layout" }
+  const coreFile = zip.file("docProps/core.xml")
+  if (coreFile) {
+    try {
+      const coreDoc = parseXml(await readZipEntry(coreFile, "text"))
+      const getFirst = (tag: string) => {
+        const els = coreDoc.getElementsByTagName(tag)
+        return els.length > 0 ? (els[0].textContent ?? "").trim() || undefined : undefined
+      }
+      metadata.title = getFirst("dc:title") || getFirst("dcterms:title")
+      metadata.author = getFirst("dc:creator")
+      metadata.description = getFirst("dc:description")
+      const created = getFirst("dcterms:created")
+      if (created) metadata.createdAt = created
+      const modified = getFirst("dcterms:modified")
+      if (modified) metadata.modifiedAt = modified
+    } catch (err) {
+      warnings.push({
+        code: "PARTIAL_PARSE",
+        message: `PPTX 메타데이터(core.xml) 파싱 실패: ${err instanceof Error ? err.message : String(err)}`,
+      })
+    }
+  }
+
+  const outline = blocks
+    .filter(b => b.type === "heading")
+    .map(b => ({ level: b.level ?? 2, text: b.text ?? "", pageNumber: b.pageNumber }))
+
   return {
-    markdown: blocksToMarkdown(blocks),
+    markdown: blocksToMarkdown(blocks, { tableFormat: options?.tableFormat }),
     blocks,
-    metadata: { ...(title ? { title } : {}), pageCount: order.length },
-    warnings,
+    metadata,
+    outline: outline.length > 0 ? outline : undefined,
+    warnings: warnings.length > 0 ? warnings : undefined,
+    images: images.length > 0 ? images : undefined,
   }
 }

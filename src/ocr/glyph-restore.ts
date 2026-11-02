@@ -3,9 +3,12 @@
  * 모델이 줄여·바꿔·빠뜨려 읽는 글자를 고친다(괄호 「」【】·여는 따옴표·원문자·로마 숫자·두 글자 사이에서 빠진 기호). 모양 판정은
  * line-split.ts, 여기는 글자열 배선만. 글자 배열은 CTC 글자와 1:1 로 두고 칸마다 바꿔 넣거나(빈 글·여러 글자 허용) 끝에 잇는다
  */
-import { bracketFeatures, bracketShape, circledAt, discAt, gapGlyphs, grayCrop, inkStats, quoteHead, ringBullet, romanStems, serifOne, starRun } from "./line-split.js"
+import { bracketFeatures, bracketShape, circledAt, dashRatio, discAt, gapGlyphs, grayCrop, inkStats, leadingBullet, quoteHead, ringBullet, romanStems, serifOne, slantedPair, starRun } from "./line-split.js"
 import type { InkStats } from "./line-split.js"
 import type { Box } from "./crop.js"
+
+/** 무늬 글자 판정 — 배경(상자 중앙값)과 이만큼 넘게 달라야 잉크 */
+const INKLESS_DELTA = 32
 
 interface Ctx { chars: string[]; cx: (i: number) => number; gray: Uint8Array; w: number; h: number; ink: InkStats }
 
@@ -16,27 +19,113 @@ export function restoreGlyphs(rgba: Uint8Array, pageW: number, box: Box, text: s
   const gray = grayCrop(rgba, pageW, box)
   const c: Ctx = { chars, cx: i => (steps[i] + 0.5) * stepPx, gray, w: box.w, h: box.h, ink: inkStats(gray) }
   if (/[[\]]/.test(text)) brackets(c)
+  if (text.includes("'")) cornerQuotes(c)
   if (/['"]/.test(text)) quotes(c)
   if (/(^|\D)[1-9](\D|$)/.test(text)) circled(c)
   if (text.includes("*")) stars(c)
   if (/[\u00b7\u2022]/.test(text)) discs(c)
+  if (/[-\u2013\u2014]/.test(text)) dashes(c)
   gaps(c)
+  // 「 는 brackets("[" → 「)·gaps(빠진 「 되살림)가 넣은 것일 수 있어 그 뒤에 본다
+  if (chars.some(t => t.includes("\u300c")) && chars.includes(",")) cornerCommas(c)
   note.ringLead = ring(c)
-  if (/[I1Ⅰ-Ⅲ]|^\s*\./.test(text)) roman(c)
+  if (/[I|]/.test(text)) parallels(c)
+  if (/[I1Ⅰ-Ⅲ|]|^\s*\./.test(text)) roman(c)
   return chars.join("")
+}
+
+/**
+ * 줄 끝 무늬 글자 — 검출 상자가 제목 뒤 배경 무늬 띠까지 잡으면 CTC 가 무늬를 글자로 읽는다(선거 사례집 표지의 흰 무늬 띠
+ * "D①D①①①①①①①정치관계법"). 줄 양 끝에서 이어지는 글자 중 제 자리(CTC 자리 앞뒤 한 칸, 줄 높이의 1/4 이상)에 배경과 뚜렷이
+ * 다른 픽셀이 없는 글자를 떼어 낸다 — 배경은 상자 중앙값, 높이를 거의 다 덮는 세로 괘선 열은 잉크로 치지 않는다. 무늬는 배경과
+ * 23 차이(232 → 255)라 떨어지고, 연한 회색 글씨·색 띠 위 흰 글씨(ODL 그림 "READERS")는 남는다. 남는 글자가 없으면 그대로 둔다
+ */
+export function trimInklessEnds(rgba: Uint8Array, pageW: number, box: Box, text: string, steps: number[], stepPx: number): { text: string; steps: number[] } {
+  const chars = [...text], { w, h } = box
+  // CTC 자리가 상자를 벗어난 줄(그림 속 짧은 글을 넓게 읽은 crop, 폭 92 에 자리 406)은 자리를 믿지 않는다
+  if (chars.length !== steps.length || steps.some(s => (s + 0.5) * stepPx > w + stepPx)) return { text, steps }
+  const gray = grayCrop(rgba, pageW, box)
+  const hist = new Uint32Array(256)
+  for (const v of gray) hist[v]++
+  let bg = 0
+  for (let n = 0; bg < 255 && (n += hist[bg]) < gray.length / 2;) bg++
+  const cols = new Uint32Array(w)
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (Math.abs(gray[y * w + x] - bg) > INKLESS_DELTA) cols[x]++
+  // 글자 자리 앞뒤 창 — 시간 칸 하나(작은 상자는 4~5px)로는 끝 글자 "l" 잉크를 놓친다
+  const half = Math.max(stepPx, h * 0.25)
+  const inkless = (i: number) => {
+    const cx = (steps[i] + 0.5) * stepPx
+    for (let x = Math.max(0, Math.floor(cx - half)); x <= Math.min(w - 1, Math.ceil(cx + half)); x++) if (cols[x] && cols[x] < h * 0.9) return false
+    return true
+  }
+  // 문장부호는 떼지 않는다 — 작은 따옴표는 CTC 자리가 잉크에서 벗어나기 쉽다(국회도서관 보도자료 1° 기울임 제목 머리 "“")
+  const blank = (i: number) => !chars[i].trim()
+  const mark = (i: number) => /\p{P}/u.test(chars[i])
+  let a = 0, b = chars.length
+  while (a < b && (blank(a) || !mark(a) && inkless(a))) a++
+  while (b > a && (blank(b - 1) || !mark(b - 1) && inkless(b - 1))) b--
+  const cut = (from: number, to: number) => chars.slice(from, to).some(c => c.trim())
+  if (a === b || !cut(0, a) && !cut(b, chars.length)) return { text, steps }
+  return { text: chars.slice(a, b).join(""), steps: steps.slice(a, b) }
 }
 
 /**
  * 사전 밖 괄호 — 인식 사전에 「」·【】 가 없어 모델은 모두 [ ] 로 읽는다(코퍼스 정답 「」44·｢｣23·【】41·[]159 쌍 ↔ OCR [ 274).
  * [ ] 자리 잉크 조각이 속이 찬 조각이면 【】, 윗변 가로 획만이면 「, 아랫변 가로 획만이면 」 ([ ] 는 위아래 모두)
  */
-function brackets({ chars, cx, gray, w, h, ink }: Ctx) {
+/**
+ * 쉼표로 읽은 닫는 홑낫표 — 짝 없는 「 뒤 쉼표 자리 잉크가 」 꼴이면 바꾼다("「국가교통통계집,수록 통계표" → "「국가교통통계집」 수록",
+ * 교통 통계 해설·기록물 지침). 쉼표는 아랫줄이 꼬리라 」 의 꽉 찬 밑변 조건(bracketShape)을 넘지 못한다
+ */
+function cornerCommas({ chars, cx, gray, w, h, ink }: Ctx) {
+  // 칸 하나에 기호가 붙어 있을 수 있다(gaps 가 「 를 다음 글자 칸에 붙인다 — "「국")
+  const count = (t: string, ch: string) => t.split(ch).length - 1
+  let open = 0
   for (let i = 0; i < chars.length; i++) {
-    if (chars[i] !== "[" && chars[i] !== "]") continue
-    const f = bracketFeatures(gray, w, h, ink, cx(i))
-    const shape = f && bracketShape(f, chars[i] === "]")
-    if (shape) chars[i] = shape
+    if (chars[i] !== ",") { open = Math.max(0, open + count(chars[i], "\u300c") - count(chars[i], "\u300d")); continue }
+    if (open > 0) {
+      const f = bracketFeatures(gray, w, h, ink, cx(i))
+      if (f && bracketShape(f, true) === "\u300d") { chars[i] = "\u300d"; open-- }
+    }
   }
+}
+
+/**
+ * 따옴표로 읽은 여는 홑낫표 — 뒤가 한글인 곧은 ' 자리 잉크가 「 꼴(윗변 꽉 참·곧은 왼 줄기)이고 글자 높이의 45% 이상이면 「 로
+ * ("01 본'국가교통통계 해설편,은" → "본「국가교통통계 해설편」은", 교통 통계 해설). 큰 글씨 여는 따옴표도 곧고 길어 「 꼴로 잡히니
+ * 같은 줄 뒤에 짝(」 또는 」 꼴 쉼표)이 있을 때만. 짝 쉼표는 cornerCommas 가 」 로 바꾼다
+ */
+function cornerQuotes({ chars, cx, gray, w, h, ink }: Ctx) {
+  for (let i = 0; i < chars.length; i++) {
+    if (chars[i] !== "'" || !/^[가-힣]/.test(chars[i + 1] ?? "")) continue
+    const f = bracketFeatures(gray, w, h, ink, cx(i))
+    if (!f || f.ch < f.charH * 0.45 || bracketShape(f, false) !== "\u300c") continue
+    // 짝 증거 — 뒤에 」 나 」 꼴 쉼표가 있어야 한다(큰 글씨 여는 따옴표도 곧고 길어 혼자서는 「 꼴로 잡혔다)
+    // 그 사이에 따옴표가 있으면 따옴표 짝이다("‘규정’은 「행정 … 규정」" 의 ‘ 가 뒤 」 를 짝으로 잡았다)
+    const rest = chars.slice(i + 1), end = rest.findIndex(c => c === "'" || c === "\u300d" || c === ",")
+    const pair = end >= 0 && rest[end] !== "'" && (rest[end] === "\u300d" || (() => { const g = bracketFeatures(gray, w, h, ink, cx(i + 1 + end)); return !!g && bracketShape(g, true) === "\u300d" })())
+    if (pair) chars[i] = "\u300c"
+  }
+}
+
+function brackets({ chars, cx, gray, w, h, ink }: Ctx) {
+  const shape = chars.map((c, i) => {
+    if (c !== "[" && c !== "]") return null
+    const f = bracketFeatures(gray, w, h, ink, cx(i))
+    return f && bracketShape(f, c === "]")
+  })
+  // 한쪽만 바뀌면 [ ] 로 둔다 — 흐리거나 기울인 판에서 한쪽 끝만 번져 렌즈 꼴(【)·휜 조각(()로 잡혔다("[표3-17]" → "【표3-17]",
+  // 기후 계획 1° 판). 【】·( ) 는 양쪽이 같은 글꼴 모양이라 함께 바뀐다. 양쪽이 서로 다른 꼴로 바뀐 짝("(R&D】")은 어느 쪽이 맞는지
+  // 몰라 그대로 둔다 — 둘 다 [ ] 로 돌리면 맞던 한쪽까지 틀렸다(산림청 공고 2° 판·경기 학교 매뉴얼 150dpi 판)
+  for (let i = 0; i < chars.length; i++) {
+    if (chars[i] !== "[") continue
+    const j = chars.findIndex((c, k) => k > i && (c === "[" || c === "]"))
+    if (j < 0 || chars[j] !== "]") continue
+    const a = shape[i], b = shape[j]
+    const opens = a === "\u3010" || a === "(" || a === "\u3014", closes = b === "\u3011" || b === ")" || b === "\u3015"
+    if ((opens || closes) && (!a || !b)) { if (opens) shape[i] = null; if (closes) shape[j] = null }
+  }
+  for (let i = 0; i < chars.length; i++) if (shape[i]) chars[i] = shape[i]!
 }
 
 /**
@@ -59,6 +148,22 @@ function quotes({ chars, cx, gray, w, h, ink }: Ctx) {
     if (!year(i) && !single[kind]) continue
     const r = quoteHead(gray, w, h, ink, cx(i))
     if (r !== null && r >= 0.47) { chars[i] = kind === "'" ? "‘" : "“"; open[kind] = true }
+  }
+}
+
+/**
+ * 대시 길이 — 붙임표를 "–"·"—" 로, 긴 줄표를 "-" 로 읽은 자리를 획 길이(line-split dashRatio)로 다시 정한다. 0.65~0.75배 사이는 그대로.
+ * 긴 줄표로 늘리는 건 글자가 있는 줄의 머리 글머리("―상하수도요금")만 — 숫자뿐인 쪽 번호 "- 3 -" 은 띠가 낮게 잡히고, 숫자 사이
+ * "511-01" 은 스캔에서 번져 길게 잰다
+ */
+function dashes({ chars, cx, gray, w, h, ink }: Ctx) {
+  const head = chars.findIndex(c => c.trim()), letters = chars.some(c => /[가-힣A-Za-z]/.test(c))
+  for (let i = 0; i < chars.length; i++) {
+    if (!/^[-\u2013\u2014]$/.test(chars[i])) continue
+    const r = dashRatio(gray, w, h, ink, cx(i))
+    if (r === null) continue
+    if (r < 0.65) chars[i] = "-"
+    else if (r > 0.75 && i === head && letters) chars[i] = "\u2014"
   }
 }
 
@@ -104,6 +209,17 @@ function gaps({ chars, cx, gray, w, h, ink }: Ctx) {
   const pitch = d.length >= 2 ? d.sort((a, b) => a - b)[d.length >> 1] : bandH
   const nearTo = (g: { x0: number; x1: number }) => (i: number) => Math.abs(cx(i) - (g.x0 + g.x1) / 2) <= Math.max(pitch * 0.45, (g.x1 - g.x0) / 2 + 1)
   const loose = glyphs.filter(g => /^[\u00b7.]/.test(g.mark) && !live.some(nearTo(g)))
+  // 짧은 목차 리더 — 점 두세 개("가능 여부 ·· 18")는 리더 가르기(넷 이상)에 안 걸리고 모델이 버렸다. 줄 끝 쪽 번호(숫자 1~3자) 바로 앞,
+  // 안 읽힌 같은 꼴 점만 늘어서 있으면 그 점들을 앞 글자 뒤에 넣는다
+  const tail = [...live].reverse().findIndex(i => !/^\d$/.test(chars[i]))
+  if (tail >= 1 && tail <= 3 && tail < live.length) {
+    const prev = live[live.length - 1 - tail], num = live[live.length - tail]
+    const run = loose.filter(g => (g.x0 + g.x1) / 2 > cx(prev) && (g.x0 + g.x1) / 2 < cx(num))
+    // 작은 점 꼴("·\u0001")도 같은 가운뎃점 — 첫 글자로 견준다. 늘어선 점은 아래 루프가 리더로 보고 건너뛴다
+    const mark = run[0]?.mark[0]
+    if (run.length >= 2 && run.length <= 3 && run.every(g => g.mark[0] === mark) && /^[가-힣?)]$/.test(chars[prev]) && !glyphs.some(g => !run.includes(g) && (g.x0 + g.x1) / 2 > cx(prev) && (g.x0 + g.x1) / 2 < cx(num)))
+      chars[prev] += " " + mark!.repeat(run.length) + " "
+  }
   for (const g of glyphs.sort((a, b) => a.x0 - b.x0)) {
     const mid = (g.x0 + g.x1) / 2
     const near = nearTo(g)
@@ -118,6 +234,8 @@ function gaps({ chars, cx, gray, w, h, ink }: Ctx) {
     }
     if (cover.length) {
       if (g.mark.startsWith("\u25a1") && cover.length === 1 && /^[0Oo\u25cb]$/.test(chars[cover[0]])) chars[cover[0]] = "\u25a1"
+      // 작은 고리 。 를 가운뎃점으로 읽은 자리("2회。관용차량" → "2회·관용차량", 예산서 산출 내역) — 그 글자를 。 로
+      if (g.mark === "\u3002" && cover.length === 1 && /^[\u00b7\u2022\u318d]$/.test(chars[cover[0]])) chars[cover[0]] = "\u3002"
       continue
     }
     if (g.mark === "\u25a1\u0000") continue
@@ -138,6 +256,13 @@ function gaps({ chars, cx, gray, w, h, ink }: Ctx) {
       if (loose.some(o => o !== g && Math.abs((o.x0 + o.x1) / 2 - mid) <= pitch * 1.5)) continue
       if (/[\u2026.\u00b7]$/.test(prev) || /^[\u2026.\u00b7]/.test(next)) continue
     }
+    // 여는 홑낫표를 공백으로 읽은 자리("은  행정" — 띄어 쓴 공백 하나 + 낫표 자리 공백 하나)는 그 공백을 「 로
+    if (g.mark === "\u300c") {
+      // 가까운 공백이 든 공백 무리의 마지막 — 여는 낫표는 다음 글자에 붙고 띄어 쓴 공백이 그 앞에 온다(공백 CTC 자리는 반 칸씩 어긋난다)
+      let sp = chars.findIndex((c, i) => c === " " && near(i))
+      if (sp >= 0) while (chars[sp + 1] === " ") sp++
+      if (sp >= 0) { chars[sp] = g.mark; continue }
+    }
     if (g.mark === "\u00b7") {
       if (/^\d/.test(next)) continue
       const sp = chars.findIndex((c, i) => c === " " && near(i))
@@ -153,13 +278,53 @@ function gaps({ chars, cx, gray, w, h, ink }: Ctx) {
  */
 function ring({ chars, cx, gray, w, h, ink }: Ctx): boolean {
   const k = chars.findIndex(c => c.trim())
-  if (k < 0 || !/^[\u3147Oo0\u25cb]$/.test(chars[k])) return false
-  // 뒤 글이 한글이거나 여는 괄호 뒤 한글("❍(정책) 민생성장")
+  // C·c 로도 읽는다("○ 제2차~제5차" → "C제2차", 구의회 예산 검토) — 진짜 C 는 오른쪽이 트여 ringBullet 이 고리로 보지 않는다
+  if (k < 0 || !/^[\u3147Oo0\u25cbCc]$/.test(chars[k])) return false
+  // 뒤 글이 한글이거나 여는 괄호 뒤 한글("❍(정책) 민생성장"), 숫자 뒤 한글("ｏ4대보험" 을 모델은 "04대보험" 으로 읽는다 — 숫자 0 은
+  // 세로로 길어 ringBullet 이 고리로 보지 않는다)
   const rest = chars.slice(k + 1).join("").trimStart()
-  if (!/^[(\[「【<]?[가-힣]/.test(rest)) return false
+  // 고리만 든 칸("O"·"OO" — 서식 표의 해당 표시 ○, 한국어능력시험 계획 "×× | ○ | ○○") — 하나하나 도형 ○ 로 판정될 때만
+  const live = chars.map((c, i) => i).filter(i => chars[i].trim())
+  if (live.length <= 3 && live.every(i => /^[Oo]$/.test(chars[i]))) {
+    // 이중 고리 ◎ 도 바깥 고리가 가늘어 ○ 로 판정된다(함평 목차 ◎ 열) — leadingBullet 이 ◎ 로 보면 그쪽에 맡긴다
+    if (leadingBullet(gray, w, h, ink, cx(live[0]))?.mark === "\u25ce") return false
+    if (!live.every(i => ringBullet(gray, w, h, ink, cx(i)) === "\u25cb")) return false
+    for (const i of live) chars[i] = "\u25cb"
+    return true
+  }
+  // 라틴 대문자 약어 앞("❍ ICT 융복합" → "OICT") — 라틴 O("OECD")와 섞이니 획이 가는 도형 ○ 로 판정될 때만 바꾸고 띄운다
+  if (/^[A-Z]{2,}/.test(rest) && /^[Oo0]$/.test(chars[k])) {
+    if (ringBullet(gray, w, h, ink, cx(k)) !== "\u25cb") return false
+    chars[k] = chars[k + 1] === " " ? "\u25cb" : "\u25cb "
+    return true
+  }
+  if (!/^[(\[「【<]?\d*[가-힣]/.test(rest)) return false
   const r = ringBullet(gray, w, h, ink, cx(k))
+  if (/^[Cc]$/.test(chars[k]) && r !== "\u25cb") return false
   if (r) chars[k] = r
   return r !== null
+}
+
+/**
+ * 평행 기호 ∥ — 사전에 있어도 모델은 "II"·"I" 로 읽는다(경기교육청 공문 작성 안내 "근거 ∥ 행정업무의 운영…"). 라틴 글자에 붙지 않은
+ * I·| 한두 칸 토막 자리에 기운 가는 두 획이 나란하면(line-split slantedPair) ∥ 한 글자로(토막 첫 칸에 넣고 나머지는 비운다)
+ */
+function parallels({ chars, cx, gray, w, h, ink }: Ctx) {
+  for (let s = 0; s < chars.length;) {
+    if (!/^[I|]$/.test(chars[s])) { s++; continue }
+    let e = s
+    while (e + 1 < chars.length && /^[I|]$/.test(chars[e + 1])) e++
+    if (e - s <= 1 && !/[A-Za-z]/.test((chars[s - 1] ?? "") + (chars[e + 1] ?? ""))) {
+      let p = s - 1, q = e + 1
+      while (p >= 0 && !chars[p].trim()) p--
+      while (q < chars.length && !chars[q].trim()) q++
+      if (slantedPair(gray, w, h, ink, p >= 0 ? cx(p) : -Infinity, q < chars.length ? cx(q) : Infinity)) {
+        chars[s] = "\u2225"
+        for (let k = s + 1; k <= e; k++) chars[k] = ""
+      }
+    }
+    s = e + 1
+  }
 }
 
 /**
@@ -174,6 +339,20 @@ function roman({ chars, cx, gray, w, h, ink }: Ctx) {
     if (chars[i] !== "1" || /[\dA-Za-z]$/.test(chars[i - 1] ?? "") || /^[\dA-Za-z,]/.test(chars[i + 1] ?? "")) continue
     if (serifOne(gray, w, h, ink, cx(i))) chars[i] = "Ⅰ"
   }
+  // 세로 막대 | 로 읽은 로마 숫자 — 한글 바로 뒤("희망키움통장|")·마침표 앞("|.직업계고")·붙임표 사이("63-|-")의 홑 막대만, 그 자리 세로
+  // 획 수로 Ⅰ~Ⅲ. 겹 막대 "||"·빈칸 사이 홑 막대는 장식 괘선이 튄 것이라 두지 않는다(목차 "목 차 ||")
+  for (let i = 0; i < chars.length; i++) {
+    // 한글 파·피 로 읽은 Ⅲ — 과제 번호 괄호 머리("(Ⅲ-1-①)" → "(파-1-①)", 농진청 성과계획 목차)만
+    const hangul = /^[파피]$/.test(chars[i])
+    if ((chars[i] !== "|" && !hangul) || chars[i - 1] === "|" || chars[i + 1] === "|") continue
+    let p = i - 1, q = i + 1
+    while (p >= 0 && !chars[p].trim()) p--
+    while (q < chars.length && !chars[q].trim()) q++
+    const glued = hangul ? chars[p] === "(" && chars[q] === "-" : /[가-힣]$/.test(chars[i - 1] ?? "") || (chars[i + 1] ?? "") === "." || (chars[p] === "-" && chars[q] === "-")
+    if (!glued) continue
+    const n = romanStems(gray, w, h, ink, p >= 0 ? cx(p) : -Infinity, q < chars.length ? cx(q) : Infinity, /[가-힣]$/.test(chars[p] ?? ""))
+    if (n) chars[i] = String.fromCharCode(0x215f + n)
+  }
   // 로마 숫자에 붙은 1 은 같은 토막으로 센다 ("[표 Ⅱ-4]" → "[표I1-4]")
   const inRoman = (i: number) => ROMAN.test(chars[i]) || (chars[i] === "1" && (ROMAN.test(chars[i - 1] ?? "") || ROMAN.test(chars[i + 1] ?? "")))
   // 숫자를 통째로 빠뜨리고 "." 부터 읽은 제목 줄(".세입·세출 …") — 점 앞 잉크가 세로 획이면 되살린다
@@ -184,14 +363,15 @@ function roman({ chars, cx, gray, w, h, ink }: Ctx) {
   }
   for (let s = 0; s < chars.length;) {
     if (!inRoman(s) || (s > 0 && LATIN.test(chars[s - 1]))) { s++; continue }
+    // 로마 숫자 바로 뒤 홑 막대 "|" 는 같은 글리프의 획("통장Ⅱ" → "통장Ⅱ|" — "|" 자리가 둘째 획 위라 창에서 그 획이 빠졌다)
     let e = s
-    while (e < chars.length && inRoman(e)) e++
+    while (e < chars.length && (inRoman(e) || (e > s && chars[e] === "|" && chars[e + 1] !== "|"))) e++
     const tok = chars.slice(s, e).join("")
     if (e < chars.length && /^[A-Za-z]/.test(chars[e])) { s = e; continue }
     let p = s - 1, q = e
     while (p >= 0 && !chars[p].trim()) p--
     while (q < chars.length && !chars[q].trim()) q++
-    const n = romanStems(gray, w, h, ink, p >= 0 ? cx(p) : -Infinity, q < chars.length ? cx(q) : Infinity)
+    const n = romanStems(gray, w, h, ink, p >= 0 ? cx(p) : -Infinity, q < chars.length ? cx(q) : Infinity, /[가-힣]$/.test(chars[p] ?? ""))
     const canon = n ? [["Ⅰ", "I"], ["Ⅱ", "II"], ["Ⅲ", "III"]][n - 1] : null
     if (canon && !canon.includes(tok)) { chars[s] = canon[0]; for (let i = s + 1; i < e; i++) chars[i] = "" }
     s = e

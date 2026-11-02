@@ -1,0 +1,463 @@
+{
+  "release": "4.22.5",
+  "measuredAtKST": "2026-10-17",
+  "baseCommit": "9a484de",
+  "implementationCommit": "98c980318efae184dfa451814d3ed8e46834bd40",
+  "unchangedGroundTruthScorerNormalizationPopulation": true,
+  "baseline": {
+    "layout": {
+      "original": {
+        "lineStarts": {
+          "matched": 25328,
+          "population": 25581
+        },
+        "lineCount": {
+          "matched": 311874,
+          "population": 311942
+        }
+      },
+      "separate2022": {
+        "lineStarts": {
+          "matched": 17050,
+          "population": 17173
+        },
+        "lineCount": {
+          "matched": 150389,
+          "population": 150410
+        }
+      }
+    },
+    "pdf": {
+      "table": {
+        "pairs": 708,
+        "refTables": 2331,
+        "reordered": 5,
+        "matchedRate": 0.998713,
+        "exactRate": 0.981553,
+        "cellF1": 0.991791,
+        "cellExactRate": 0.990311,
+        "contentNED": 0.987246,
+        "parseErrors": 0,
+        "nested": {
+          "pairs": 29,
+          "refTables": 101,
+          "reordered": 0,
+          "matchedRate": 1,
+          "exactRate": 1,
+          "cellF1": 1,
+          "cellExactRate": 1,
+          "contentNED": 1
+        }
+      },
+      "text": {
+        "pairs": 744,
+        "refChars": 2857682,
+        "recall": 0.99866,
+        "precision": 0.9967,
+        "order": 0.99242,
+        "spaceF1": 0.99026,
+        "parseErrors": 0,
+        "excluded": 22
+      },
+      "annex": {
+        "hwp": {
+          "docs": 272,
+          "recall": 1,
+          "phantom": 1e-05,
+          "order": 1,
+          "tables": 346,
+          "tableExactCount": 346,
+          "tableExact": 1,
+          "cellF1": 1,
+          "eqRef": 11,
+          "eqHit": 11
+        },
+        "pdf": {
+          "docs": 272,
+          "recall": 0.99976,
+          "phantom": 0.00045,
+          "order": 1,
+          "tables": 346,
+          "tableExactCount": 342,
+          "tableExact": 0.98844,
+          "cellF1": 0.99778,
+          "eqRef": 11,
+          "eqHit": 7
+        }
+      }
+    }
+  },
+  "final": {
+    "layout": {
+      "original": {
+        "lineStarts": {
+          "matched": 25332,
+          "population": 25581
+        },
+        "lineCount": {
+          "matched": 311875,
+          "population": 311942
+        }
+      },
+      "separate2022": {
+        "lineStarts": {
+          "matched": 17054,
+          "population": 17173
+        },
+        "lineCount": {
+          "matched": 150390,
+          "population": 150410
+        }
+      }
+    },
+    "pdf": {
+      "table": {
+        "pairs": 708,
+        "refTables": 2331,
+        "reordered": 5,
+        "matchedRate": 0.998713,
+        "exactRate": 0.981553,
+        "cellF1": 0.991791,
+        "cellExactRate": 0.990677,
+        "contentNED": 0.987306,
+        "parseErrors": 0,
+        "nested": {
+          "pairs": 29,
+          "refTables": 101,
+          "reordered": 0,
+          "matchedRate": 1,
+          "exactRate": 1,
+          "cellF1": 1,
+          "cellExactRate": 1,
+          "contentNED": 1
+        }
+      },
+      "text": {
+        "pairs": 744,
+        "refChars": 2857682,
+        "recall": 0.99872,
+        "precision": 0.9967,
+        "order": 0.99244,
+        "spaceF1": 0.99037,
+        "parseErrors": 0,
+        "excluded": 22
+      },
+      "annex": {
+        "hwp": {
+          "docs": 272,
+          "recall": 1,
+          "phantom": 1e-05,
+          "order": 1,
+          "tables": 346,
+          "tableExactCount": 346,
+          "tableExact": 1,
+          "cellF1": 1,
+          "eqRef": 11,
+          "eqHit": 11
+        },
+        "pdf": {
+          "docs": 272,
+          "recall": 0.99976,
+          "phantom": 0.00045,
+          "order": 1,
+          "tables": 346,
+          "tableExactCount": 342,
+          "tableExact": 0.98844,
+          "cellF1": 0.99778,
+          "eqRef": 11,
+          "eqHit": 7
+        }
+      }
+    }
+  },
+  "rounds": [
+    {
+      "round": 1,
+      "track": "layout",
+      "commit": "600f3ab",
+      "snapshot": "round1-v2"
+    },
+    {
+      "round": 2,
+      "track": "pdf",
+      "commit": "3de3639",
+      "snapshot": "round2-final"
+    },
+    {
+      "round": 3,
+      "track": "layout",
+      "commit": "e369276",
+      "snapshot": "round3"
+    },
+    {
+      "round": 4,
+      "track": "pdf",
+      "commit": "b7121fd",
+      "snapshot": "round4"
+    },
+    {
+      "round": 5,
+      "track": "layout",
+      "commit": "98c980318efae184dfa451814d3ed8e46834bd40",
+      "snapshot": "round5-v3"
+    }
+  ],
+  "limits": [
+    "Existing-corpus regression results, not an unseen holdout.",
+    "2022 resaves are a separate population, not independent originals.",
+    "Exact line starts, all-coordinate equality, table structure and cell content are distinct metrics.",
+    "Native per-field distance comparisons require aligned line counts."
+  ],
+  "audit": {
+    "immutableManifestsVerified": [
+      "round1-v2",
+      "round2-final",
+      "round3",
+      "round4",
+      "round5-v3"
+    ],
+    "layoutSourceReuse": {
+      "round2": "round1-v2 render/hwpx byte-identical",
+      "round4": "round3 render/hwpx byte-identical"
+    },
+    "round5PdfReuse": "round5 PDF3 measured; final round5-v3 pdf/shared byte-identical; final change only render/reflow.ts whitespace guard",
+    "explicitCellExact": [
+      {
+        "rows": 730,
+        "up": 0,
+        "down": 0,
+        "numericRowsCompared": 721,
+        "primaryScoredPairs": 708
+      },
+      {
+        "rows": 730,
+        "up": 3,
+        "down": 0,
+        "numericRowsCompared": 721,
+        "primaryScoredPairs": 708
+      },
+      {
+        "rows": 730,
+        "up": 0,
+        "down": 0,
+        "numericRowsCompared": 721,
+        "primaryScoredPairs": 708
+      },
+      {
+        "rows": 730,
+        "up": 5,
+        "down": 0,
+        "numericRowsCompared": 721,
+        "primaryScoredPairs": 708
+      },
+      {
+        "rows": 730,
+        "up": 0,
+        "down": 0,
+        "numericRowsCompared": 721,
+        "primaryScoredPairs": 708
+      }
+    ]
+  },
+  "native": {
+    "round1": {
+      "documents": 1,
+      "sections": 2,
+      "paragraphs": 578,
+      "stored": 578,
+      "beforeExact": 495,
+      "afterExact": 497,
+      "up": 2,
+      "down": 0,
+      "startsChanged": 2,
+      "lineUp": 2,
+      "lineDown": 0,
+      "lineBefore": 575,
+      "lineAfter": 577,
+      "changedParagraphs": 2,
+      "unalignedChangedParagraphs": 0,
+      "fieldAwayWithinAlignedParagraphs": 0
+    },
+    "round3": {
+      "documents": 1,
+      "sections": 1,
+      "paragraphs": 61,
+      "stored": 61,
+      "beforeExact": 45,
+      "afterExact": 57,
+      "up": 12,
+      "down": 0,
+      "startsChanged": 2,
+      "lineUp": 2,
+      "lineDown": 0,
+      "lineBefore": 59,
+      "lineAfter": 61,
+      "changedParagraphs": 12,
+      "unalignedChangedParagraphs": 1,
+      "fieldAwayWithinAlignedParagraphs": 0
+    },
+    "round5": {
+      "documents": 5,
+      "sections": 8,
+      "paragraphs": 21369,
+      "stored": 21369,
+      "beforeExact": 20132,
+      "afterExact": 20135,
+      "up": 3,
+      "down": 0,
+      "startsChanged": 0,
+      "lineUp": 0,
+      "lineDown": 0,
+      "lineBefore": 21319,
+      "lineAfter": 21319,
+      "changedParagraphs": 5,
+      "unalignedChangedParagraphs": 1,
+      "fieldAwayWithinAlignedParagraphs": 0
+    }
+  },
+  "glyphNative": {
+    "round2": {
+      "file": "bench/corpus/korea-kr-pairs/156782426_260919 (14시) 아이들의 안전한 학교생활 위해 개학기 학교 주변 안전관리 현장 점검(안전개선과).pdf",
+      "counts": {
+        "·": 13
+      }
+    },
+    "round4": {
+      "file": "bench/corpus/korea-kr-pairs2/156775932_260828 청년일자리 회복방안.pdf",
+      "counts": {
+        "①": 5,
+        "②": 5,
+        "③": 5,
+        "④": 5,
+        "⑤": 5,
+        "⑥": 5
+      }
+    }
+  },
+  "upstream": [
+    {
+      "repo": "opendataloader-project/opendataloader-pdf",
+      "branch": "main",
+      "sha": "7f5d574cefe5e92868af0a86851bd52d480eb7b7",
+      "date": "2026-10-16T10:17:35Z",
+      "subject": "docs(skills): add CI, before/after, merge, and feedback steps to odl-review",
+      "url": "https://github.com/opendataloader-project/opendataloader-pdf/commit/7f5d574cefe5e92868af0a86851bd52d480eb7b7",
+      "latestRelease": {
+        "tag_name": "v2.5.13",
+        "published_at": "2026-10-13T03:48:22Z",
+        "html_url": "https://github.com/opendataloader-project/opendataloader-pdf/releases/tag/v2.5.13"
+      }
+    },
+    {
+      "repo": "opendataloader-project/opendataloader-bench",
+      "branch": "main",
+      "sha": "7af1d8f4d0c09f51ea1a5c6ba5f66e993286d109",
+      "date": "2026-05-20T05:08:41Z",
+      "subject": "chore(deps): bump idna to 3.15 to address GHSA-65pc-fj4g-8rjx",
+      "url": "https://github.com/opendataloader-project/opendataloader-bench/commit/7af1d8f4d0c09f51ea1a5c6ba5f66e993286d109",
+      "latestRelease": null
+    },
+    {
+      "repo": "edwardkim/rhwp",
+      "branch": "main",
+      "sha": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "date": "2026-10-06T07:15:59Z",
+      "subject": "v0.8.7 릴리즈: devel을 main에 병합 (#7607)",
+      "url": "https://github.com/edwardkim/rhwp/commit/1a76570e833917d15817415a53c09ad61ab3203f",
+      "latestRelease": {
+        "tag_name": "v0.8.7",
+        "published_at": "2026-10-06T07:54:34Z",
+        "html_url": "https://github.com/edwardkim/rhwp/releases/tag/v0.8.7"
+      },
+      "devel": {
+        "sha": "552514f423ec91f1b7171f6e6b0882a4efe034f2",
+        "date": "2026-10-16T14:22:04Z",
+        "subject": "Merge pull request #7951 from edwardkim/review/imsebeom-7433-20261016",
+        "url": "https://github.com/edwardkim/rhwp/commit/552514f423ec91f1b7171f6e6b0882a4efe034f2"
+      }
+    },
+    {
+      "repo": "ai-screams/HwpForge",
+      "branch": "main",
+      "sha": "59ac1469471f84ee03cc1dbf2876a1a56c1b3cc1",
+      "date": "2026-10-13T13:29:32Z",
+      "subject": "Merge pull request #235 from ai-screams/release-plz-2026-10-13T09-54-45Z",
+      "url": "https://github.com/ai-screams/HwpForge/commit/59ac1469471f84ee03cc1dbf2876a1a56c1b3cc1",
+      "latestRelease": {
+        "tag_name": "v0.16.11",
+        "published_at": "2026-10-13T13:52:51Z",
+        "html_url": "https://github.com/ai-screams/HwpForge/releases/tag/v0.16.11"
+      }
+    }
+  ],
+  "verification": {
+    "tests": {
+      "total": 4215,
+      "passed": 4206,
+      "skipped": 9,
+      "failed": 0
+    },
+    "typecheck": true,
+    "build": true,
+    "trackedLayoutDown": 0,
+    "pdfTrackedDown": 0,
+    "externalODL": {
+      "documents": 200,
+      "modes": [
+        "default",
+        "best",
+        "fast",
+        "ocr"
+      ],
+      "rounds": [
+        2,
+        4
+      ],
+      "qualityScoresUnchanged": true
+    },
+    "automatedReleaseGates": "Executed by normal npm publish prepublishOnly; deployment proof is separate."
+  },
+  "commitSourceProof": [
+    {
+      "commit": "600f3ab",
+      "snapshot": "round1-v2",
+      "allProductSourceIdentical": false,
+      "trailingBlankLineOnly": [
+        "src/render/svg-content.ts"
+      ]
+    },
+    {
+      "commit": "3de3639",
+      "snapshot": "round2-final",
+      "allProductSourceIdentical": false,
+      "trailingBlankLineOnly": [
+        "src/render/svg-content.ts"
+      ]
+    },
+    {
+      "commit": "e369276",
+      "snapshot": "round3",
+      "allProductSourceIdentical": true,
+      "trailingBlankLineOnly": []
+    },
+    {
+      "commit": "b7121fd",
+      "snapshot": "round4",
+      "allProductSourceIdentical": true,
+      "trailingBlankLineOnly": []
+    },
+    {
+      "commit": "98c9803",
+      "snapshot": "round5-v3",
+      "allProductSourceIdentical": true,
+      "trailingBlankLineOnly": []
+    }
+  ],
+  "populationUnits": {
+    "pdfTablePrimaryPairs": 708,
+    "pdfTableRawResultRows": 730,
+    "pdfTableNumericCellExactRows": 721,
+    "annexDocuments": 272,
+    "annexResultRows": 544
+  }
+}

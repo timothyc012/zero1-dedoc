@@ -10,6 +10,7 @@ import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import JSZip from "jszip"
 import { parseHwpxDocument } from "../src/hwpx/parser.js"
+import { markdownToHwpx, parseHwpx } from "../src/index.js"
 import { hmlToLatex } from "../src/hwpx/equation.js"
 import { noteRefMark, noteAutoNumText } from "../src/hwpx/notes.js"
 import type { IRBlock } from "../src/types.js"
@@ -132,6 +133,34 @@ describe("HWPX 각주·미주 — 참조 부호와 주석 본문", () => {
     const [p] = textBlocks(r.blocks)
     assert.equal(p.footnoteText, "문1） ③ 극대 / 극소")
   })
+
+  // #149 — 주석 안 표가 footnoteText 의 " / " 평탄화 글로만 남아 원문 "/" 와 칸 구분을 가를 수 없었다
+  for (const kind of ["endNote", "footNote"] as const) {
+    it(`${kind} 안 2×2 표 — 호스트 블록 footnoteBlocks 에 표 구조, Markdown 엔 같은 줄 HTML 격자 (#149)`, async () => {
+      const zip = await JSZip.loadAsync(await markdownToHwpx("표 기준\n\n| A | B |\n| --- | --- |\n| C | D |\n"))
+      const xml = await zip.file("Contents/section0.xml")!.async("string")
+      const tblAt = xml.indexOf("<hp:tbl")
+      const pStart = xml.lastIndexOf("<hp:p ", tblAt)
+      const pEnd = xml.indexOf("</hp:p>", xml.indexOf("</hp:tbl>", tblAt)) + "</hp:p>".length
+      const host = `<hp:p paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:t>NOTE-ANCHOR</hp:t>` +
+        `<hp:ctrl><hp:${kind} number="1" instId="1"><hp:subList>${xml.slice(pStart, pEnd)}</hp:subList></hp:${kind}></hp:ctrl></hp:run></hp:p>`
+      zip.file("Contents/section0.xml", xml.slice(0, pStart) + host + xml.slice(pEnd))
+      const buf = await zip.generateAsync({ type: "arraybuffer" })
+      for (const options of [{ layoutTables: "keep" as const }, {}]) {
+        const r = await parseHwpx(buf, options)
+        assert.ok(r.success)
+        const p = r.blocks.find(b => b.text?.startsWith("NOTE-ANCHOR"))!
+        assert.equal(p.footnoteText, "A / B\nC / D", "평탄화 글은 종전 그대로")
+        const t = p.footnoteBlocks?.find(b => b.type === "table")?.table
+        assert.ok(t, `footnoteBlocks 에 표: ${JSON.stringify(p.footnoteBlocks)}`)
+        assert.equal(t.rows, 2)
+        assert.equal(t.cols, 2)
+        assert.deepEqual(t.cells.flat().map(c => c.text), ["A", "B", "C", "D"])
+        const line = r.markdown.split("\n").find(l => l.startsWith("NOTE-ANCHOR"))
+        assert.equal(line, "NOTE-ANCHOR1) (주: <table><tr><th>A</th><th>B</th></tr><tr><td>C</td><td>D</td></tr></table>)", r.markdown)
+      }
+    })
+  }
 
   it("notes.ts 표기 함수 — 속성 없으면 구역 모양, 둘 다 없으면 한컴 기본 \"N)\"", () => {
     assert.equal(noteRefMark({ number: "7", suffixChar: "41" }), "7)")

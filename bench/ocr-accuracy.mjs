@@ -17,6 +17,7 @@
  *  bench/ocr-robust.mjs. 텍스트층 자체의 결함(숨은 글자·빠진 괄호)도 오차로 섞인다.
  *
  *  실행: node bench/ocr-accuracy.mjs [--limit=N] [--pages=K] [--doc=이름] [--gate] [--dump=디렉토리]
+ *        [--det=mobile|server] [--det-long-side=N]   (검출 모델·입력 긴 변 비교 — OCR 쪽 parse 에만 넘기고 정답·채점은 그대로, 보고 전용)
  *  산출: bench/out/ocr-accuracy.json (--dump 시 문서별 GT/OCR IR 블록 JSON — 오류 분석용)
  *  --gate: 무후퇴 플로어(GATES) 미달 시 exit 1. 코퍼스·OCR 모델이 없으면 SKIP(exit 0).
  */
@@ -35,6 +36,10 @@ const pagesPerDoc = Number((args.find(a => a.startsWith("--pages=")) ?? "").spli
 const docFilter = (args.find(a => a.startsWith("--doc=")) ?? "").split("=")[1] ?? null
 const gateMode = args.includes("--gate")
 const dumpDir = (args.find(a => a.startsWith("--dump=")) ?? "").split("=")[1] || null
+const detArg = (args.find(a => a.startsWith("--det=")) ?? "").split("=")[1] || null
+const longSideArg = (args.find(a => a.startsWith("--det-long-side=")) ?? "").split("=")[1] || null
+/** 엔진 비교 옵션(ParseOptions ocrDet·ocrDetLongSide) — 주면 플로어 판정 없이 보고만 한다(플로어는 기본 엔진 실측) */
+const engineOpts = { ...(detArg ? { ocrDet: detArg } : {}), ...(longSideArg ? { ocrDetLongSide: Number(longSideArg) } : {}) }
 
 const MIN_PAGE_CHARS = 200      // 정답지로 쓸 최소 글자 수 (표지·간지 배제)
 const MAX_CMP_CHARS = 20000     // CER 대조 상한 (O(n·m) DP 가드)
@@ -127,9 +132,11 @@ for (const f of files) {
 
   const pages = clean.join(",")
   // 머리글/바닥글 제거는 텍스트층 y-클러스터 기반이라 OCR 경로와 비대칭 — 양쪽 다 끔
-  const gt = await parse(buf(), { pages, removeHeaderFooter: false, ocr: false })
+  // 양쪽 모두 원본 표 구조 그대로(layoutTables keep) — 텍스트층은 한컴 칸 클립·획으로 보이지 않는 틀을 풀지만 OCR 은 그림에서 칸 테두리를
+  // 못 가려 틀을 못 푼다. OCR 인식 정확도를 재는 벤치라 틀 풀기와 무관하게 같은 조건에서 대조한다 (v4.17.0 채점 기준 변경)
+  const gt = await parse(buf(), { pages, removeHeaderFooter: false, ocr: false, layoutTables: "keep" })
   const t0 = performance.now()
-  const ocr = await parse(buf(), { pages, removeHeaderFooter: false, ocr: "force" })
+  const ocr = await parse(buf(), { pages, removeHeaderFooter: false, ocr: "force", layoutTables: "keep", ...engineOpts })
   const ocrMs = performance.now() - t0
   if (!gt.success || !ocr.success) { rows.push({ doc: f, skip: `재파싱 실패: ${gt.error ?? ocr.error ?? "?"}` }); continue }
   if (!ocr.warnings?.some(w => w.code === "OCR_APPLIED")) {
@@ -172,7 +179,7 @@ for (const f of files) {
       byPage.set(pg, [...(byPage.get(pg) ?? []), r])
     }
     for (const png of await renderRectPngs(raw, byPage)) {
-      const res = await parse(toAB(png))
+      const res = await parse(toAB(png), engineOpts)
       if (res.success) imageText.push(...blockTexts(res.blocks))
     }
   }
@@ -257,10 +264,11 @@ const summary = {
     skippedRefTables: tblAgg.skippedRef,
   } : null,
   note: "정답=같은 PDF의 클린 텍스트층, 입력=216dpi 렌더 강제 OCR — 실스캔 노이즈/스큐 미반영(상한치). cer=v2 fair 정규화, cerStrict=v1",
+  ...(Object.keys(engineOpts).length ? { engine: engineOpts } : {}),
 }
 
 // 플로어는 전체 모수 집계값 기준 — --doc·--limit·--pages 부분 실행은 보고만 (환경 실패만 판정)
-const full = !docFilter && !Number.isFinite(limit) && pagesPerDoc === 2
+const full = !docFilter && !Number.isFinite(limit) && pagesPerDoc === 2 && !Object.keys(engineOpts).length
 const gates = {
   cerMicro: { value: summary.cerMicro, threshold: `≤ ${GATES.cerMicroMax}`, pass: !full || (summary.cerMicro != null && summary.cerMicro <= GATES.cerMicroMax) },
   charRecall: { value: summary.charRecallMicro, threshold: `≥ ${GATES.charRecallMin}`, pass: !full || (summary.charRecallMicro ?? 0) >= GATES.charRecallMin },

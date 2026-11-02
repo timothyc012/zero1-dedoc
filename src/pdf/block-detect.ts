@@ -131,8 +131,11 @@ export function detectTypographyHeadings(blocks: IRBlock[]): void {
     const faceWeight = new Map<string, number>()
     for (const block of page) {
       if (block.type !== "paragraph" || !block.text || !block.style?.fontName) continue
-      const face = block.style.fontName
-      faceWeight.set(face, (faceWeight.get(face) ?? 0) + block.text.length)
+      // 서체별 실제 글자 수로 센다 — 블록 대표 서체는 첫 조각 서체라, 굵은 머리말로 시작한 긴 문단("Alignment tuning. In …")이
+      // 문단 전체를 굵은 서체 몫으로 넘겨 본문 서체를 뒤집는다
+      const faces = FACE_CHARS.get(block)
+      if (faces) for (const [face, n] of faces) faceWeight.set(face, (faceWeight.get(face) ?? 0) + n)
+      else faceWeight.set(block.style.fontName, (faceWeight.get(block.style.fontName) ?? 0) + block.text.length)
     }
     const bodyFace = [...faceWeight].sort((a, b) => b[1] - a[1])[0]?.[0]
     if (!bodyFace || (faceWeight.get(bodyFace) ?? 0) < 250) continue
@@ -140,8 +143,11 @@ export function detectTypographyHeadings(blocks: IRBlock[]): void {
     // smaller distinct faces are running heads, bylines, captions and notes.
     const sizeWeight = new Map<number, number>()
     for (const block of page) {
-      if (block.type !== "paragraph" || block.style?.fontName !== bodyFace || !block.style.fontSize) continue
-      sizeWeight.set(block.style.fontSize, (sizeWeight.get(block.style.fontSize) ?? 0) + block.text!.length)
+      if (block.type !== "paragraph" || !block.style?.fontSize) continue
+      // 본문 서체 글자 수로 크기도 센다 — 굵은 머리말로 시작한 본문만 있어도 작은 캡션을 제목으로 올리지 않는다.
+      const faces = FACE_CHARS.get(block)
+      const chars = faces ? (faces.get(bodyFace) ?? 0) : block.style.fontName === bodyFace ? (block.text?.length ?? 0) : 0
+      if (chars) sizeWeight.set(block.style.fontSize, (sizeWeight.get(block.style.fontSize) ?? 0) + chars)
     }
     const bodySize = [...sizeWeight].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0
 
@@ -284,7 +290,9 @@ export function detectRepeatedPageLabels(blocks: IRBlock[]): void {
   for (const page of byPage.values()) {
     const bodyChars = new Map<string, number>()
     for (const b of page) if (b.type === "paragraph" && b.text && b.style?.fontName) {
-      bodyChars.set(b.style.fontName, (bodyChars.get(b.style.fontName) ?? 0) + b.text.length)
+      const faces = FACE_CHARS.get(b)
+      if (faces) for (const [face, n] of faces) bodyChars.set(face, (bodyChars.get(face) ?? 0) + n)
+      else bodyChars.set(b.style.fontName, (bodyChars.get(b.style.fontName) ?? 0) + b.text.length)
     }
     const bodyFace = [...bodyChars].sort((a, b) => b[1] - a[1])[0]?.[0]
     const candidates = page.filter(b => b.type === "paragraph" && b.text && b.bbox && b.style?.fontName &&
@@ -371,15 +379,18 @@ export function detectPageLeadHeadings(blocks: IRBlock[]): void {
     const distinctFace = third.style?.fontName !== second.style.fontName
     const subtitleFace = first.style?.fontName === second.style.fontName
     const namedContents = /^Table of Contents$/i.test(second.text.trim())
-    if (((distinctFace && subtitleFace && third.text.length >= 60) || namedContents)) {
+    if ((distinctFace && third.text.length >= 60) || namedContents) {
+      second.type = "heading"
+      second.level = 1
       // A size-based pass may have assigned the display title H2/H3 because
       // its font is only modestly larger than body text. On a document lead,
-      // that first heading is the title and the bold line below it is a
-      // subtitle/byline. Keep the semantic hierarchy in that order instead of
-      // promoting the byline to H1.
-      if (first.level && first.level > 1) first.level = 1
-      second.type = "heading"
-      second.level = 2
+      // that first heading is the title and the bold line below it in the
+      // same face is a subtitle/byline. Keep the semantic hierarchy in that
+      // order instead of promoting the byline to H1.
+      if (subtitleFace || namedContents) {
+        if (first.level && first.level > 1) first.level = 1
+        second.level = 2
+      }
     }
   }
 }
@@ -565,8 +576,11 @@ export function detectTableCaptions(blocks: IRBlock[]): void {
       blocks.splice(i - 1, 1)
       i--
     } else if (isCaptionCandidate(blocks[i + 1], block) && blocks[i + 2]?.type !== "table") {
-      // 두 표 사이의 캡션은 아래 표의 머리 캡션이다
+      // 두 표 사이의 캡션은 아래 표의 머리 캡션이다. 쪽에서 표 아래에 놓인 캡션은 표 뒤에 낸다(captionBelow) —
+      // 늘 표 위에 내면 읽는 순서가 뒤집힌다(ODL 064·110·132: 표 밑 "Table 1."·"Figure 7.2:" 가 표 앞에 나왔다)
+      const cap = blocks[i + 1].bbox, tbl = block.bbox
       block.table.caption = blocks[i + 1].text!.trim()
+      if (cap && tbl && cap.y + cap.height <= tbl.y + 1) block.table.captionBelow = true
       blocks.splice(i + 1, 1)
     }
   }
@@ -699,7 +713,12 @@ export function detectKoreanListBlocks(blocks: IRBlock[]): void {
     const listType: "ordered" | "unordered" = label.family === "arabicDot" ? "ordered" : "unordered"
     const listBlock: IRBlock = { ...b, type: "list", listType }
 
-    if (depth === 0) {
+    // 하위 family 라도 앞 항목 오른끝 너머·위에서 시작하면 들여쓰기가 아니라 옆 단 머리다(두 단 시험지: 왼쪽 단 끝 선지 ⑤ 뒤 오른쪽 단
+    // 첫 문항 "26.") — 중첩하지 않고 그 family 로 새 목록을 연다
+    const pb = lastTopLevelList?.bbox, cb = b.bbox
+    const notIndented = depth > 0 && !!pb && !!cb && pb.page === cb.page && cb.x >= pb.x + pb.width && cb.y >= pb.y + pb.height
+    if (notIndented) familyStack = [label.family]
+    if (depth === 0 || notIndented) {
       blocks[i] = listBlock
       lastTopLevelList = listBlock
     } else if (lastTopLevelList && i === prevListIdx + 1) {
@@ -883,6 +902,29 @@ export function detectSpecialKoreanTables(blocks: IRBlock[]): IRBlock[] {
 
 // ─── 머리글/바닥글 감지 ────────────────────────────
 
+/** 등장마다 같은 자리 숫자 하나가 쪽과 같이 느나(쪽 − 숫자 일정) — 띠 블록이 표에 흡수돼 따로 선 등장이 성긴 쪽 번호(hwp3-sample11) */
+function tracksPages(occ: { page: number; text: string }[]): boolean {
+  const nums = occ.map(o => [...o.text.matchAll(/\d+/g)].map(m => +m[0]))
+  if (!nums.length || nums.some(n => n.length !== nums[0].length)) return false
+  return nums[0].some((_, j) => new Set(occ.map((o, k) => o.page - nums[k][j])).size === 1)
+}
+/** 등장마다 바뀌는 숫자 자리가 낱말에 붙지 않았나 — 쪽 번호 "- 3 -"·"DCT Technology Inc. 5"·내려받기 도장 "김유진 / 2026…7 /" 은 떨어져 있고,
+ *  첨부 이름표 "<붙임2>"·"<별지 서식 제3호>" 의 서식 번호는 낱말에 붙어 있다 */
+function looseVaryingNumber(occ: { text: string }[], top = false): boolean {
+  // 머리 띠의 괄호 서식 제목은 번호 앞 공백이 있어도 본문이다. 동일 제목의 반복 여부는 호출부에서 따로 본다.
+  const title = /^(?:【[^【】\n]*】|〔[^〔〕\n]*〕|\[[^\[\]\n]*\]|\([^()\n]*\)|〈[^〈〉\n]*〉|《[^《》\n]*》|「[^「」\n]*」|<[^<>\n]*>)$/
+  if (top && occ.every(o => title.test(o.text) && /\p{L}/u.test(o.text))) return false
+  // 문자 접두어 뒤의 복합 절 번호는 본문 제목일 수 있다. 원시 글의 NUL은 빼고 보되 같은 제목의 반복 판정은 유지한다.
+  if (top && occ.every(o => /^\p{L}[\p{L}\p{M} \t]*\d+(?:-\d+)+\.?$/u.test(o.text.replace(/\u0000/g, "")))) return false
+  const nums = occ.map(o => [...o.text.matchAll(/\d+/g)])
+  if (!nums.length || nums.some(n => n.length !== nums[0].length)) return false
+  const loose = (text: string, m: RegExpMatchArray) => !/\p{L}/u.test(text[m.index! - 1] ?? " ") && !/\p{L}/u.test(text[m.index! + m[0].length] ?? " ")
+  for (let j = 0; j < nums[0].length; j++) {
+    if (new Set(nums.map(n => n[j][0])).size > 1 && occ.every((o, k) => loose(o.text, nums[k][j]))) return true
+  }
+  return false
+}
+
 /**
  * 머리글/바닥글 감지 — 텍스트 반복 패턴 (숫자 normalization).
  *
@@ -898,7 +940,14 @@ export function removeHeaderFooterBlocks(
   warnings: ParseWarning[],
   notes?: Map<number, PageNotes>,
   tables = false,
+  context: IRBlock[] = [],
 ): number[] {
+  if (context.length && !tables) {
+    const removed = removeHeaderFooterBlocks([...blocks, ...context], pageHeights, [], notes)
+      .filter(index => index < blocks.length)
+    if (removed.length) warnings.push({ message: `${removed.length}개 머리글/바닥글 요소 제거됨`, code: "HIDDEN_TEXT_FILTERED" })
+    return removed
+  }
   const ZONE_RATIO = 0.12   // 상하 12% (10% 초과 여백 대응)
   const MIN_REPEAT = 3       // 최소 3페이지 반복
 
@@ -911,7 +960,11 @@ export function removeHeaderFooterBlocks(
     // tables: 괘선 상자로 찍은 머리말(시험지 "2 | 홀수형", 교재 짝수 쪽 장 제목)만 — 빈 칸을 뺀 칸 글로 같은 반복 규칙을 탄다.
     // 띠 안에 통째로 들어야 하므로(아래 영역 판정) 쪽을 넘는 본문 표·표 머리 행은 걸리지 않는다. 쪽 넘김 표 병합 뒤에 따로 부른다 —
     // 먼저 지우면 상자 쪽번호("- | 1 -")가 갈라 두던 이웃 쪽 카드뉴스 표 둘이 한 표로 이어진다(의료방사선 보도자료)
-    const text = !tables ? b.text?.trim() : b.type === "table" && b.table ? b.table.cells.flat().map(c => c.text.trim()).filter(Boolean).join(" | ") : undefined
+    // 한 줄 머리말 상자(칸 넷 이하·쪽 높이 5% 이하)는 칸 순서를 맞대지 않는다 — 짝·홀 쪽 머리 상자는 칸이 좌우로 뒤집힌다
+    // ("2 | (화법과 작문) | 홀수형" · "홀수형 | (화법과 작문) | 3", 같은 꼴이 쪽마다 둘 이하로 갈려 되풀이로 안 잡혔다)
+    const cellTexts = b.type === "table" && b.table ? b.table.cells.flat().map(c => c.text.trim()).filter(Boolean) : []
+    const headBox = cellTexts.length <= 4 && !!b.bbox && b.bbox.height <= (pageHeights.get(b.bbox.page) ?? Infinity) * 0.05
+    const text = !tables ? b.text?.trim() : cellTexts.length ? (headBox ? [...cellTexts].sort() : cellTexts).join(" | ") : undefined
     if (!b.bbox || !b.pageNumber || !text) continue
     const ph = pageHeights.get(b.bbox.page) || pageHeights.get(b.pageNumber)
     if (!ph) continue
@@ -936,16 +989,18 @@ export function removeHeaderFooterBlocks(
     // (1) 텍스트 반복 패턴
     const patternCount = new Map<string, number>()
     const patternPages = new Map<string, Set<number>>()
-    const patternOccurrences = new Map<string, ZoneEntry[]>()
+    const patternNumbers = new Map<string, Set<string>>()
+    const patternOcc = new Map<string, ZoneEntry[]>()
     for (const e of entries) {
       const norm = e.text.replace(/\d+/g, "#")
       patternCount.set(norm, (patternCount.get(norm) || 0) + 1)
-      const occurrences = patternOccurrences.get(norm) || []
-      occurrences.push(e)
-      patternOccurrences.set(norm, occurrences)
+      const nums = patternNumbers.get(norm) || new Set<string>()
+      nums.add((e.text.match(/\d+/g) ?? []).join(","))
+      patternNumbers.set(norm, nums)
       const pages = patternPages.get(norm) || new Set<number>()
       pages.add(e.page)
       patternPages.set(norm, pages)
+      patternOcc.set(norm, [...(patternOcc.get(norm) ?? []), e])
     }
     const repeatedPatterns = new Set<string>()
     for (const [p, count] of patternCount) {
@@ -954,16 +1009,23 @@ export function removeHeaderFooterBlocks(
       // (규제영향분석서 "Ⅰ. 규제의 필요성": 156쪽 중 10쪽, 약 15쪽 간격 — 원본 서식 제목을 머리글로 지웠다)
       const pages = [...(patternPages.get(p) ?? [])]
       const span = pages.length ? Math.max(...pages) - Math.min(...pages) + 1 : 0
-      // 인쇄 쪽번호가 바뀌면 드문드문해도 러닝 머리·바닥글이다. 숫자가 달라지는
-      // 양식·장 식별자는 쪽과 공변해도 머리글이 아니다(Formular F.701.01/Übersicht 1).
+      // 숫자가 등장마다 바뀌면(쪽 번호) 드문드문해도 러닝 머리·바닥글이다 — 일부 쪽에선 표에 흡수돼 따로 선 등장이 성기다(hwp3-sample11)
       // 표 상자는 번호만 바뀌는 드문 상자가 본문이다(안건 표지 "제2차 재정운용전략협의회 | 26-2-1", 56쪽 중 4쪽) — 밀도만 본다
-      const occurrences = patternOccurrences.get(p) ?? []
-      const varied = new Set(occurrences.map(e => e.text)).size > 1
-      const pageNumbered = !tables && hasPrintedPageCounter(occurrences, entries === bottomEntries)
-      // 본문 참조가 없는 번호 각주는 종전처럼 러닝 푸터 후보로 둔다. 아래 참조 표시 검사가 실제 각주를 보존한다.
-      const noteLike = !tables && entries === bottomEntries && occurrences.every(e => /^\d{1,3}\)\s+\S/.test(e.text))
+      // 숫자가 바뀌는 꼴은 바뀌는 숫자가 낱말에 붙지 않았거나(쪽 번호·도장) 같은 글이 쪽마다 되풀이될 때(장 머리말 "제1장 총칙")만이다 —
+      // 쪽마다 하나씩 바뀌는 첨부 이름표 "<붙임2>"·"<별지 서식 제3호>" 는 서식 번호라 본문이다(pair06·pr-1674, 연속 쪽이라 밀도도 넘는다)
+      const varying = !tables && (patternNumbers.get(p)?.size ?? 0) > 1
+      const occ = patternOcc.get(p) ?? []
+      // 머리 띠에서는 낱말에 안 붙은 숫자라도 드문드문하면 쪽과 같이 늘어야 한다 — 교재 강의 번호 "강의 01."·"예제 02-02."(온새미로), 부속서 제목
+      // "부속서 3"(선박 코드)은 쪽 번호가 아니다. 바닥 띠의 드문 번호 줄은 종전대로 지운다(각주 "제19장 부속서 3의 2.3.5 참조 - 역주" — 남기면 쪽 끝에 놓인다)
       const dense = pages.length >= span * 0.4
-      if (count >= MIN_REPEAT && pages.length >= MIN_REPEAT && (pageNumbered || dense && (tables || !varied || noteLike))) {
+      const loose = looseVaryingNumber(occ, entries === topEntries) && (entries === bottomEntries || dense || tracksPages(occ))
+      // 쪽번호 모양이 쪽과 일정한 차로 느는 꼴은 성겨도 지운다(Page 102 of 200·S. 12). 쪽번호 모양이 아닌 양식·장 식별자
+      // (Formular F.701.01·Übersicht 1·Chapter 2)는 연속 쪽에서 쪽과 같이 늘어도 제목이다
+      const bottom = entries === bottomEntries
+      const formLabel = occ.every(o => isFormLabel(o.text, bottom))
+      const pageNumbered = varying && (hasPrintedPageCounter(occ, bottom) || (loose && !formLabel) ||
+        (dense && new Set(occ.map(o => o.text)).size * 2 <= occ.length))
+      if (count >= MIN_REPEAT && pages.length >= MIN_REPEAT && (varying ? pageNumbered : dense)) {
         repeatedPatterns.add(p)
       }
     }
@@ -984,12 +1046,12 @@ export function removeHeaderFooterBlocks(
       // 표 바로 아래의 출처·주석은 반복되어도 표 내용이다. CropBox를 원점으로 옮기면 같은 주석이
       // 하단 12% 띠에 들어올 수 있어, 영역/반복만으로 지우면 본문을 잃는다. 명시적 표지와
       // 표 폭 안 + 한 줄 높이 이내의 간격을 함께 요구해 떨어진 running footer는 종전대로 둔다.
-      const tableNote = /^(?:주\s*(?:\d+\s*[).:]|[:：])|(?:자료|출처)\s*[:：])/.test(e.text.replace(/ \| /g, " "))
+      const tableNote = /^(?:주\s*(?:\d+\s*[).:]|[:：])|(?:자료|출처)\s*[:：]|\*\s+\S)/.test(e.text.replace(/ \| /g, " "))
         && blocks.some(o => {
           if (o.type !== "table" || !o.bbox || o.bbox.page !== cb.page) return false
           const gap = o.bbox.y - (cb.y + cb.height)
           return gap >= 0 && gap <= cb.height
-            && cb.x >= o.bbox.x && cb.x + cb.width <= o.bbox.x + o.bbox.width
+            && cb.x >= o.bbox.x - 2 && cb.x + cb.width <= o.bbox.x + o.bbox.width + 2
         })
       if (tableNote) continue
       let sharesLine = false
@@ -1013,19 +1075,26 @@ export function removeHeaderFooterBlocks(
   return [...removeSet].sort((a, b) => a - b)
 }
 
+/** 쪽번호 모양 — "S. 12"·"p. 3 of 9"·"- 3 -"·"3/20"·"Seite 4", 바닥 띠는 탭 뒤 번호까지. "F.701.01" 같은 식별자는 아니다 */
+function pageShape(text: string, bottom: boolean): boolean {
+  const t = text.trim()
+  if (/^(?:s|p)\.\s*\d{1,6}(?:\s*(?:[/／]|of|von)\s*\d{1,6})?$/i.test(t)) return true
+  if (/\b[A-Z]\.\d+(?:\.\d+)*/i.test(t)) return false // F.701.01 같은 식별자
+  if (/^[-–—(]?\s*\d{1,6}\s*[-–—)]?$/.test(t)) return true
+  if (/^\d{1,6}\s*(?:[/／]|of)\s*\d{1,6}$/i.test(t)) return true
+  if (/(?:^|\s)(?:page|seite|pagina|쪽|페이지)\s*[:#-]?\s*\d+/i.test(t)) return true
+  return bottom && /\t\s*\d{1,6}$/.test(t)
+}
+
+/** 쪽번호 모양이 아닌 양식·장 식별자 — 점 번호("Formular F.701.01")나 낱말 하나 + 번호("Übersicht 1"·"Chapter 2") */
+function isFormLabel(text: string, bottom: boolean): boolean {
+  const t = text.trim()
+  return !pageShape(t, bottom) && (/\b[A-Z]\.\d+(?:\.\d+)*/i.test(t) || /^\p{L}[\p{L}\p{M}]*\s+\d{1,4}[.:]?$/u.test(t))
+}
+
 /** 쪽번호 모양과 실제 PDF 쪽 번호와의 일정한 오프셋을 함께 요구한다. */
 function hasPrintedPageCounter(entries: ReadonlyArray<{ page: number; text: string }>, bottom: boolean): boolean {
-  if (entries.length < 3) return false
-  const pageShape = (text: string): boolean => {
-    const t = text.trim()
-    if (/^(?:s|p)\.\s*\d{1,6}(?:\s*(?:[/／]|of|von)\s*\d{1,6})?$/i.test(t)) return true
-    if (/\b[A-Z]\.\d+(?:\.\d+)*/i.test(t)) return false // F.701.01 같은 식별자
-    if (/^[-–—(]?\s*\d{1,6}\s*[-–—)]?$/.test(t)) return true
-    if (/^\d{1,6}\s*(?:[/／]|of)\s*\d{1,6}$/i.test(t)) return true
-    if (/(?:^|\s)(?:page|seite|pagina|쪽|페이지)\s*[:#-]?\s*\d+/i.test(t)) return true
-    return bottom && /\t\s*\d{1,6}$/.test(t)
-  }
-  if (!entries.every(e => pageShape(e.text))) return false
+  if (entries.length < 3 || !entries.every(e => pageShape(e.text, bottom))) return false
   const numbers = entries.map(e => (e.text.match(/\d+/g) ?? []).map(Number))
   const positions = Math.min(...numbers.map(n => n.length))
   for (let i = 0; i < positions; i++) {
@@ -1035,4 +1104,68 @@ function hasPrintedPageCounter(entries: ReadonlyArray<{ page: number; text: stri
     if (entries.every((e, j) => values[j] - e.page === offset)) return true
   }
   return false
+}
+
+/**
+ * 지운 바닥글 블록의 꼴(숫자 → #, 공백 접기) → 쪽 번호 차(쪽 − 줄 끝 숫자). 줄 끝 숫자가 쪽과 같이 느는 꼴만 — 숫자 없는 꼴은 쪽 아래에
+ * 되풀이되는 본문일 수 있고(사업 계획서 쪽마다의 담당 "축산과 가축위생팀장 김영수"), 쪽 번호뿐인 "- # -" 은 표 끝 숫자 행과 같아진다
+ */
+export function runningLinePatterns(removed: IRBlock[], pageHeights: Map<number, number>): Map<string, number> {
+  const occ = new Map<string, { page: number; nums: string }[]>()
+  for (const b of removed) {
+    const ph = b.bbox && b.pageNumber ? pageHeights.get(b.bbox.page) || pageHeights.get(b.pageNumber) : undefined
+    const key = b.text ? runningKey(b.text) : ""
+    if (!ph || !b.bbox || !b.pageNumber || !/\p{L}/u.test(key) || ph - b.bbox.y <= ph * 0.5) continue
+    ;(occ.get(key) ?? occ.set(key, []).get(key)!).push({ page: b.pageNumber, nums: (b.text!.match(/\d+/g) ?? []).join(",") })
+  }
+  const out = new Map<string, number>()
+  for (const [key, list] of occ) {
+    if (!pageNumberAtEnd(key)) continue
+    const offsets = new Set(list.map(o => o.page - +o.nums))
+    if (offsets.size === 1) out.set(key, [...offsets][0])
+  }
+  return out
+}
+// 사적 영역 글자는 뺀다 — 바닥글 위 괘선을 글리프(U+F000 줄)로 찍은 PDF 는 따로 선 바닥글 블록만 그 줄을 달고 있다(hwp3-sample11)
+const runningKey = (s: string): string => s.replace(/\p{Co}/gu, "").replace(/\d+/g, "#").replace(/\s+/g, " ").trim()
+/** 꼴의 숫자가 하나뿐이고 줄 끝에 있나 ("DCT Technology Inc. #") */
+const pageNumberAtEnd = (key: string): boolean => (key.match(/#/g) ?? []).length === 1 && /#\s*[)\]]?$/.test(key)
+
+/**
+ * 큰 블록에 흡수된 바닥글 걷기 — 쪽 테두리 틀 안 바닥글("DCT Technology Inc. 26")은 쪽 높이 문단의 끝 줄이 되거나 쪽 끝까지 내려온 표의 끝
+ * 행으로 붙어 띠 판정(removeHeaderFooterBlocks)을 비켜 갔다(hwp3-sample11 37쪽). 다른 쪽에서 따로 선 블록으로 지운 꼴(runningLinePatterns)만,
+ * 쪽 아래 12% 띠까지 닿은 문단의 끝 줄과 표의 끝 행에서, 그 쪽 번호가 맞을 때만 걷는다. 표 행은 병합 칸이 걸치지 않을 때만
+ */
+export function stripAbsorbedRunningLines(blocks: IRBlock[], pageHeights: Map<number, number>, running: Map<string, number>): IRBlock[] {
+  if (!running.size) return blocks
+  const matches = (line: string, page: number): boolean => {
+    const offset = running.get(runningKey(line))
+    return offset !== undefined && page - +(line.match(/\d+/g) ?? []).pop()! === offset
+  }
+  const out: IRBlock[] = []
+  for (const b of blocks) {
+    const ph = b.bbox && b.pageNumber ? pageHeights.get(b.bbox.page) || pageHeights.get(b.pageNumber) : undefined
+    if (!ph || !b.bbox || !b.pageNumber || b.bbox.y > ph * 0.12) { out.push(b); continue }
+    if (b.type === "paragraph" && b.text) {
+      const lines = b.text.split("\n")
+      let hi = lines.length
+      while (hi > 0 && !lines[hi - 1].trim()) hi--
+      if (hi > 0 && matches(lines[hi - 1], b.pageNumber)) {
+        const text = lines.slice(0, hi - 1).join("\n").trim()
+        if (!text) continue
+        b.text = text
+      }
+    } else if (b.type === "table" && b.table && b.table.cells.length) {
+      const t = b.table, last = t.cells.length - 1
+      if (matches(t.cells[last].map(c => c.text.trim()).filter(Boolean).join(" "), b.pageNumber) &&
+          !t.cells.slice(0, last).some((row, i) => row.some(c => i + (c.rowSpan || 1) - 1 >= last))) {
+        t.cells.pop()
+        if (!t.cells.length) continue
+        t.rows = t.cells.length
+        t.hasHeader = t.hasHeader && t.rows > 1
+      }
+    }
+    out.push(b)
+  }
+  return out
 }

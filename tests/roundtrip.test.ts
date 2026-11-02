@@ -10,7 +10,7 @@ import JSZip from "jszip"
 import { markdownToHwpx, parseHwpx, patchHwpx } from "../src/index.js"
 import { scanSectionXml, buildParagraphSplices, applySplices, escapeXmlText, decodeXmlEntities } from "../src/roundtrip/source-map.js"
 import { patchZipEntries, readZipEntries } from "../src/roundtrip/zip-patch.js"
-import { splitMarkdownUnits, parseGfmTable, parseHtmlTable, extractTopLevelTables } from "../src/roundtrip/markdown-units.js"
+import { splitMarkdownUnits, parseGfmTable, parseHtmlTable, extractTopLevelTables, alignUnits } from "../src/roundtrip/markdown-units.js"
 
 // ─── 헬퍼 ────────────────────────────────────────────
 
@@ -34,7 +34,7 @@ const SYNTH_MD = `# 사업 개요
 async function makeSynthetic(): Promise<{ original: Uint8Array; markdown: string }> {
   const buf = await markdownToHwpx(SYNTH_MD)
   const original = new Uint8Array(buf)
-  const parsed = await parseHwpx(buf)
+  const parsed = await parseHwpx(buf, { layoutTables: "keep" })
   assert.ok(parsed.success, "합성 HWPX 파싱 성공")
   return { original, markdown: parsed.markdown }
 }
@@ -44,7 +44,7 @@ function toAB(u8: Uint8Array): ArrayBuffer {
 }
 
 async function reparse(data: Uint8Array) {
-  const r = await parseHwpx(toAB(data))
+  const r = await parseHwpx(toAB(data), { layoutTables: "keep" })
   assert.ok(r.success, "패치본 재파싱 성공")
   return r
 }
@@ -117,9 +117,85 @@ describe("patchHwpx: 문단 텍스트 수정", () => {
     // 첫 번째 등장은 그대로, 두 번째가 바뀌었는지 순서로 확인
     assert.ok(r2.markdown.indexOf(target) < r2.markdown.indexOf("두 번째만 수정된"))
   })
+
+  it("같은 글 단위가 여럿이면 제자리끼리 짝짓는다 — 떨어져 있든 붙어 있든 고침이 추가·삭제로 보이지 않게", () => {
+    // 떨어진 같은 글: 편집본 2번을 원본 0번(앞쪽 같은 글)과 짝지으면 0·1 은 추가, 원본 1·2 는 삭제로 보였다
+    assert.deepEqual(alignUnits(["가", "나", "가", "다"], ["가 고침", "나 고침", "가", "다 고침"]), [[0, 0], [1, 1], [2, 2], [3, 3]])
+    assert.deepEqual(alignUnits(["머리", "같음", "같음", "끝"], ["머리", "같음", "고침", "끝"]), [[0, 0], [1, 1], [2, 2], [3, 3]])
+  })
 })
 
 describe("patchHwpx: 표 셀 수정", () => {
+  it("굵은 칸이 있는 GFM 표도 칸 글만 고친다 — 강조 표지는 hp:t 에 쓰지 않고 굵은 run 은 그대로", async () => {
+    const original = new Uint8Array(await markdownToHwpx("| 필수 과제 | 비고 |\n| --- | --- |\n| **자율 과제** (예시) | 가 |"))
+    const markdown = (await parseHwpx(toAB(original), { layoutTables: "keep" })).markdown
+    assert.ok(markdown.includes("| **자율 과제** (예시) | 가 |"), markdown)
+    const edited = markdown.replace("| **자율 과제** (예시) | 가 |", "| **자율 과제** (예시) 수정 | 가 |")
+    const res = await patchHwpx(original, edited)
+    assert.equal(res.applied, 1, JSON.stringify(res.skipped))
+    assert.deepEqual(res.skipped, [])
+    assert.equal((await reparse(res.data!)).markdown, edited)
+    const xml = await (await JSZip.loadAsync(res.data!)).file("Contents/section0.xml")!.async("string")
+    assert.ok(!xml.includes("**"), "강조 표지가 글로 새지 않는다")
+    // 강조를 빼고 고치면 글만 적용하고 그렇다고 알린다 (원문 굵은 run 유지)
+    const unbold = await patchHwpx(original, markdown.replace("| **자율 과제** (예시) | 가 |", "| 자율 과제 (예시) 고침 | 가 |"))
+    assert.equal(unbold.applied, 1)
+    assert.ok(unbold.skipped.some(s => s.partial && /강조/.test(s.reason)), JSON.stringify(unbold.skipped))
+  })
+
+  it("1열 표의 여러 줄 칸(제목 상자)도 줄마다 표 좌표로 고친다 — 원문 글 찾기가 못 맞대는 사용자 정의 글자(《》) 칸", async () => {
+    // 한글 문서의 《》는 사용자 정의 영역 글자(U+F0854·U+F0855)로 저장되고 파서가 《》로 바꿔 낸다
+    const zip = await JSZip.loadAsync(await markdownToHwpx("| 법무부 위원회 발족<br>및 조사 권고 |\n| --- |\n| - 신뢰 회복의 첫걸음 - |"))
+    const sec = await zip.file("Contents/section0.xml")!.async("string")
+    assert.ok(sec.includes("위원회"))
+    zip.file("Contents/section0.xml", sec.replace("위원회", "\u{F0854}위원회\u{F0855}"))
+    const original = await zip.generateAsync({ type: "uint8array" })
+    const markdown = (await parseHwpx(toAB(original), { layoutTables: "keep" })).markdown
+    assert.ok(markdown.includes("법무부 《위원회》 발족\n및 조사 권고\n- 신뢰 회복의 첫걸음 -"), JSON.stringify(markdown))
+    const edited = markdown.replace("및 조사 권고", "및 조사 권고 수정")
+    const res = await patchHwpx(original, edited)
+    assert.equal(res.applied, 1, JSON.stringify(res.skipped))
+    assert.deepEqual(res.skipped, [])
+    assert.equal((await reparse(res.data!)).markdown, edited)
+  })
+
+  it("여러 줄 칸의 균등배분 꼴 줄(ㅇ 발 표)도 칸 전체 정리 기준으로 고친다 — 줄 하나만 보면 \"ㅇ발표\"로 붙는다", async () => {
+    const original = new Uint8Array(await markdownToHwpx("| 구분 | 내용 |\n| --- | --- |\n| 세션 | ◼ 세션 1 : 실용·혁신의 협력 방안 모색<br>ㅇ 발 표 |"))
+    const markdown = (await parseHwpx(toAB(original), { layoutTables: "keep" })).markdown
+    assert.ok(markdown.includes("◼ 세션 1 : 실용·혁신의 협력 방안 모색<br>ㅇ 발 표"), JSON.stringify(markdown))
+    const edited = markdown.replace("<br>ㅇ 발 표", "<br>ㅇ 발 표 수정")
+    const res = await patchHwpx(original, edited)
+    assert.equal(res.applied, 1, JSON.stringify(res.skipped))
+    assert.deepEqual(res.skipped, [])
+    assert.equal((await reparse(res.data!)).markdown, edited)
+  })
+
+  const REAL = join(dirname(fileURLToPath(import.meta.url)), "..", "bench", "corpus", "korea-kr")
+  const realDoc = existsSync(REAL) ? readdirSync(REAL).find(f => f.startsWith("156765958_") && f.includes("기본계획 시안") && f.endsWith(".hwpx")) : undefined
+  const realDoc2 = existsSync(REAL) ? readdirSync(REAL).find(f => f.startsWith("156766011_") && f.endsWith(".hwpx")) : undefined
+  it("균등배분 꼴 줄이 든 여러 줄 칸 GFM 표(실문서) — 칸 끝 고침을 표 좌표로 반영한다", { skip: !realDoc2 }, async () => {
+    const original = new Uint8Array(readFileSync(join(REAL, realDoc2!)))
+    const markdown = (await parseHwpx(toAB(original), { layoutTables: "keep" })).markdown
+    const unit = splitMarkdownUnits(markdown).find(u => u.kind === "gfm-table" && u.raw.includes("세션 1"))!
+    const lines = unit.raw.split("\n")
+    let k = 0
+    for (let li = 2; li < lines.length && k < 2; li++) lines[li] = lines[li].replace(/\| ([^|]*?[가-힣][^|]*?) \|/, (_m, t) => (k++, `| ${t} 수정 |`))
+    const res = await patchHwpx(original, markdown.replace(unit.raw, lines.join("\n")))
+    assert.equal(res.applied, 2, JSON.stringify(res.skipped))
+    assert.deepEqual(res.skipped.filter(s => !s.partial), [])
+  })
+
+  it("굵은 칸·두 줄 칸 GFM 표(실문서) — 칸 끝 고침을 표 좌표로 반영한다", { skip: !realDoc }, async () => {
+    const original = new Uint8Array(readFileSync(join(REAL, realDoc!)))
+    const markdown = (await parseHwpx(toAB(original), { layoutTables: "keep" })).markdown
+    const unit = splitMarkdownUnits(markdown).find(u => u.kind === "gfm-table" && u.raw.includes("**자율 과제**"))!
+    const lines = unit.raw.split("\n")
+    lines[2] = lines[2].replace(/\| ([^|]*?[가-힣][^|]*?) \|/, (_m, t) => `| ${t} 수정 |`)
+    const res = await patchHwpx(original, markdown.replace(unit.raw, lines.join("\n")))
+    assert.equal(res.applied, 1, JSON.stringify(res.skipped))
+    assert.deepEqual(res.skipped.filter(s => !s.partial), [])
+  })
+
   it("GFM 셀 1개 수정 → 해당 셀만 반영", async () => {
     const { original, markdown } = await makeSynthetic()
     const edited = markdown.replace("| 예산 | 홍길동 | 1억원 |", "| 예산 | 박영희 | 1억원 |")
@@ -158,10 +234,30 @@ describe("patchHwpx: 표 셀 수정", () => {
 })
 
 describe("patchHwpx: graceful skip", () => {
-  it("문단 삭제 → skip 보고 + 원본 유지", async () => {
+  it("문단 삭제 → 반영 (구조 편집, 기본)", async () => {
     const { original, markdown } = await makeSynthetic()
     const edited = markdown.replace("\n\n마지막 문단.", "")
     const res = await patchHwpx(original, edited)
+    assert.ok(res.success)
+    assert.deepEqual(res.skipped, [])
+    const r2 = await reparse(res.data!)
+    assert.equal(r2.markdown, edited)
+  })
+
+  it("문단 추가 → 반영 (구조 편집, 기본)", async () => {
+    const { original, markdown } = await makeSynthetic()
+    const edited = markdown + "\n\n완전히 새로 추가된 문단."
+    const res = await patchHwpx(original, edited)
+    assert.ok(res.success)
+    assert.deepEqual(res.skipped, [])
+    const r2 = await reparse(res.data!)
+    assert.equal(r2.markdown, edited)
+  })
+
+  it("structure: false — 문단 삭제 → skip 보고 + 원본 유지", async () => {
+    const { original, markdown } = await makeSynthetic()
+    const edited = markdown.replace("\n\n마지막 문단.", "")
+    const res = await patchHwpx(original, edited, { structure: false })
     assert.ok(res.success)
     assert.ok(res.skipped.some(s => s.reason.includes("삭제")), `skipped: ${JSON.stringify(res.skipped)}`)
     const r2 = await reparse(res.data!)
@@ -170,10 +266,10 @@ describe("patchHwpx: graceful skip", () => {
     assert.equal(res.verification?.stats.removed, 1)
   })
 
-  it("문단 추가 → skip 보고", async () => {
+  it("structure: false — 문단 추가 → skip 보고", async () => {
     const { original, markdown } = await makeSynthetic()
     const edited = markdown + "\n\n완전히 새로 추가된 문단."
-    const res = await patchHwpx(original, edited)
+    const res = await patchHwpx(original, edited, { structure: false })
     assert.ok(res.success)
     assert.ok(res.skipped.some(s => s.reason.includes("추가")), `skipped: ${JSON.stringify(res.skipped)}`)
     const r2 = await reparse(res.data!)
@@ -371,7 +467,7 @@ describe("patchHwpx: 실파일 e2e (corpus 존재 시)", { skip: !existsSync(COR
     const name = readdirSync(dir).find(f => f.endsWith(".hwpx"))
     if (!name) return
     const original = new Uint8Array(readFileSync(join(dir, name)))
-    const parsed = await parseHwpx(toAB(original))
+    const parsed = await parseHwpx(toAB(original), { layoutTables: "keep" })
     assert.ok(parsed.success)
     const md = parsed.markdown
 

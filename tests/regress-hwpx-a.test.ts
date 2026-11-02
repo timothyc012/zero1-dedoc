@@ -215,10 +215,20 @@ describe("regress-a 7: 멀티섹션 부분 실패 강등", () => {
 // ─── 8. P2 escapeGfm _ ` ────────────────────────────
 
 describe("regress-a 8: escapeGfm 언더스코어·백틱", () => {
-  it("blocksToMarkdown 문단의 _ 와 ` 가 이스케이프된다", () => {
-    const md = blocksToMarkdown([{ type: "paragraph", text: "snake_case와 `tick` 문자" }])
-    assert.ok(md.includes("snake\\_case"), "_ 이스케이프")
+  it("blocksToMarkdown 문단의 단어 끝 _ 와 ` 가 이스케이프된다 — 단어 안 _ 는 그대로", () => {
+    const md = blocksToMarkdown([{ type: "paragraph", text: "snake_case와 _강조_ __init__ `tick` 문자" }])
+    assert.ok(md.includes("snake_case와"), "단어 안 _ 는 CommonMark 에서 강조를 열고 닫지 못해 그대로")
+    assert.ok(md.includes("\\_강조\\_") && md.includes("\\_\\_init\\_\\_"), "단어 끝 _ 이스케이프")
     assert.ok(md.includes("\\`tick\\`"), "` 이스케이프")
+  })
+
+  it("양옆이 공백인 빈칸 선 밑줄은 그대로, 밑줄뿐인 줄·한쪽이 글자인 밑줄은 이스케이프", () => {
+    assert.equal(escapeGfm("성명: ______ 날짜"), "성명: ______ 날짜")
+    assert.equal(escapeGfm("서명 ____"), "서명 ____")
+    assert.equal(escapeGfm("______"), "\\_\\_\\_\\_\\_\\_", "줄 전체가 밑줄이면 가로줄이 된다")
+    assert.equal(escapeGfm("줄\n___ ___\n줄"), "줄\n\\_\\_\\_ \\_\\_\\_\n줄")
+    assert.equal(escapeGfm("x ___y"), "x \\_\\_\\_y")
+    assert.equal(escapeGfm("end_ x"), "end\\_ x")
   })
 
   it("markdown-units 쌍둥이 escapeGfm/unescapeGfmCell 왕복", () => {

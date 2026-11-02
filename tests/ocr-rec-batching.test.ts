@@ -1,10 +1,11 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import {createHash} from 'node:crypto'
-import {OcrEngine} from '../src/ocr/engine.js'
+import {GermanOcrEngine} from '../src/ocr/engine-v6.js'
 import {ocrSameWidthRecBatch} from '../src/ocr/execution.js'
 
-async function readFixture(widths:number[], batch:number, generation:number|undefined=6, provider='dml', fallBackAfterFirst=false){
+// (Zero1 포크) 독일어 v6 엔진(engine-v6.ts)의 같은 폭 배치 — upstream 엔진(v5)은 배치를 쓰지 않는다
+async function readFixture(widths:number[], batch:number, provider='dml', fallBackAfterFirst=false){
  const width=Math.max(...widths)+2,height=widths.length*50,rgba=new Uint8Array(width*height*4)
  for(let i=0;i<widths.length;i++)for(let y=i*50;y<i*50+48;y++)for(let x=0;x<width;x++){
   const offset=(y*width+x)*4;rgba[offset]=rgba[offset+1]=rgba[offset+2]=30+i*10;rgba[offset+3]=255
@@ -12,7 +13,7 @@ async function readFixture(widths:number[], batch:number, generation:number|unde
  const dict=widths.map((_,i)=>String.fromCodePoint(65+i)),C=dict.length+2
  const samples=new Map<number,{width:number;sha:string}>(),shapes:number[][]=[]
  class Tensor{constructor(public type:string,public data:Float32Array,public dims:number[]) {}}
- const engine=Object.assign(Object.create(OcrEngine.prototype),{generation,sameWidthRecBatch:batch,dict,ort:{Tensor},rec:{provider,inputNames:['in'],outputNames:['out'],run:async(feeds:{in:Tensor})=>{
+ const engine=Object.assign(Object.create(GermanOcrEngine.prototype),{sameWidthRecBatch:batch,dict,ort:{Tensor},rec:{provider,inputNames:['in'],outputNames:['out'],run:async(feeds:{in:Tensor})=>{
   const {data,dims}=feeds.in,[n,,h,w]=dims;shapes.push(dims)
   const logits=new Float32Array(n*2*C)
   for(let i=0;i<n;i++){
@@ -24,8 +25,8 @@ async function readFixture(widths:number[], batch:number, generation:number|unde
   if(fallBackAfterFirst)engine.rec.provider='cpu'
   return{out:{data:logits,dims:[n,2,C]}}
  }}})
- const jobs=widths.map((w,i)=>({box:{x:0,y:i*50,w,h:48},rot:0,group:i}))
- const results=await engine.recognizeJobs(rgba,width,jobs,1)
+ const boxes=widths.map((w,i)=>({x:0,y:i*50,w,h:48}))
+ const results=await engine.recognizeBoxes(rgba,width,boxes,1)
  return{samples,shapes,texts:results.map((r:{text:string}|null)=>r?.text)}
 }
 
@@ -38,13 +39,11 @@ test('same-width batching preserves every sample tensor and restores original jo
  assert.deepEqual(batched.shapes.map(([n,,,w])=>[n,w]),[[4,320],[1,321],[1,340],[1,850],[1,900]])
 })
 
-test('batching respects the existing tensor pixel cap and leaves v5 single-line inference intact',async()=>{
+test('batching respects the existing tensor pixel cap',async()=>{
  const widths=Array(12).fill(2048)
  const batched=await readFixture(widths,32)
  assert.deepEqual(batched.shapes.map(([n])=>n),[7,5])
  assert.ok(batched.shapes.every(([n,,h,w])=>n*h*w<=48*16000))
- const v5=await readFixture([80,80,80],32,5)
- assert.deepEqual(v5.shapes.map(([n])=>n),[1,1,1])
 })
 
 
@@ -57,9 +56,9 @@ test('batch requests are validated and ignored for v5',()=>{
 
 test('CPU and CUDA retain single-line recognition and GPU fallback disables subsequent batches',async()=>{
  for(const provider of ['cpu','cuda']){
-  const r=await readFixture([80,80,80],32,6,provider)
+  const r=await readFixture([80,80,80],32,provider)
   assert.deepEqual(r.shapes.map(([n])=>n),[1,1,1])
  }
- const fallback=await readFixture([80,80,80,80,80,80],2,6,'dml',true)
+ const fallback=await readFixture([80,80,80,80,80,80],2,'dml',true)
  assert.deepEqual(fallback.shapes.map(([n])=>n),[2,1,1,1,1])
 })

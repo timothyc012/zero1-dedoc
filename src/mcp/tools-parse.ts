@@ -13,7 +13,7 @@ export function registerParseTools(server: McpServer): void {
 
   server.tool(
     "parse_document",
-    "문서 파일(HWP, HWPX, PDF, XLS/XLSX, DOCX, PPTX)과 이미지(PNG/JPG/WebP)를 마크다운으로 변환합니다. 파일 경로를 입력하면 포맷을 자동 감지하여 텍스트를 추출합니다. 이미지는 OCR(내장 PP-OCRv5)이 자동 적용되고 표 괘선도 복원됩니다.",
+    "문서 파일(HWP, HWPX, PDF, XLS/XLSX, DOCX, PPTX)과 이미지(PNG/JPG/WebP)를 마크다운으로 변환합니다. 파일 경로를 입력하면 포맷을 자동 감지하여 텍스트를 추출합니다. 이미지는 OCR(내장 PP-OCRv5)이 자동 적용되고 표 괘선도 복원됩니다. 견본 서식대로 새 문서를 쓰거나(서식 베끼기) 문구를 고쳐 patch_document 로 넘길 마크다운이면 keep_layout_tables: true 로 읽으세요.",
     {
       file_path: z.string().min(1).describe("파싱할 문서 파일의 절대 경로 (HWP, HWPX, PDF, XLS/XLSX, DOCX, PPTX, PNG/JPG/WebP)"),
       ocr: z.union([z.boolean(), z.literal("force")]).optional()
@@ -24,6 +24,12 @@ export function registerParseTools(server: McpServer): void {
         .describe("PDF 머리글/바닥글 자동 제거 (기본 true — false로 끄기, CLI --no-header-footer 대응)"),
       formula_ocr: z.boolean().optional()
         .describe("PDF 수식 OCR 활성화 (MFD+MFR ONNX, 첫 사용 시 모델 ~155MB 자동 다운로드, CLI --formula-ocr 대응)"),
+      ocr_rec: z.enum(["handwriting", "auto"]).optional()
+        .describe("OCR 글자 인식 모델 — \"handwriting\": 수기 서류용 한국어 손글씨 rec(첫 사용 시 ~15MB 다운로드). 손글씨 칸이 많은 서식용이며 금액·날짜·전화번호의 쉼표·마침표·하이픈을 빠뜨리는 경우가 있다. \"auto\": 기본 rec 로 읽고 확신도 낮은 손글씨 쪽만 손글씨 rec 로 다시 읽는다(인쇄·손글씨 섞인 묶음용). OCR 이 도는 곳(이미지, PDF 는 ocr: true·\"force\" — ocr 을 빼면 고른 모델이 캐시에 있을 때만 자동 OCR)에 적용 (CLI --ocr-rec 대응)"),
+      ocr_det: z.enum(["mobile", "server", "medium"]).optional()
+        .describe("OCR 글줄 검출 모델 — \"mobile\"(기본) | \"server\"(첫 사용 시 ~88MB 다운로드) | \"medium\"(PP-OCRv6, 첫 사용 시 ~62MB 다운로드 — 기울임·흐림·스캔 같은 열화 입력용) (CLI --ocr-det 대응)"),
+      ocr_det_long_side: z.number().int().min(32).max(4096).optional()
+        .describe("OCR 글줄 검출 입력 긴 변 픽셀 (32~4096, 기본 960) — 키우면 작은 글씨를 더 잡고 느려진다 (CLI --ocr-det-long-side 대응)"),
       dedupe_running_headers: z.boolean().optional()
         .describe("HWP5 레이아웃 표 페이지 반복 러닝 헤더 중복 제거 (기본 off — 붙임별 재번호 오삭제 주의, CLI --dedupe-headers 대응)"),
       keep_trailing_empty_cols: z.boolean().optional()
@@ -32,8 +38,14 @@ export function registerParseTools(server: McpServer): void {
         .describe("빈 문단 보존 — 본문은 빈 paragraph 블록, 표 셀은 빈 줄 (#57, 기본 off, CLI --keep-empty-paragraphs 대응)"),
       include_field_placeholders: z.boolean().optional()
         .describe("미기입 누름틀 안내문도 출력 — 빈 서식 문서의 칸 용도 보존 (#92, 기본 off, CLI --include-field-placeholders 대응)"),
+      memos: z.boolean().optional()
+        .describe("메모(한글 \"메모 넣기\")를 문서 끝 \"메모\" 절로 — 작성자·시각·붙은 글·메모 글 (#180, HWPX·HWP5, 기본 off, CLI --memos 대응). 메모가 있으면 끄더라도 머리 줄에 개수를 알린다"),
+      keep_layout_tables: z.boolean().optional()
+        .describe("테두리가 안 보이는 틀 표도 원본 표 구조 그대로 (기본 off = 보이는 대로: 틀은 글, 칸으로 조립한 분수는 수식). patch_document 로 되돌릴 편집본은 켜서 뽑는다 (CLI --keep-layout-tables)"),
       html_tables: z.boolean().optional()
         .describe("모든 표를 HTML 로 — 파이프 표도 HTML 표로, 태그마다 한 줄씩 들여써 냄 (기본 off, CLI --html-tables 대응)"),
+      table_format: z.enum(["gfm"]).optional()
+        .describe("\"gfm\": 모든 표를 HTML 없이 GFM 파이프 표로 — 셀 안 표는 부모 뒤 독립 표로 꺼내고 관계를 <!-- <table id parent_id /> --> 표지로 남김 (RAG 색인용, html_tables 와 함께 못 씀, CLI --table-format 대응)"),
       script_tags: z.boolean().optional()
         .describe("위·아래첨자를 <sup>·<sub> 로 표기(\"10⁴ m²\" 가 \"104 m2\" 로 펴지지 않게) — 기본: HWPX·HWP·DOCX 켬, PDF 끔(논문·수식 PDF 는 true 권장), false 면 모두 평문. CLI --script-tags / --no-script-tags 대응"),
       plain: z.boolean().optional()
@@ -43,7 +55,7 @@ export function registerParseTools(server: McpServer): void {
       tables: z.boolean().optional()
         .describe("PDF 표 감지 (기본 true — false로 끄기, CLI --no-tables 대응). 테두리 박스를 표로 오인해 읽기 순서가 뒤집히는 문서(2단 시험지 등)에서 자연 읽기순 텍스트만 뽑습니다 (#64)"),
     },
-    async ({ file_path, ocr, ocr_language, remove_header_footer, formula_ocr, dedupe_running_headers, keep_trailing_empty_cols, keep_empty_paragraphs, include_field_placeholders, html_tables, script_tags, plain, password, tables }) => {
+    async ({ file_path, ocr, ocr_language, remove_header_footer, formula_ocr, ocr_rec, ocr_det, ocr_det_long_side, dedupe_running_headers, keep_trailing_empty_cols, keep_empty_paragraphs, include_field_placeholders, memos, keep_layout_tables, html_tables, table_format, script_tags, plain, password, tables }) => {
       try {
         const { buffer, resolved } = await readValidatedFile(file_path, MAX_FILE_SIZE, PARSE_EXTENSIONS)
         const format = detectFormat(buffer)
@@ -66,13 +78,20 @@ export function registerParseTools(server: McpServer): void {
           ...(ocr_language !== undefined ? { ocrLanguage: ocr_language } : {}),
           ...(remove_header_footer !== undefined ? { removeHeaderFooter: remove_header_footer } : {}),
           ...(formula_ocr ? { formulaOcr: true } : {}),
+          // 모델은 프리셋 이름만 — 로컬 ONNX 파일({path, sha256})은 CLI·라이브러리에서
+          ...(ocr_rec ? { ocrRec: ocr_rec } : {}),
+          ...(ocr_det ? { ocrDet: ocr_det } : {}),
+          ...(ocr_det_long_side !== undefined ? { ocrDetLongSide: ocr_det_long_side } : {}),
           ...(dedupe_running_headers ? { dedupeRunningHeaders: true } : {}),
           ...(keep_trailing_empty_cols ? { keepTrailingEmptyCols: true } : {}),
           ...(keep_empty_paragraphs ? { keepEmptyParagraphs: true } : {}),
           ...(include_field_placeholders ? { includeFieldPlaceholders: true } : {}),
+          ...(memos ? { memos: true } : {}),
           ...(plain ? { plain: true } : {}),
           ...(script_tags !== undefined ? { scriptTags: script_tags } : {}),
           ...(html_tables ? { htmlTables: true } : {}),
+          ...(table_format ? { tableFormat: table_format } : {}),
+          ...(keep_layout_tables ? { layoutTables: "keep" as const } : {}),
           ...(password ? { password } : {}),
           ...(tables === false ? { tables: false } : {}),
         })
@@ -91,6 +110,7 @@ export function registerParseTools(server: McpServer): void {
           result.pageCount ? `페이지: ${result.pageCount}` : null,
           result.metadata?.title ? `제목: ${result.metadata.title}` : null,
           result.metadata?.author ? `작성자: ${result.metadata.author}` : null,
+          result.memos?.length ? `메모: ${result.memos.length}개${memos ? "" : " (memos: true 로 끝에 모아 보기)"}` : null,
           result.isImageBased
             ? (result.warnings?.some(w => w.code === "OCR_APPLIED") ? "이미지 기반 PDF (OCR 적용)" : "이미지 기반 PDF (텍스트 추출 불가 — ocr: true 로 재시도 가능)")
             : null,
@@ -216,7 +236,8 @@ export function registerParseTools(server: McpServer): void {
           case "hwpml":
           case "xls":
           case "xlsx":
-          case "docx": {
+          case "docx":
+          case "pptx": {
             // 전용 metadata 추출기가 없는 포맷은 전체 파싱 후 metadata 반환
             const result = await parse(buffer)
             metadata = result.success ? result.metadata : undefined
@@ -280,7 +301,7 @@ export function registerParseTools(server: McpServer): void {
         ].filter(Boolean).join(" | ")
 
         return {
-          content: [{ type: "text", text: `[${meta}]\n\n${result.markdown}` }],
+          content: [{ type: "text", text: capResponseText(`[${meta}]\n\n${result.markdown}`) }],
         }
       } catch (err) {
         return {
@@ -405,8 +426,8 @@ export function registerParseTools(server: McpServer): void {
     },
     async ({ file_path, granularity, include_table_cells }) => {
       try {
-        const { buffer } = await readValidatedFile(file_path, MAX_FILE_SIZE, PARSE_EXTENSIONS)
-        const parsed = await parse(buffer, { filePath: file_path })
+        const { buffer, resolved } = await readValidatedFile(file_path, MAX_FILE_SIZE, PARSE_EXTENSIONS)
+        const parsed = await parse(buffer, { filePath: resolved })
         if (!parsed.success) {
           return { content: [{ type: "text", text: `파싱 실패: ${parsed.error}` }], isError: true }
         }

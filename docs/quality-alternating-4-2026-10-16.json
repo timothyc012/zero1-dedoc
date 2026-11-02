@@ -1,0 +1,984 @@
+{
+  "release": "4.22.4",
+  "baseCommit": "03af702b47df8746a92b8ecd8cb50700b0e8076b",
+  "implementationCommit": "46f6d553f78210ea3f7beeb201b535846510035d",
+  "unchangedGroundTruthScorerPopulation": true,
+  "baseline": {
+    "layout": {
+      "ok": {
+        "population": 25581,
+        "matched": 25324
+      },
+      "lines": {
+        "population": 311942,
+        "matched": 311874
+      }
+    },
+    "separate2022": {
+      "ok": {
+        "population": 17173,
+        "matched": 17046
+      },
+      "lines": {
+        "population": 150410,
+        "matched": 150389
+      }
+    },
+    "pdf": {
+      "table": {
+        "pairs": 708,
+        "refTables": 2331,
+        "reordered": 5,
+        "matchedRate": 0.998713,
+        "exactRate": 0.981553,
+        "cellF1": 0.991791,
+        "cellExactRate": 0.990311,
+        "contentNED": 0.987246,
+        "parseErrors": 0,
+        "nested": {
+          "pairs": 29,
+          "refTables": 101,
+          "reordered": 0,
+          "matchedRate": 1,
+          "exactRate": 1,
+          "cellF1": 1,
+          "cellExactRate": 1,
+          "contentNED": 1
+        }
+      },
+      "text": {
+        "pairs": 744,
+        "refChars": 2857682,
+        "recall": 0.99862,
+        "precision": 0.9967,
+        "order": 0.99242,
+        "spaceF1": 0.99023,
+        "parseErrors": 0,
+        "excluded": 22
+      },
+      "annex": {
+        "hwp": {
+          "docs": 272,
+          "recall": 1,
+          "phantom": 1e-05,
+          "order": 1,
+          "tables": 346,
+          "tableExactCount": 346,
+          "tableExact": 1,
+          "cellF1": 1,
+          "eqRef": 11,
+          "eqHit": 11
+        },
+        "pdf": {
+          "docs": 272,
+          "recall": 0.99975,
+          "phantom": 0.00046,
+          "order": 1,
+          "tables": 346,
+          "tableExactCount": 342,
+          "tableExact": 0.98844,
+          "cellF1": 0.99697,
+          "eqRef": 11,
+          "eqHit": 7
+        }
+      }
+    }
+  },
+  "releaseBaseline": {
+    "layout": {
+      "ok": {
+        "population": 25581,
+        "matched": 25323
+      },
+      "lines": {
+        "population": 311942,
+        "matched": 311873
+      }
+    },
+    "separate2022": {
+      "ok": {
+        "population": 17173,
+        "matched": 17045
+      },
+      "lines": {
+        "population": 150410,
+        "matched": 150388
+      }
+    },
+    "pdf": {
+      "text": {
+        "pairs": 744,
+        "refChars": 2857682,
+        "recall": 0.99858,
+        "precision": 0.9967,
+        "order": 0.99242,
+        "spaceF1": 0.99019,
+        "parseErrors": 0,
+        "excluded": 22
+      },
+      "table": {
+        "pairs": 708,
+        "refTables": 2331,
+        "reordered": 5,
+        "matchedRate": 0.998713,
+        "exactRate": 0.981553,
+        "cellF1": 0.991791,
+        "cellExactRate": 0.989994,
+        "contentNED": 0.987204,
+        "parseErrors": 0,
+        "nested": {
+          "pairs": 29,
+          "refTables": 101,
+          "reordered": 0,
+          "matchedRate": 1,
+          "exactRate": 1,
+          "cellF1": 1,
+          "cellExactRate": 1,
+          "contentNED": 1
+        }
+      },
+      "annex": {
+        "hwp": {
+          "docs": 272,
+          "recall": 1,
+          "phantom": 1e-05,
+          "order": 1,
+          "tables": 346,
+          "tableExactCount": 346,
+          "tableExact": 1,
+          "cellF1": 1,
+          "eqRef": 11,
+          "eqHit": 11
+        },
+        "pdf": {
+          "docs": 272,
+          "recall": 0.99975,
+          "phantom": 0.00046,
+          "order": 1,
+          "tables": 346,
+          "tableExactCount": 342,
+          "tableExact": 0.98844,
+          "cellF1": 0.99697,
+          "eqRef": 11,
+          "eqHit": 7
+        }
+      }
+    }
+  },
+  "rounds": [
+    {
+      "round": 1,
+      "track": "layout",
+      "snapshot": "round1",
+      "suite": "alternating4-20261016-r1",
+      "layout": {
+        "ok": {
+          "population": 25581,
+          "matched": 25324
+        },
+        "lines": {
+          "population": 311942,
+          "matched": 311874
+        }
+      },
+      "separate2022": {
+        "ok": {
+          "population": 17173,
+          "matched": 17046
+        },
+        "lines": {
+          "population": 150410,
+          "matched": 150389
+        }
+      },
+      "paragraphDelta": [
+        {
+          "set": "original",
+          "population": 25581,
+          "up": 0,
+          "down": 0,
+          "improved": [],
+          "regressed": []
+        },
+        {
+          "set": "-2022",
+          "population": 17173,
+          "up": 0,
+          "down": 0,
+          "improved": [],
+          "regressed": []
+        }
+      ],
+      "pdf": {
+        "table": {
+          "pairs": 708,
+          "refTables": 2331,
+          "reordered": 5,
+          "matchedRate": 0.998713,
+          "exactRate": 0.981553,
+          "cellF1": 0.991791,
+          "cellExactRate": 0.990311,
+          "contentNED": 0.987246,
+          "parseErrors": 0,
+          "nested": {
+            "pairs": 29,
+            "refTables": 101,
+            "reordered": 0,
+            "matchedRate": 1,
+            "exactRate": 1,
+            "cellF1": 1,
+            "cellExactRate": 1,
+            "contentNED": 1
+          }
+        },
+        "text": {
+          "pairs": 744,
+          "refChars": 2857682,
+          "recall": 0.99862,
+          "precision": 0.9967,
+          "order": 0.99242,
+          "spaceF1": 0.99023,
+          "parseErrors": 0,
+          "excluded": 22
+        },
+        "annex": {
+          "hwp": {
+            "docs": 272,
+            "recall": 1,
+            "phantom": 1e-05,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 346,
+            "tableExact": 1,
+            "cellF1": 1,
+            "eqRef": 11,
+            "eqHit": 11
+          },
+          "pdf": {
+            "docs": 272,
+            "recall": 0.99975,
+            "phantom": 0.00046,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 342,
+            "tableExact": 0.98844,
+            "cellF1": 0.99697,
+            "eqRef": 11,
+            "eqHit": 7
+          }
+        }
+      },
+      "exitCodes": {
+        "annex": 0,
+        "table": 0,
+        "text": 0
+      },
+      "sourceProof": {
+        "round": 1,
+        "commit": "f4b9a82744bc2376cbaffce862aa5698297cb321",
+        "snapshot": "round1",
+        "sourceFiles": 296,
+        "allProductSourcesMatch": true,
+        "manifestSHA256": "544f7d35c83b86eb231db5d0420f0e5aa9d4c30ed5ebd2b34aacd3730c546992"
+      }
+    },
+    {
+      "round": 2,
+      "track": "PDF",
+      "snapshot": "round2",
+      "suite": "alternating4-20261016-r2",
+      "layout": {
+        "ok": {
+          "population": 25581,
+          "matched": 25324
+        },
+        "lines": {
+          "population": 311942,
+          "matched": 311874
+        }
+      },
+      "separate2022": {
+        "ok": {
+          "population": 17173,
+          "matched": 17046
+        },
+        "lines": {
+          "population": 150410,
+          "matched": 150389
+        }
+      },
+      "paragraphDelta": [
+        {
+          "set": "original",
+          "population": 25581,
+          "up": 0,
+          "down": 0,
+          "improved": [],
+          "regressed": []
+        },
+        {
+          "set": "-2022",
+          "population": 17173,
+          "up": 0,
+          "down": 0,
+          "improved": [],
+          "regressed": []
+        }
+      ],
+      "pdf": {
+        "table": {
+          "pairs": 708,
+          "refTables": 2331,
+          "reordered": 5,
+          "matchedRate": 0.998713,
+          "exactRate": 0.981553,
+          "cellF1": 0.991791,
+          "cellExactRate": 0.990311,
+          "contentNED": 0.987246,
+          "parseErrors": 0,
+          "nested": {
+            "pairs": 29,
+            "refTables": 101,
+            "reordered": 0,
+            "matchedRate": 1,
+            "exactRate": 1,
+            "cellF1": 1,
+            "cellExactRate": 1,
+            "contentNED": 1
+          }
+        },
+        "text": {
+          "pairs": 744,
+          "refChars": 2857682,
+          "recall": 0.99865,
+          "precision": 0.9967,
+          "order": 0.99242,
+          "spaceF1": 0.99025,
+          "parseErrors": 0,
+          "excluded": 22
+        },
+        "annex": {
+          "hwp": {
+            "docs": 272,
+            "recall": 1,
+            "phantom": 1e-05,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 346,
+            "tableExact": 1,
+            "cellF1": 1,
+            "eqRef": 11,
+            "eqHit": 11
+          },
+          "pdf": {
+            "docs": 272,
+            "recall": 0.99975,
+            "phantom": 0.00046,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 342,
+            "tableExact": 0.98844,
+            "cellF1": 0.99697,
+            "eqRef": 11,
+            "eqHit": 7
+          }
+        }
+      },
+      "exitCodes": {
+        "odl": 0,
+        "table": 0,
+        "text": 0,
+        "odlbest": 0,
+        "annex": 0,
+        "odlfast": 0,
+        "odlocr": 0
+      },
+      "sourceProof": {
+        "round": 2,
+        "commit": "e6501b4401417a8decac734850d1a5c99a13b235",
+        "snapshot": "round2",
+        "sourceFiles": 296,
+        "allProductSourcesMatch": true,
+        "manifestSHA256": "de87f2c65e19788d8ada7d84349ba3397fa5da229f921de5c73c956b11211118"
+      }
+    },
+    {
+      "round": 3,
+      "track": "layout",
+      "snapshot": "round3",
+      "suite": "alternating4-20261016-r3",
+      "layout": {
+        "ok": {
+          "population": 25581,
+          "matched": 25324
+        },
+        "lines": {
+          "population": 311942,
+          "matched": 311874
+        }
+      },
+      "separate2022": {
+        "ok": {
+          "population": 17173,
+          "matched": 17046
+        },
+        "lines": {
+          "population": 150410,
+          "matched": 150389
+        }
+      },
+      "paragraphDelta": [
+        {
+          "set": "original",
+          "population": 25581,
+          "up": 0,
+          "down": 0,
+          "improved": [],
+          "regressed": []
+        },
+        {
+          "set": "-2022",
+          "population": 17173,
+          "up": 0,
+          "down": 0,
+          "improved": [],
+          "regressed": []
+        }
+      ],
+      "pdf": {
+        "table": {
+          "pairs": 708,
+          "refTables": 2331,
+          "reordered": 5,
+          "matchedRate": 0.998713,
+          "exactRate": 0.981553,
+          "cellF1": 0.991791,
+          "cellExactRate": 0.990311,
+          "contentNED": 0.987246,
+          "parseErrors": 0,
+          "nested": {
+            "pairs": 29,
+            "refTables": 101,
+            "reordered": 0,
+            "matchedRate": 1,
+            "exactRate": 1,
+            "cellF1": 1,
+            "cellExactRate": 1,
+            "contentNED": 1
+          }
+        },
+        "text": {
+          "pairs": 744,
+          "refChars": 2857682,
+          "recall": 0.99865,
+          "precision": 0.9967,
+          "order": 0.99242,
+          "spaceF1": 0.99025,
+          "parseErrors": 0,
+          "excluded": 22
+        },
+        "annex": {
+          "hwp": {
+            "docs": 272,
+            "recall": 1,
+            "phantom": 1e-05,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 346,
+            "tableExact": 1,
+            "cellF1": 1,
+            "eqRef": 11,
+            "eqHit": 11
+          },
+          "pdf": {
+            "docs": 272,
+            "recall": 0.99975,
+            "phantom": 0.00046,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 342,
+            "tableExact": 0.98844,
+            "cellF1": 0.99697,
+            "eqRef": 11,
+            "eqHit": 7
+          }
+        }
+      },
+      "exitCodes": {
+        "table": 0,
+        "text": 0,
+        "annex": 0
+      },
+      "sourceProof": {
+        "round": 3,
+        "commit": "5d3798e9e8f77956a13465b2298197ef7ab299e4",
+        "snapshot": "round3",
+        "sourceFiles": 296,
+        "allProductSourcesMatch": true,
+        "manifestSHA256": "3ae2fa9bc5163d89c8def21efdd4ad7b0b1b1e4425a5b6dbf2d540750497003d"
+      }
+    },
+    {
+      "round": 4,
+      "track": "PDF",
+      "snapshot": "round4",
+      "suite": "alternating4-20261016-r4",
+      "layout": {
+        "ok": {
+          "population": 25581,
+          "matched": 25324
+        },
+        "lines": {
+          "population": 311942,
+          "matched": 311874
+        }
+      },
+      "separate2022": {
+        "ok": {
+          "population": 17173,
+          "matched": 17046
+        },
+        "lines": {
+          "population": 150410,
+          "matched": 150389
+        }
+      },
+      "paragraphDelta": [
+        {
+          "set": "original",
+          "population": 25581,
+          "up": 0,
+          "down": 0,
+          "improved": [],
+          "regressed": []
+        },
+        {
+          "set": "-2022",
+          "population": 17173,
+          "up": 0,
+          "down": 0,
+          "improved": [],
+          "regressed": []
+        }
+      ],
+      "pdf": {
+        "table": {
+          "pairs": 708,
+          "refTables": 2331,
+          "reordered": 5,
+          "matchedRate": 0.998713,
+          "exactRate": 0.981553,
+          "cellF1": 0.991791,
+          "cellExactRate": 0.990311,
+          "contentNED": 0.987246,
+          "parseErrors": 0,
+          "nested": {
+            "pairs": 29,
+            "refTables": 101,
+            "reordered": 0,
+            "matchedRate": 1,
+            "exactRate": 1,
+            "cellF1": 1,
+            "cellExactRate": 1,
+            "contentNED": 1
+          }
+        },
+        "text": {
+          "pairs": 744,
+          "refChars": 2857682,
+          "recall": 0.99865,
+          "precision": 0.9967,
+          "order": 0.99242,
+          "spaceF1": 0.99025,
+          "parseErrors": 0,
+          "excluded": 22
+        },
+        "annex": {
+          "hwp": {
+            "docs": 272,
+            "recall": 1,
+            "phantom": 1e-05,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 346,
+            "tableExact": 1,
+            "cellF1": 1,
+            "eqRef": 11,
+            "eqHit": 11
+          },
+          "pdf": {
+            "docs": 272,
+            "recall": 0.99976,
+            "phantom": 0.00045,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 342,
+            "tableExact": 0.98844,
+            "cellF1": 0.99739,
+            "eqRef": 11,
+            "eqHit": 7
+          }
+        }
+      },
+      "exitCodes": {
+        "odl": 0,
+        "table": 0,
+        "odlbest": 0,
+        "text": 0,
+        "annex": 0,
+        "odlocr": 0,
+        "odlfast": 0
+      },
+      "sourceProof": {
+        "round": 4,
+        "commit": "0334f0e84d2176adb41bc570da4eb285fd9aafdf",
+        "snapshot": "round4",
+        "sourceFiles": 296,
+        "allProductSourcesMatch": true,
+        "manifestSHA256": "ac6c0d20860cdbc5a78c2498f38f2985605df2000144a13afc0965da6471462f"
+      }
+    },
+    {
+      "round": 5,
+      "track": "layout",
+      "snapshot": "round5-final",
+      "suite": "alternating4-20261016-r5",
+      "layout": {
+        "ok": {
+          "population": 25581,
+          "matched": 25326
+        },
+        "lines": {
+          "population": 311942,
+          "matched": 311874
+        }
+      },
+      "separate2022": {
+        "ok": {
+          "population": 17173,
+          "matched": 17048
+        },
+        "lines": {
+          "population": 150410,
+          "matched": 150389
+        }
+      },
+      "paragraphDelta": [
+        {
+          "set": "original",
+          "population": 25581,
+          "up": 2,
+          "down": 0,
+          "improved": [
+            {
+              "file": "156782395_(별첨1) 제약산업 육성 및 지원에 관한 특별법 시행령 일부개정령안.hwpx",
+              "para": "49",
+              "truth": "[0,41,82]",
+              "before": "[0,40,80]",
+              "after": "[0,41,82]"
+            },
+            {
+              "file": "156782395_(별첨1) 제약산업 육성 및 지원에 관한 특별법 시행령 일부개정령안.hwpx",
+              "para": "52",
+              "truth": "[0,40,81]",
+              "before": "[0,37,78]",
+              "after": "[0,40,81]"
+            }
+          ],
+          "regressed": []
+        },
+        {
+          "set": "-2022",
+          "population": 17173,
+          "up": 2,
+          "down": 0,
+          "improved": [
+            {
+              "file": "0028.hwpx",
+              "para": "49",
+              "truth": "[0,41,82]",
+              "before": "[0,40,80]",
+              "after": "[0,41,82]"
+            },
+            {
+              "file": "0028.hwpx",
+              "para": "52",
+              "truth": "[0,40,81]",
+              "before": "[0,37,78]",
+              "after": "[0,40,81]"
+            }
+          ],
+          "regressed": []
+        }
+      ],
+      "pdf": {
+        "table": {
+          "pairs": 708,
+          "refTables": 2331,
+          "reordered": 5,
+          "matchedRate": 0.998713,
+          "exactRate": 0.981553,
+          "cellF1": 0.991791,
+          "cellExactRate": 0.990311,
+          "contentNED": 0.987246,
+          "parseErrors": 0,
+          "nested": {
+            "pairs": 29,
+            "refTables": 101,
+            "reordered": 0,
+            "matchedRate": 1,
+            "exactRate": 1,
+            "cellF1": 1,
+            "cellExactRate": 1,
+            "contentNED": 1
+          }
+        },
+        "text": {
+          "pairs": 744,
+          "refChars": 2857682,
+          "recall": 0.99865,
+          "precision": 0.9967,
+          "order": 0.99242,
+          "spaceF1": 0.99025,
+          "parseErrors": 0,
+          "excluded": 22
+        },
+        "annex": {
+          "hwp": {
+            "docs": 272,
+            "recall": 1,
+            "phantom": 1e-05,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 346,
+            "tableExact": 1,
+            "cellF1": 1,
+            "eqRef": 11,
+            "eqHit": 11
+          },
+          "pdf": {
+            "docs": 272,
+            "recall": 0.99976,
+            "phantom": 0.00045,
+            "order": 1,
+            "tables": 346,
+            "tableExactCount": 342,
+            "tableExact": 0.98844,
+            "cellF1": 0.99739,
+            "eqRef": 11,
+            "eqHit": 7
+          }
+        }
+      },
+      "exitCodes": {
+        "table": 0,
+        "annex": 0,
+        "text": 0
+      },
+      "sourceProof": {
+        "round": 5,
+        "commit": "46f6d553f78210ea3f7beeb201b535846510035d",
+        "snapshot": "round5-final",
+        "sourceFiles": 296,
+        "allProductSourcesMatch": true,
+        "manifestSHA256": "c99414ea0388cd76992215d31e0bd2e61ed993aaf5db33a862bebbfedb32e73a"
+      }
+    }
+  ],
+  "geometry": {
+    "r1-geometry-proof": {
+      "documents": 62,
+      "sections": 82,
+      "paragraphs": 65974,
+      "stored": 65936,
+      "beforeExact": 63988,
+      "afterExact": 63990,
+      "up": 2,
+      "down": 0,
+      "startsChanged": 0,
+      "changed": 2,
+      "fieldsMovedAway": 0
+    },
+    "r3-geometry-proof": {
+      "documents": 9,
+      "sections": 10,
+      "paragraphs": 3441,
+      "stored": 3437,
+      "beforeExact": 3370,
+      "afterExact": 3380,
+      "up": 10,
+      "down": 0,
+      "startsChanged": 0,
+      "changed": 29,
+      "fieldsMovedAway": 0
+    },
+    "r3-geometry-2022-proof": {
+      "documents": 3,
+      "sections": 3,
+      "paragraphs": 1245,
+      "stored": 1245,
+      "beforeExact": 1235,
+      "afterExact": 1235,
+      "up": 0,
+      "down": 0,
+      "startsChanged": 0,
+      "changed": 8,
+      "fieldsMovedAway": 0
+    },
+    "r5-geometry-proof": {
+      "documents": 8,
+      "sections": 22,
+      "paragraphs": 740,
+      "stored": 740,
+      "beforeExact": 710,
+      "afterExact": 712,
+      "up": 2,
+      "down": 0,
+      "startsChanged": 2,
+      "changed": 2,
+      "fieldsMovedAway": 0
+    },
+    "r5-geometry-2022-proof": {
+      "documents": 3,
+      "sections": 11,
+      "paragraphs": 203,
+      "stored": 203,
+      "beforeExact": 196,
+      "afterExact": 198,
+      "up": 2,
+      "down": 0,
+      "startsChanged": 2,
+      "changed": 2,
+      "fieldsMovedAway": 0
+    }
+  },
+  "qualificationTable": [
+    {
+      "tag": "round3",
+      "dimensions": [
+        [
+          91,
+          5
+        ]
+      ],
+      "score": {
+        "tableCount": 1,
+        "irTableCount": 1,
+        "exactCount": 0,
+        "exactRate": 0,
+        "cellF1": 0.8151658767772512,
+        "cellTotal": 315,
+        "cellExact": 240,
+        "cellExactRate": 0.7619047619047619,
+        "contentNum": 5748,
+        "contentDen": 8362,
+        "contentNED": 0.6873953599617316,
+        "splitTables": 0,
+        "decorForgiven": 0,
+        "reordered": 0,
+        "textMatched": 0,
+        "unmatchedRef": 0,
+        "unmatchedIr": 0
+      }
+    },
+    {
+      "tag": "round4",
+      "dimensions": [
+        [
+          90,
+          5
+        ]
+      ],
+      "score": {
+        "tableCount": 1,
+        "irTableCount": 1,
+        "exactCount": 0,
+        "exactRate": 0,
+        "cellF1": 0.8984126984126984,
+        "cellTotal": 315,
+        "cellExact": 274,
+        "cellExactRate": 0.8698412698412699,
+        "contentNum": 7337,
+        "contentDen": 8182,
+        "contentNED": 0.8967245172329503,
+        "splitTables": 0,
+        "decorForgiven": 0,
+        "reordered": 0,
+        "textMatched": 0,
+        "unmatchedRef": 0,
+        "unmatchedIr": 0
+      }
+    }
+  ],
+  "crossTrackScoreUpliftObserved": false,
+  "verification": {
+    "tests": 4117,
+    "passed": 4108,
+    "skipped": 9,
+    "failed": 0,
+    "typecheck": true,
+    "build": true,
+    "ODL": {
+      "docsPerMode": 200,
+      "modes": [
+        "default",
+        "plain+htmlTables",
+        "ocr:true",
+        "ocr:false"
+      ],
+      "rounds": [
+        2,
+        4
+      ]
+    },
+    "perDocumentQualityDown": 0
+  },
+  "measurementNotes": [
+    "R5 final narrows the quote override to the observed font/version scope and fixes inherited-font HFT lookup. Final layout and geometry were measured at round5-final. R5 PDF results were measured at initial round5; all parser/PDF sources are byte-identical between those snapshots.",
+    "Concurrent timing is not a performance comparison.",
+    "Vertical baseline restoration is limited to CENTER subLists. Vertical glyph placement and column origins remain unsupported.",
+    "Qualification row count 91 to90 does not establish exact structure: existing independent-context-row merging and a later label-row offset remain. Structural exact stays0 for that document."
+  ],
+  "cellExactProof": [
+    {
+      "round": 1,
+      "from": "alternating3-20261016-final",
+      "to": "alternating4-20261016-r1",
+      "rows": 730,
+      "scoredRows": 721,
+      "down": []
+    },
+    {
+      "round": 2,
+      "from": "alternating4-20261016-r1",
+      "to": "alternating4-20261016-r2",
+      "rows": 730,
+      "scoredRows": 721,
+      "down": []
+    },
+    {
+      "round": 3,
+      "from": "alternating4-20261016-r2",
+      "to": "alternating4-20261016-r3",
+      "rows": 730,
+      "scoredRows": 721,
+      "down": []
+    },
+    {
+      "round": 4,
+      "from": "alternating4-20261016-r3",
+      "to": "alternating4-20261016-r4",
+      "rows": 730,
+      "scoredRows": 721,
+      "down": []
+    },
+    {
+      "round": 5,
+      "from": "alternating4-20261016-r4",
+      "to": "alternating4-20261016-r5",
+      "rows": 730,
+      "scoredRows": 721,
+      "down": []
+    }
+  ]
+}

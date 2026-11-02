@@ -101,6 +101,7 @@ const MAX_IMG_W_HU = 48189 // 170mm — 공문서 본문폭과 동일한 보수�
 export class ImageRegistry {
   private byUrl = new Map<string, ImagePart | null>()
   private ids = new Set<string>()
+  private names = new Set<string>()
   readonly parts: ImagePart[] = []
   private picSeq = 0
   private binSeq = 0
@@ -128,8 +129,13 @@ export class ImageRegistry {
       let n = 1
       while (this.ids.has(itemId)) itemId = `${m[1].replace(/[^A-Za-z0-9_]/g, "_")}_${n++}`
       this.ids.add(itemId)
+      // A real image's normalized part name may match a later placeholder URL.
+      let name = `BinData/${url}`
+      let suffix = 1
+      while (this.names.has(name)) name = `BinData/${m[1]}_${suffix++}.${m[2]}`
+      this.names.add(name)
       part = {
-        name: `BinData/${url}`,
+        name,
         itemId,
         mime,
         data: m[2].toLowerCase() === "bmp" ? PLACEHOLDER_BMP : PLACEHOLDER_PNG,
@@ -157,8 +163,9 @@ export class ImageRegistry {
     const base = safe && !url.includes("..") ? safe[1] : `image${++this.binSeq}`
     let itemId = base.replace(/[^A-Za-z0-9_]/g, "_")
     let n = 1
-    while (this.ids.has(itemId)) itemId = `${base.replace(/[^A-Za-z0-9_]/g, "_")}_${n++}`
+    while (this.ids.has(itemId) || this.names.has(`BinData/${itemId}.${sniffed.ext}`)) itemId = `${base.replace(/[^A-Za-z0-9_]/g, "_")}_${n++}`
     this.ids.add(itemId)
+    this.names.add(`BinData/${itemId}.${sniffed.ext}`)
     const dim = probeImageSize(bytes)
     let wHU: number | undefined, hHU: number | undefined
     if (dim && dim.w > 0 && dim.h > 0) {

@@ -12,7 +12,7 @@
  *   - charPr/paraPr는 StyleRegistry 동적 발급 — 손계산 id 파티션 없음.
  */
 
-import { type MdBlock, generateParagraph, generateRuns } from "./md-runs.js"
+import { type MdBlock, generateParagraph, generateRuns, parseInlineMarkdown } from "./md-runs.js"
 import { type ResolvedGongmun, GongmunNumberer, computeSuppression, mmToHwpunit } from "./gongmun.js"
 import { type Scheme, type LevelStyle, pickScheme, taHu } from "./gongmun-scheme.js"
 import { buildOutline, CHAPTER_LABEL_RE, type Outline, type OutlineNode } from "./outline.js"
@@ -23,7 +23,7 @@ import { fitOneLine, fitParagraph, fitCharBreaks } from "./fit-line.js"
 import { faceClassForGen } from "./text-metrics.js"
 import { markerLayout, markerRunXml } from "./gen-marker.js"
 import { polishGongmunText } from "./gongmun-typo.js"
-import { generateTable, generateHtmlTableXml, requiredTableWidth, DATA_TABLE_INSET, resetTableIds, type GongmunTableStyle } from "./gen-table.js"
+import { generateTable, generateHtmlTableXml, requiredTableWidth, placeTotalRow, resolveTotalRow, DATA_TABLE_INSET, resetTableIds, type GongmunTableStyle } from "./gen-table.js"
 import { type ProfileRemap } from "./gen-profile.js"
 import { ImageRegistry, splitImageRefs } from "./gen-image.js"
 import { type ResolvedPage } from "./gen-page.js"
@@ -35,7 +35,7 @@ import { PARA_CODE, CHAR_CODE, NS_SECTION, NS_PARA, escapeXml, newPageNumCtrl, p
 import { hasEndMark } from "./gen-gongmun-extra.js"
 import { buildNoticeHead, buildNoticeFoot, isInternalApproval } from "./gen-docframe.js"
 import {
-  type FrameCtx, buildDocHeadTable, buildDocFootTable, buildReportTitleTable, buildSummaryBox,
+  type FrameCtx, buildDocHeadTable, buildDocFootTable, buildReportTitleTable, buildSummaryBox, summaryWarnings,
   buildApprovalSeoul, buildReportCover, splitTitleName, resetFrameTableIds, buildChapterBand, CHAPTER_BAND_DEFAULT,
   buildBangchimTitleTable, buildBangchimSummary, buildSquareChapter, buildBangchimSectionBand, buildBangchimSubhead,
 } from "./gen-frame-seoul.js"
@@ -72,7 +72,8 @@ export function chapterLabel(index: number, style: "roman" | "number"): string {
 
 /** 렌더 텍스트(강조 문법 제거) — 폭 계산용 */
 function plain(text: string): string {
-  return text.replace(/\*\*([^*]+)\*\*/g, "$1").replace(/\*([^*]+)\*/g, "$1").replace(/`([^`]+)`/g, "$1").replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+  // 인라인 수식(opt-in) span 은 평문 자리(목차·장 제목)에 글자로 나가므로 $…$ 로 되감싼다 — 꺼졌을 때와 같은 글
+  return parseInlineMarkdown(text).map((span) => (span.math ? `$${span.text}$` : span.text)).join("")
 }
 
 export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmun, deps: GongmunEngineDeps, theme: import("./gen-ids.js").ResolvedTheme): GongmunEngineResult {
@@ -140,7 +141,7 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
   const pushSummary = (t: string) => {
     frontKind = "summary"
     const box = (isBangchim ? buildBangchimSummary : buildSummaryBox)(polishGongmunText(t), frame)
-    if (box.lines > 3) warnings.push(`요약박스가 ${box.lines}줄입니다 — 보고 목적을 한 문장(쉼표 허용) 3줄 이내 "…하고자 함"으로 줄이세요`)
+    warnings.push(...summaryWarnings(t, box.lines))
     paras.push(box.xml)
   }
   // ─── 전면부 ───────────────────────────────────────
@@ -264,15 +265,15 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
     if (st.oneLine) {
       // □ 는 크기를 줄이지 않는다(형제 □ 끼리 크기·굵기가 달라 보이던 결함, 라운드 3) — 장평 90·자간 -5 까지만.
       // 그래도 넘치면 억지로 우겨넣지 않고 자연 줄바꿈(내어쓰기) + 경고: 문장을 줄이는 게 정답
-      const fit = fitOneLine(plain(node.text), st.font, st.pt, textW, st.pt, 90)
+      const fit = fitOneLine(plain(node.text), st.font, st.pt, textW, st.pt, 90, g.autoFitSafety)
       if (fit.overflow) warnings.push(`□ 항목이 한 줄에 담기지 않아 두 줄로 꺾입니다 — 문장을 줄이세요(장평 90%·자간 -5 로도 초과): "${node.text.slice(0, 30)}…"`)
       else { ratio = fit.ratio; spacing = fit.spacing }
     } else {
       // 한 줄보다 긴 어절(가운뎃점 목록 등)이 있으면 글자 단위 + 목록 구분자 뒤에서만 끊는 압축. 그 밖엔 짧은 꼬리 줄 올리기·
       // 벌어진 줄 완화(자간 -1%씩 Shift+Alt+N 관행·장평 조합). autoFit false 면 압축 없이 줄나눔만 고른다
       const t = plain(node.text)
-      const cb = fitCharBreaks(t, st.font, st.pt, textW, textW, g.autoFitMinRatio ?? 101)
-      const f = cb ?? (g.autoFitMinRatio !== null ? fitParagraph(t, st.font, st.pt, textW, textW, g.autoFitMinRatio) : null)
+      const cb = fitCharBreaks(t, st.font, st.pt, textW, textW, g.autoFitMinRatio ?? 101, g.autoFitSafety)
+      const f = cb ?? (g.autoFitMinRatio !== null ? fitParagraph(t, st.font, st.pt, textW, textW, g.autoFitMinRatio, undefined, g.autoFitSafety) : null)
       if (f) { ratio = f.ratio; spacing = f.spacing }
       charBreaks = !!cb
     }
@@ -309,8 +310,8 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
     const left = isMinistry ? st.leadTa * taHu(st.pt) : leadLeft(node.depth, st.pt)
     const textW = W - left - lay.hang
     const t = plain(node.text)
-    const cb = fitCharBreaks(t, st.font, st.pt, textW, textW, g.autoFitMinRatio ?? 101)
-    const f = cb ?? (g.autoFitMinRatio !== null ? fitParagraph(t, st.font, st.pt, textW, textW, g.autoFitMinRatio) : null)
+    const cb = fitCharBreaks(t, st.font, st.pt, textW, textW, g.autoFitMinRatio ?? 101, g.autoFitSafety)
+    const f = cb ?? (g.autoFitMinRatio !== null ? fitParagraph(t, st.font, st.pt, textW, textW, g.autoFitMinRatio, undefined, g.autoFitSafety) : null)
     const base = { font: st.font, pt: st.pt, bold: st.bold, ratio: f?.ratio ?? 100, spacing: f?.spacing ?? 0 }
     const paraId = reg.para({ align: st.align ?? "JUSTIFY", left, indent: -lay.hang, after: isMinistry ? 400 : 0, lineSp: isMinistry ? 130 : st.lineSp ?? scheme.lineSp, keepWord: !cb, autoTab: true, widowOrphan: true })
     const markerRun = markerRunXml(marker, reg.char({ font: st.font, pt: st.pt, bold: st.bold }), lay)
@@ -339,8 +340,8 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
     let ratio = 100, spacing = 0, charBreaks = false
     if (!node.align) {
       const t = plain(node.text)
-      const cb = fitCharBreaks(t, st.font, st.pt, W, W, g.autoFitMinRatio ?? 101)
-      const f = cb ?? (g.autoFitMinRatio !== null ? fitParagraph(t, st.font, st.pt, W, W, g.autoFitMinRatio) : null)
+      const cb = fitCharBreaks(t, st.font, st.pt, W, W, g.autoFitMinRatio ?? 101, g.autoFitSafety)
+      const f = cb ?? (g.autoFitMinRatio !== null ? fitParagraph(t, st.font, st.pt, W, W, g.autoFitMinRatio, undefined, g.autoFitSafety) : null)
       if (f) { ratio = f.ratio; spacing = f.spacing }
       charBreaks = !!cb
     }
@@ -382,7 +383,7 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
     }
     const label = chapterStyle === "none" ? "" : chapterLabel(node.index, chapterStyle === "number" ? "number" : "roman")
     const text = label ? `${label} ${node.text}` : node.text
-    const fit = fitOneLine(plain(text), st.font, st.pt, W, st.pt - 2)
+    const fit = fitOneLine(plain(text), st.font, st.pt, W, st.pt - 2, undefined, g.autoFitSafety)
     const base = { font: st.font, pt: fit.pt, bold: st.bold, ratio: fit.ratio, spacing: fit.spacing }
     const before = prevKind === "start" || prevKind === "title" || prevKind === "summary" ? 0 : lineHu(scheme.body)
     const paraId = reg.para({ align: "LEFT", before, after: Math.round(lineHu(scheme.body) * 0.3), lineSp: st.lineSp ?? scheme.lineSp, keepWithNext: true })
@@ -416,7 +417,7 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
             break
           }
         }
-        return generateTable(b.rows, theme, style, remap, tableSeq++, images)
+        return generateTable(placeTotalRow(b.rows, resolveTotalRow(g.totalRow, !!remap)), theme, style, remap, tableSeq++, images)
       }
       case "html_table": {
         const tbl = generateHtmlTableXml(b.text || "", theme, tableStyle.totalWidth - DATA_TABLE_INSET, tableStyle, remap, tableSeq++, images)
@@ -554,4 +555,3 @@ function legalDepthOf(marker: string): number {
   if (/^\([가-힣]\)$/.test(marker)) return 5
   return 6
 }
-
