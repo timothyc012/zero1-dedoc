@@ -75,3 +75,15 @@ describe("ocrLinesInPdfSpace — 그린 방향(회전 적용) → 회전 전 사
     assert.equal(r270.angle, -90)
   })
 })
+
+describe("(Zero1) 독일어 셋의 손글씨 다시 읽기 모델", () => {
+  it("ocrLanguage de + ocrRec auto 의 대체 모델은 v6 det 을 upstream 엔진에 넘기지 않는다", async () => {
+    const { resolveOcrModels, handwritingFallbackModels, DEFAULT_OCR_MODELS } = await import("../src/ocr/models.js")
+    const sel = resolveOcrModels({ ocrLanguage: "de", ocrRec: "auto" })
+    assert.equal(sel.generation, 6)
+    const alt = handwritingFallbackModels(sel)
+    assert.equal(alt.generation, undefined)
+    assert.equal(alt.det, DEFAULT_OCR_MODELS.det)
+    assert.equal(alt.dict, DEFAULT_OCR_MODELS.dict)
+  })
+})

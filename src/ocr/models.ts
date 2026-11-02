@@ -135,10 +135,16 @@ export function resolveOcrModels(o: Pick<ParseOptions, "ocrLanguage" | "ocrDet" 
   return sel
 }
 
-/** `ocrRec: "auto"` 가 손글씨 쪽을 다시 읽을 모델 — 같은 det·사전에 rec 만 손글씨 rec (손글씨 rec 은 한국어 사전) */
+/** `ocrRec: "auto"` 가 손글씨 쪽을 다시 읽을 모델 — 같은 det·사전에 rec 만 손글씨 rec (손글씨 rec 은 한국어 사전).
+ *  (Zero1 포크) 독일어 셋(generation 6)이면 det·사전도 기본 셋으로 — v6 det 은 upstream 엔진의 정규화와 맞지 않는다 */
 export function handwritingFallbackModels(sel: OcrModelSelection): OcrModelSelection {
-  const { generation: _v6, ...rest } = sel
-  return { ...rest, rec: { spec: OCR_HANDWRITING_REC_MODEL }, dict: "embedded" in sel.dict ? DEFAULT_OCR_MODELS.dict : sel.dict }
+  const { generation, ...rest } = sel
+  return {
+    ...rest,
+    ...(generation === 6 ? { det: DEFAULT_OCR_MODELS.det } : {}),
+    rec: { spec: OCR_HANDWRITING_REC_MODEL },
+    dict: "embedded" in sel.dict ? DEFAULT_OCR_MODELS.dict : sel.dict,
+  }
 }
 
 /** 엔진 캐시 키 — 같은 파일 셋이면 같은 세션을 쓴다 */
