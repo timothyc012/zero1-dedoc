@@ -82,6 +82,8 @@ kordoc processes untrusted binary files. The following defenses are in place:
 - HTML table-cell text escaped; Chromium printing/rendering disables JavaScript and external requests
 - `htmlTables` output keeps only kordoc's own `<br>`, `<u>`, `<sup>`, `<sub>` and image tags in cells. Any
   other tag from a document, such as `<img onerror>`, is escaped
+- `htmlCellLinks` (off by default) adds `<a href>` in HTML table cells only for `http:`, `https:`, `mailto:`,
+  `tel:` and `#` addresses; the attribute value is escaped and the print renderer allows only that form
 - Markdown output escapes link syntax written in document text. `[x](javascript:…)` and `[x]: url`
   definitions do not become links. Code-span fences are longer than any backtick run inside them
 - Layout HTML (`render --format html`) carries a Content-Security-Policy that forbids scripts and external loads
@@ -110,6 +112,20 @@ kordoc processes untrusted binary files. The following defenses are in place:
   symlinks are rejected, including when parent directories do not yet exist.
   Unset by default — existing behaviour is unchanged.
 
+### Process Isolation (opt-in, Linux)
+- kordoc can run inside [gVisor](https://gvisor.dev/). A memory bug in a native dependency
+  (sharp, onnxruntime, PDF engines) triggered by a crafted document then reaches only the
+  gVisor kernel, not the host kernel, files or network.
+- Container runtime: `docker run --runtime=runsc --network=none`, or a Kubernetes
+  RuntimeClass with handler `runsc`. No code change.
+- **`KORDOC_SANDBOX=gvisor`** re-runs the parsing CLI and `parse-worker` (Java/Python SDK)
+  inside `runsc do` with networking off and `KORDOC_OFFLINE=1`. Host files are read-only;
+  writes stay in memory, so only stdout parsing is accepted. On Linux it fails if runsc cannot
+  start and never continues unsandboxed. On macOS and Windows, where gVisor cannot run, it
+  prints a warning and runs without isolation. Unset by default — existing behaviour is unchanged.
+- CI runs the test suite inside gVisor and checks that isolation is really on. See
+  [docs/sandbox.md](docs/sandbox.md).
+
 ### Model Integrity
 - OCR / formula models are pinned by SHA-256 in source; downloads are written to a
   `.part` file and verified before rename, and a mismatch deletes the file
@@ -119,8 +135,8 @@ kordoc processes untrusted binary files. The following defenses are in place:
 ## Scope
 
 kordoc is a **document parser library**, not a sandbox. It trusts the Node.js runtime
-and its dependencies (cfb, jszip, @xmldom/xmldom, markdown-it, and — when OCR or PDF
-features are used — pdfjs-dist, onnxruntime-node, sharp, @hyzyla/pdfium).
+and its dependencies (cfb, jszip, markdown-it, the bundled quick-xml WebAssembly build,
+and — when OCR or PDF features are used — pdfjs-dist, onnxruntime-node, sharp, @hyzyla/pdfium).
 Vulnerabilities in these dependencies are outside kordoc's control but are addressed
 via dependency updates.
 

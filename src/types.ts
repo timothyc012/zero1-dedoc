@@ -57,6 +57,8 @@ export interface IRBlock {
   footnoteBlocks?: IRBlock[]
   /** 이미지 데이터 (type="image"일 때) */
   imageData?: ImageData
+  /** 그림 속 QR 코드 값 (type="image", `ParseOptions.qrCodes` 를 켰을 때 읽은 것만, #187) */
+  qr?: string[]
   /** 인라인 강조 run-span (선택 — kordoc 생성 hwpx 왕복 채널 + 외래 실속성 볼드/이탤릭).
    *  존재하면 마크다운 변환이 **·*·` 마커를 재방출한다 */
   spans?: IRSpan[]
@@ -145,6 +147,13 @@ export interface IRTable {
   classification?: TableClassificationSummary
   /** 원본 표 식별자(HWPX `hp:tbl id`) — 렌더 region(`RenderRegion.sourceId`)과의 조인 키 */
   sourceId?: string
+  /**
+   * XLSX·XLS 시트 표에서만: 표 행 i 가 원본 시트의 몇 번째 행인가(0부터, 길이 = rows). 글 없는 행·열은 표에서 빠지므로
+   * 표 서수와 시트 주소가 다르다 — 표 칸 (i, j) 의 원본 칸은 (sourceRows[i], sourceCols[j]) 다(시트 A1 = (0, 0))
+   */
+  sourceRows?: number[]
+  /** XLSX·XLS 시트 표에서만: 표 열 j 가 원본 시트의 몇 번째 열인가(0부터, 길이 = cols). `sourceRows` 참고 */
+  sourceCols?: number[]
   /** `tableFormat: "gfm"` 관계 표지의 표 id(`t1`, `t2` …) — 문서 블록 트리 전위 순회 순번. 그 옵션으로 렌더할 때만 채워진다(원본 id 아님) */
   markdownId?: string
   /** 렌더 인프라가 준 페이지 로컬 pt 조각(다중 페이지 표는 여럿) — extractTables 가 채운다 */
@@ -211,8 +220,8 @@ export interface DocumentMetadata {
   pageCount?: number
   /**
    * 페이지 경계 신뢰도 (#66) — "layout": 조판 정보 기반 실제 페이지
-   * (한컴 저장본 HWP/HWPX·PDF·COM, PPTX 슬라이드), "section": 섹션 단위 근사
-   * (조판 캐시 없는 생성 파일). HWP/HWPX/PDF·PPTX에서만 설정된다.
+   * (한컴 저장본 HWP/HWPX·PDF·COM, PPTX 슬라이드, Word 조판 표지로 센 쪽 수가 app.xml Pages 와 같은 DOCX), "section": 섹션 단위 근사
+   * (조판 캐시 없는 생성 파일). HWP/HWPX/PDF·PPTX·DOCX에서만 설정된다.
    */
   pageMode?: "layout" | "section"
   /** 문서 포맷 버전 (예: HWP "5.1.0.1") */
@@ -235,6 +244,7 @@ export interface ParseOptions {
    * - 문자열: "1-3", "1,3,5-7"
    *
    * PDF: 정확한 페이지 단위. HWP/HWPX: 섹션 단위 근사치.
+   * DOCX: Word 가 저장한 조판 쪽 — 쪽을 매기지 않은 문서(표지 없음·app.xml Pages 와 쪽 수 다름)는 거르지 않는다.
    */
   pages?: number[] | string
   /** 이미지 기반 PDF OCR (선택).
@@ -261,11 +271,12 @@ export interface ParseOptions {
   ocrDet?: "mobile" | "server" | "medium" | OcrModelFile
   /** 글줄 검출 입력 긴 변(px, 32~4096 정수). 기본 960 (PP-OCRv5 공식 resize_long) — 키우면 작은 글자를 더 잡고 느려진다 */
   ocrDetLongSide?: number
-  /** 내장 OCR 글자 인식 모델. 기본은 PP-OCRv5 korean rec. `"handwriting"`: 손글씨·공문서 데이터로 추가 학습한 한국어 rec(~15MB,
-   *  첫 사용 시 다운로드 — 수기 서류용, 내장 사전 그대로). 객체: 로컬 ONNX 파일(미세조정 rec 등) — `path` 절대 경로 + `sha256` 필수.
-   *  출력 클래스 수가 사전 + 2 여야 한다. `"auto"`: 기본 rec 로 읽고, 쪽 평균 확신도가 낮으면(손글씨 쪽) 손글씨 rec 로 다시 읽어
-   *  확신도가 뚜렷이 오를 때만 그 쪽을 바꾼다(손글씨 rec 도 첫 사용 시 다운로드). 인쇄 쪽은 기본 rec 그대로 */
-  ocrRec?: "handwriting" | "auto" | OcrModelFile
+  /** 내장 OCR 글자 인식 모델. 기본은 PP-OCRv5 korean rec 로 읽고, 쪽 평균 확신도가 .85 아래인 쪽(손글씨 쪽)만 손글씨 rec 로 다시 읽어
+   *  확신도가 .10 넘게 오를 때 그 쪽을 바꾼다(손글씨 rec ~15MB 는 그런 쪽을 처음 만났을 때 받고, 받지 못하면 기본 rec 결과 그대로).
+   *  `"printed"`: 기본 rec 만(손글씨 rec 를 받지도 쓰지도 않는다). `"handwriting"`: 손글씨·공문서 데이터로 추가 학습한 한국어 rec
+   *  (수기 서류용, 내장 사전 그대로). `"auto"`: 기본보다 너그러운 문턱(.90 아래·.06 상승)으로 손글씨 쪽을 바꾸고 모델을 미리 받는다.
+   *  객체: 로컬 ONNX 파일(미세조정 rec 등) — `path` 절대 경로 + `sha256` 필수. 출력 클래스 수가 사전 + 2 여야 한다 */
+  ocrRec?: "handwriting" | "auto" | "printed" | OcrModelFile
   /** 글자 인식 사전(PaddleOCR inference.yml 의 `PostProcess.character_dict`)을 로컬 파일로 — `path` 절대 경로 + `sha256` 필수.
    *  지정 안 하면 내장 한국어 사전(11,945자) */
   ocrRecDict?: OcrModelFile
@@ -285,6 +296,9 @@ export interface ParseOptions {
   /** 모든 표를 HTML 로 — 파이프 표도 HTML 표로 옮기고, 표마다 태그를 한 줄씩 들여써 낸다(BeautifulSoup prettify 모양, 첫 행 `<th>`).
    *  HTML 표만 다루는 소비자·채점기용. 기본 false(병합·중첩 없는 표는 GFM 파이프 표) */
   htmlTables?: boolean
+  /** HTML 표 셀의 `[텍스트](URL)`·URL 을 `<a href>` 로 — GFM 은 HTML 블록 안의 마크다운을 해석하지 않아 병합·중첩 표 셀의 링크가 뷰어에서
+   *  눌리지 않는다. 안전한 스킴(http·https·mailto·tel, `#`)만. 기본 false — LLM·RAG 에는 주소를 두 번 싣는 표기라서 */
+  htmlCellLinks?: boolean
   /** `"gfm"`: 모든 표를 HTML 없이 GFM 파이프 표로 — 세로 병합 칸은 덮인 행마다 같은 값, 가로 병합 칸은 시작 칸에만 값, 셀 안 표는 부모 표 뒤 독립 표로 꺼내고
    *  부모·자식 관계를 `<!-- <table id="t2" parent_id="t1" /> -->` 표지로 남긴다(RAG 색인용). `htmlTables` 와 함께 쓸 수 없다. 기본: 병합·중첩 표는 HTML */
   tableFormat?: "gfm"
@@ -363,6 +377,36 @@ export interface ParseOptions {
    * OCR 은 이 옵션과 무관하다.
    */
   images?: boolean
+  /** 그림 속 QR 코드를 읽어 그림 블록 `qr` 과 Markdown 그림 자리 다음 줄에 값을 낸다 (#187). 기본 false — 끄면 출력 불변.
+   *  모든 형식의 그림(HWP·HWPX·HWP3·DOCX·PPTX·PDF), `images: false` 여도 읽는다. optional dependency `zxing-wasm` 이 필요하다 */
+  qrCodes?: boolean
+  /**
+   * 그림 형식 (#188). 기본(지정 안 함)은 지금처럼 PDF 그림은 PNG, 다른 형식은 문서에 든 원본 그림 그대로다.
+   * 지정하면 모든 그림이 그 형식이다 — 파일명(`image_NNN.png`·`.webp`)·MIME·바이트가 같은 형식이고, 형식은 확장자가 아니라 바이트로 판정한다.
+   * - `"png"`: PNG. 이미 PNG 인 그림은 바이트 그대로, BMP 는 kordoc 디코더, 그 밖(JPEG·GIF·TIFF·WebP·SVG)은 sharp.
+   * - `"webp"`: 무손실 WebP(`exact`). PDF 그림 200개 실측 25.5 → 14.8MB(58%), 인코딩 CPU 3.25 → 8.6초(4개 스레드로 경과 시간 2.58 → 2.1초).
+   * 보이는 그림을 맞춘다: EXIF 회전 적용, ICC 프로필·CMYK 는 sRGB, 움직이는 GIF 는 첫 장, SVG 는 그린 그림.
+   * 바꿀 수 없는 그림(WMF·EMF, 못 읽는 BMP 변형·손상, WebP 한도 16,383px 초과)은 원본 형식(PDF 는 PNG)으로 내고 경고(`SKIPPED_IMAGE`)한다.
+   * HWP·HWPX·DOCX 2,782개(그림 6,412개) 실측: png 6,109개 바꿈·4,099 → 775MB, webp 5,680개 바꿈·4,099 → 504MB.
+   * optional dependency `sharp` 가 필요하다(없으면 `"png"` 는 BMP·PNG 만 맞추고 경고). `images: false` 면 인코딩하지 않는다
+   */
+  imageFormat?: "png" | "webp"
+  /**
+   * PDF 그림 블록의 자리. 기본 `"page-end"` — 그 쪽 마지막 블록 뒤에 모으고 그림 블록에 `bbox` 가 없다(4.24.51 까지와 같다).
+   * `"flow"` — 그림을 쪽 위 자리로 글 블록 사이에 끼운다: 같은 단(가로로 겹치는 블록)에서
+   * 그림 위쪽 변 이상 높이에서 시작하는 마지막 블록 뒤, 그런 블록이 없으면 그 단의 첫 블록 앞. 쪽 안 그림은 위→아래·왼→오른 순서.
+   * 그림 블록에 `bbox` 를 붙인다. 같은 그림을 여러 쪽에 다시 그리면 처음 나온 자리에만 블록이 생긴다.
+   * 다른 형식은 원문 순서라 무관하다. 기본이 `"page-end"` 인 까닭: ODL 정답 마크다운에 그림 줄이 없어 `"flow"` 는 쪽 머리 로고가
+   * 첫 제목 앞에 오는 등 제목 구조 점수만 깎는다(종합 .9649 → .9640, 글은 같음)
+   */
+  imagePlacement?: "page-end" | "flow"
+  /**
+   * 빈 그림 빼기 (기본 false — 출력 불변). 켜면 흰 바탕에 합성했을 때 거의 한 색인 그림(채널마다 최댓값−최솟값 24 이하:
+   * 빈 판·단색 띠·옅은 그러데이션 배경)을 그림 블록·`images`·글에 박힌 참조에서 뺀다. 한 색에 투명도로 모양을 낸 아이콘은 남는다.
+   * 그림 바이트를 낼 때만 본다(`images: false` 면 판정하지 않는다). 모든 형식. PDF 는 디코딩한 화소로 보고, 다른 형식은 원본 그림을
+   * 풀어 본다(BMP 는 내장 디코더, 그 밖은 optional dependency `sharp`, WMF·EMF 는 남긴다). 번호(`image_NNN`)는 남은 그림으로 매긴다(PDF)
+   */
+  dropBlankImages?: boolean
   /**
    * PDF 표 감지 활성화 (기본 true). false 면 선 기반 그리드·클러스터 표 감지를 모두 끄고
    * 자연 읽기순 텍스트만 뽑는다 (#64).
@@ -469,7 +513,7 @@ export interface ParseSuccess extends ParseResultBase {
    * 페이지별 마크다운 (#68) — `blocks` 의 `pageNumber` 로 갈라 페이지마다 다시
    * 마크다운을 만든 것. 페이지 경계의 신뢰도는 `metadata.pageMode` 를 따른다
    * ("layout" = 실제 페이지, "section" = 섹션 근사). `pages` 옵션으로 범위를
-   * 줄이면 그 범위만 담긴다. 페이지 번호를 매기지 않는 포맷(DOCX 등)에서는 없고,
+   * 줄이면 그 범위만 담긴다. 페이지 번호를 매기지 않는 문서(Word 조판 표지가 없는 DOCX 등)에서는 없고,
    * XLSX 는 `pageCount` 와 같은 의미로 시트 한 장이 한 쪽이다.
    *
    * 여러 페이지에 걸친 표는 시작 페이지 한 블록이라, 표가 이어지는 중간
@@ -518,7 +562,8 @@ export interface OcrModelFile {
 /**
  * OCR 쪽 하나의 글줄. 좌표는 OCR 래스터 픽셀(왼쪽 위 원점, y 아래로)이다 — PDF 는 쪽을 `scale` 배(기본 3 = 216dpi)로 그린 래스터,
  * 이미지는 EXIF 방향대로 세운 이미지 자체(24MP 를 넘어 줄였으면 줄인 크기 — `width`·`height` 로 안다).
- * 블록 `bbox`(PDF pt, 아래 원점)로 옮기려면 `x / scale`, `pageHeightPt − (y + h) / scale`.
+ * 보정이 없는 경우 블록 `bbox`(PDF pt, 아래 원점)는 `x / scale`, `pageHeightPt − (y + h) / scale`.
+ * 보정·PDF 회전이 있는 경우 `ocrLinesInPdfSpace` 로 변환한다.
  */
 export interface OcrPageLines {
   pageNumber: number
@@ -527,9 +572,13 @@ export interface OcrPageLines {
   height: number
   /** 래스터 px / PDF pt (이미지는 메타데이터 DPI·판형으로 추정한 값) */
   scale: number
-  /** 기울기 보정으로 래스터를 돌린 각(°, 양수 = 반시계로 세움). 좌표는 돌린 래스터 기준 — 보정하지 않았으면 0.
-   *  입력 좌표로는 θ = deskewAngle, (cx, cy) = ((width−1)/2, (height−1)/2) 로 x₀ = cx + (x−cx)cosθ − (y−cy)sinθ, y₀ = cy + (x−cx)sinθ + (y−cy)cosθ */
+  /** 기울기 보정으로 래스터를 돌린 각(°, 양수 = 반시계로 세움). `pageRotation` 이 있으면 먼저 그 회전을 되돌린다.
+   *  그 뒤 θ = deskewAngle, (cx, cy) = ((원래 폭−1)/2, (원래 높이−1)/2) 로
+   *  x₀ = cx + (x−cx)cosθ − (y−cy)sinθ, y₀ = cy + (x−cx)sinθ + (y−cy)cosθ */
   deskewAngle: number
+  /** 기울기 보정 뒤 OCR 을 위해 래스터에 적용한 반시계 회전. 270은 시계 90도; 없으면 회전하지 않음.
+   *  width·height와 줄 상자는 회전 후 래스터 기준이며, PDF /Rotate와는 별개다. */
+  pageRotation?: 90 | 270
   /** 텍스트층이 있는 쪽이라 그림 영역만 읽었다 — 원본 PDF 좌표를 유지하고 deskewAngle은 0, 그 영역 안 줄만 담긴다 */
   regionsOnly?: true
   /** (Zero1 포크, PDF 만) 쪽 상자 `[x0, y0, x1, y1]`(pt, pdfjs `page.view` = CropBox)와 `/Rotate`(0·90·180·270).

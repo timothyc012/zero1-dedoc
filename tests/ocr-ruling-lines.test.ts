@@ -147,6 +147,28 @@ describe("detectRulingLines — 래스터 괘선 감지", () => {
     assert.equal(horizontals.length, 0)
     assert.equal(verticals.length, 0)
   })
+
+  it("20% 회색 머리 띠(휘도 204) 안 진한 1px 세로선과 띠에 붙은 테두리를 감지", () => {
+    const w = 900, h = 400
+    const rgba = makeCanvas(w, h)
+    for (let y = 50; y <= 200; y++) for (let x = 100; x <= 800; x++) ink(rgba, w, x, y, 204)
+    drawVLine(rgba, w, 96, 50, 350, 4)
+    drawVLine(rgba, w, 801, 50, 350, 4)
+    for (const x of [300, 500]) for (let y = 50; y <= 350; y++) ink(rgba, w, x, y, 80)
+    const { verticals } = detectRulingLines(rgba, w, h, SCALE)
+    assert.deepEqual(verticals.filter(v => v.y1 <= 52 && v.y2 >= 348).map(v => Math.round(v.x1)).sort((a, b) => a - b), [98, 300, 500, 803])
+  })
+  it("윤곽선이 모서리에서 끝나는 외톨이 회색 상자(표지 상자·그림 입체 틀)는 지우지 않아 윤곽이 괘선이 되지 않음", () => {
+    const w = 600, h = 400
+    const rgba = makeCanvas(w, h)
+    for (let y = 100; y <= 300; y++) for (let x = 100; x <= 400; x++) ink(rgba, w, x, y, 204)
+    drawVLine(rgba, w, 98, 98, 302)
+    drawVLine(rgba, w, 401, 98, 302)
+    drawHLine(rgba, w, 98, 402, 98)
+    drawHLine(rgba, w, 98, 402, 301)
+    const { verticals } = detectRulingLines(rgba, w, h, SCALE)
+    assert.deepEqual(verticals.filter(v => v.y2 - v.y1 > 100), [])
+  })
 })
 
 /** 점선 수평선: 점 dot px·간격 gap px, 두께 thick px */
@@ -178,6 +200,16 @@ describe("detectRulingLines — 점선 괘선", () => {
     const rgba = makeCanvas(w, h)
     drawVLine(rgba, w, 100, 50, 350)
     drawDottedH(rgba, w, 102, 798, 200, 3, 6)
+    assert.equal(detectRulingLines(rgba, w, h, SCALE).horizontals.length, 0)
+  })
+
+  it("세로 괘선 하나에만 닿는 점선(칸 오른쪽에 붙인 숫자 줄의 획)은 버린다", () => {
+    // 관보 계속비: "333,500,000" 의 둥근 획 위·아래가 점선 꼴로 잡혀 칸 오른쪽 세로선에만 닿았다
+    const w = 900, h = 400
+    const rgba = makeCanvas(w, h)
+    drawVLine(rgba, w, 100, 50, 350)
+    drawVLine(rgba, w, 800, 50, 350)
+    drawDottedH(rgba, w, 718, 798, 200, 3, 3)
     assert.equal(detectRulingLines(rgba, w, h, SCALE).horizontals.length, 0)
   })
 
@@ -255,6 +287,28 @@ describe("detectRulingLines — 채움 경계", () => {
     assert.ok(verticals.some(v => Math.abs(v.x1 - 181) <= 3 && v.y2 - v.y1 > 200), JSON.stringify(verticals))
   })
 
+  it("짙게 칠한 머리 열 칸 사이 흰 틈을 행 경계 가로선으로 낸다 (지역인재 합격자 표)", () => {
+    // 감색 머리 열(흰 글)의 행 경계는 3px 흰 틈뿐이라 잉크 괘선이 칠한 열 앞(x 252)에서 끊겼다
+    const w = 900, h = 400
+    const rgba = makeCanvas(w, h)
+    fillRect(rgba, w, 100, 30, 250, 120, 60)
+    fillRect(rgba, w, 100, 124, 250, 300, 60)
+    for (const y of [30, 121, 299]) drawHLine(rgba, w, 252, 800, y)
+    for (const x of [252, 800]) drawVLine(rgba, w, x, 30, 300)
+    const { horizontals } = detectRulingLines(rgba, w, h, SCALE)
+    assert.ok(horizontals.some(l => Math.abs(l.y1 - 122) <= 3 && l.x1 <= 103 && l.x2 >= 247), JSON.stringify(horizontals))
+  })
+
+  it("칠한 칸 하나의 위아래 변(흰 틈 짝 없음)은 행 경계를 늘리지 않는다", () => {
+    const w = 900, h = 400
+    const rgba = makeCanvas(w, h)
+    fillRect(rgba, w, 100, 30, 250, 300, 60)
+    for (const y of [30, 121, 299]) drawHLine(rgba, w, 252, 800, y)
+    for (const x of [252, 800]) drawVLine(rgba, w, x, 30, 300)
+    const { horizontals } = detectRulingLines(rgba, w, h, SCALE)
+    assert.ok(!horizontals.some(l => Math.abs(l.y1 - 122) <= 3 && l.x1 < 240), JSON.stringify(horizontals))
+  })
+
   it("크림색 바탕 쪽(휘도 242)의 흰 상자는 채움이 아니다 — 바탕은 최빈 휘도", () => {
     const w = 900, h = 400
     const rgba = makeCanvas(w, h)
@@ -305,6 +359,19 @@ describe("light grid inside a dark frame", () => {
     for (const x of [280,500]) for(let y=60;y<=540;y++) ink(blank,w,x,y,230)
     assert.equal(detectRulingLines(blank,w,h,SCALE).horizontals.length,0)
   })
+
+  it("쪽을 넘는 표 — 세로선이 틀 아래로 이어져도 옅은 행 구분선을 받는다", () => {
+    // 진한 가로선 60·400 이 틀, 세로선은 바닥 괘선 없이 580 까지. 왼쪽 이름 칸 구분선만 옅고(230) 오른쪽은 진하다
+    const w = 800, h = 600, rgba = makeCanvas(w, h)
+    drawHLine(rgba, w, 60, 740, 60); drawHLine(rgba, w, 60, 740, 400)
+    drawVLine(rgba, w, 60, 60, 580); drawVLine(rgba, w, 740, 60, 580); drawVLine(rgba, w, 200, 60, 580)
+    for (const y of [140, 220, 300]) {
+      for (let x = 62; x < 200; x++) ink(rgba, w, x, y, 230)
+      drawHLine(rgba, w, 200, 740, y, 1)
+    }
+    const lines = detectRulingLines(rgba, w, h, SCALE)
+    for (const y of [140, 220, 300]) assert.ok(lines.horizontals.some(l => Math.abs(l.y1 - y) <= 2 && l.x1 <= 62 && l.x2 >= 738), `y=${y} 전폭`)
+  })
 })
 
 it("splits a line at recovered cell boundaries but preserves a merged header", async () => {
@@ -316,4 +383,15 @@ it("splits a line at recovered cell boundaries but preserves a merged header", a
   assert.ok(parts[0].x + parts[0].w < rule.x1)
   assert.ok(parts[1].x > rule.x1)
   assert.deepEqual(splitBoxAtCellRules(b, [{ ...rule, y1: 45 }]), [b])
+})
+
+it("cuts off a single next-cell glyph read across a cell boundary", async () => {
+  const { splitBoxAtCellRules } = await import("../src/ocr/crop.js")
+  // "6,796몽" — 이웃 칸 첫 글자 하나(높이보다 좁다)만 세로선 너머에 있다
+  const b = { x: 10, y: 20, w: 100, h: 20 }
+  const parts = splitBoxAtCellRules(b, [{ x1: 95, y1: 10, y2: 100, thicknessPx: 1 }])
+  assert.equal(parts.length, 2)
+  assert.ok(parts[1].x > 95 && parts[1].x + parts[1].w === 110)
+  // 상자 끝 바로 앞 선(글자 한 획 폭)은 가르지 않는다
+  assert.deepEqual(splitBoxAtCellRules(b, [{ x1: 105, y1: 10, y2: 100, thicknessPx: 1 }]), [b])
 })

@@ -33,7 +33,7 @@ npm install kordoc        # CLI only? no install needed: npx kordoc <file>
 
 PDF and OCR dependencies are installed by default (`--omit=optional` slims the install but drops PDF and OCR). Only PDF print rendering (`markdownToPdf`) needs `puppeteer-core` installed separately.
 
-Embedding kordoc as a library in an app (Electron etc.): the only required packages `import "kordoc"` actually loads are `@xmldom/xmldom`, `jszip` and `markdown-it` (`cfb` is bundled). `@modelcontextprotocol/sdk` (plus the 92 packages, about 11MB, it pulls in such as express and hono), `commander` and `zod` serve only `kordoc mcp` and the CLI, so they can be left out of an app installer. Optional dependencies (`sharp`, `onnxruntime-node`, `@huggingface/tokenizers`, `@hyzyla/pdfium`, `pdfjs-dist`) can be dropped for the features you do not use (PNG render, OCR, PDF). The MCP SDK is not an optional dependency because, as in #99 below, npm drops optional dependencies together when one of them fails to install, which would remove the MCP server entirely.
+Embedding kordoc as a library in an app (Electron etc.): the only required packages `import "kordoc"` actually loads are `jszip` and `markdown-it` (`cfb` and the XML parser wasm are bundled). `@modelcontextprotocol/sdk` (plus the 92 packages, about 11MB, it pulls in such as express and hono), `commander` and `zod` serve only `kordoc mcp` and the CLI, so they can be left out of an app installer. Optional dependencies (`sharp`, `onnxruntime-node`, `@huggingface/tokenizers`, `@hyzyla/pdfium`, `pdfjs-dist`) can be dropped for the features you do not use (PNG render, OCR, PDF). The MCP SDK is not an optional dependency because, as in #99 below, npm drops optional dependencies together when one of them fails to install, which would remove the MCP server entirely.
 
 <details>
 <summary>Troubleshooting</summary>
@@ -72,23 +72,24 @@ if (result.success) {
 }
 ```
 
-- `pages` appears only for formats whose blocks carry page numbers (HWP · HWPX · PDF; XLS(X): one sheet = one page; PPTX: one slide = one page). DOCX, which has no page numbering, omits the field.
+- `pages` appears only for formats whose blocks carry page numbers (HWP · HWPX · PDF; XLS(X): one sheet = one page; PPTX: one slide = one page; DOCX: the pages Word laid out when it saved the file). A DOCX gets page numbers only when the page count from its rendered page break markers (`w:lastRenderedPageBreak`) equals `Pages` in `docProps/app.xml`; without markers (files not saved by Word) or on a mismatch it omits the field.
 - Page-boundary reliability is `metadata.pageMode` — `"layout"` (real pages from the typesetting cache) / `"section"` (section approximation).
 
 **Parse options** (`parse(buffer, options)` · CLI flag)
 
 | Option | CLI | Description |
 | --- | --- | --- |
-| `pages` | `-p, --pages` | `"1-3"` · `"1,3,5-7"` · `[1, 5, 10]` — real pages for PDF and Hancom-saved files, section approximation without a typesetting cache |
+| `pages` | `-p, --pages` | `"1-3"` · `"1,3,5-7"` · `[1, 5, 10]` — real pages for PDF and Hancom-saved files, section approximation without a typesetting cache. DOCX: the pages Word laid out (no filtering when the document has no page numbers) |
 | `ocr` | `--ocr` · `--ocr-force` | default: scanned pages + text in large images (when the model is cached) · `true`: + small images and logos (~18MB model auto-download) · `"force"`: every page · `false`: off · function: external OCR · images embedded in HWP/HWPX are read only with `true`, `"force"` or a function (default: source text only; images in DOCX and other formats are not covered) |
 | `ocrLines` | `--ocr-lines` · `--ocr-lines-all` | built-in OCR lines (box, confidence) as `result.ocrLines` (PDF, images). `"all"` also lists lines dropped for low confidence with `dropped: true` — see [OCR lines and models](#ocr-lines-and-models) |
 | `ocrDet` · `ocrDetLongSide` | `--ocr-det` · `--ocr-det-long-side` | text detection model `"mobile"` (default), `"server"` (~88MB, downloaded on first use), `"medium"` (PP-OCRv6, ~62MB, downloaded on first use; for skewed, blurred or scanned input) or a local file `{path, sha256}`; detector input long side (32–4096, default 960) |
-| `ocrRec` · `ocrRecDict` | `--ocr-rec` · `--ocr-rec-dict` (+ `--ocr-*-sha256`) | recognition model `"handwriting"` (Korean handwriting rec for handwritten forms, ~15MB, downloaded on first use), `"auto"` (reads with the default rec and re-reads only low-confidence handwritten pages with the handwriting rec) or a local file `{path, sha256}` (e.g. a fine-tuned rec); dictionary from a local file. Not loaded if the SHA-256 differs |
+| `ocrRec` · `ocrRecDict` | `--ocr-rec` · `--ocr-rec-dict` (+ `--ocr-*-sha256`) | recognition model — by default the default rec reads every page and clearly handwritten pages are re-read with the handwriting rec. `"printed"` (default rec only), `"handwriting"` (Korean handwriting rec for handwritten forms, ~15MB, downloaded on first use), `"auto"` (re-reads handwritten pages with a looser threshold) or a local file `{path, sha256}` (e.g. a fine-tuned rec); dictionary from a local file. Not loaded if the SHA-256 differs |
 | `formulaOcr` | `--formula-ocr` | PDF and image formula OCR (MFD+MFR, ~155MB models) — detected formulas as `$…$` / `$$…$$` (for images the OCR text at the formula is replaced) |
 | `scriptTags` | `--script-tags` · `--no-script-tags` | superscripts/subscripts as `<sup>`/`<sub>` (so "10⁴ m²" does not flatten to "104 m2"). Default: on for HWPX · HWP · DOCX, off for PDF (`true` recommended for papers and math) |
 | `images` | `--no-images` | `false` skips image bytes (placeholders remain; PDF skips PNG encoding) |
 | `plain` | `--plain` | text-first Markdown without image placeholders, link URLs, underline or bold (headings, lists and table structure kept; `blocks` unchanged). `<sup>`/`<sub>` become `10^4`/`H_2O` |
 | `htmlTables` | `--html-tables` | every table as HTML, one tag per indented line (first row `<th>`) |
+| `htmlCellLinks` | `--html-cell-links` | `[text](url)` and URLs in HTML table cells as `<a href>` (clickable in viewers). Off by default: it writes each address twice for LLM/RAG consumers |
 | `tableFormat` | `--table-format gfm` | `"gfm"`: every table as a GFM pipe table, no HTML (vertically merged values repeat on every covered row; horizontally merged values stay in the first cell). Nested tables move out after their parent, linked by `<!-- <table id="t2" parent_id="t1" /> -->` markers (for RAG indexing; not combinable with `htmlTables`) |
 | `password` | `--password` | open password (HWPX · HWP3 · HWP5; not Hancom DRM) |
 | `tables` | `--no-tables` | `false` turns off PDF table detection (two-column exam sheets whose boxes read as tables and flip the order) |
@@ -100,6 +101,10 @@ if (result.success) {
 | `memos` | `--memos` | append document memos (Hangul "insert memo") as a final "메모" section — the memo list is always in the result's `memos` (memo text, anchored text, paragraph, author, time, block index; HWPX · HWP5) |
 | `dedupeRunningHeaders` | `--dedupe-headers` | drop running headers repeated per page in HWP5 layout tables (opt-in: may also drop per-attachment renumbering) |
 | `inlineImages` | `--inline-images` | inline images as base64 data URIs (BMP→PNG, HWP5) |
+| `imageFormat` | `--image-format webp` | image format. Unset: as before, PDF images are PNG and other formats keep the original embedded images. Set: every image is in that format (file name, MIME and bytes agree; the format is judged from the bytes): `"png"` gives PNG, `"webp"` lossless WebP (`exact`; 200 PDF images: 25.5 → 14.8MB, encoding CPU 3.25 → 8.6s). EXIF rotation, ICC, CMYK, animated GIF and SVG are matched to what is shown. Images that cannot be converted (WMF/EMF, unreadable BMP or damaged, WebP over 16,383px) keep their original format with a warning. 2,782 documents: png 4,099 → 775MB, webp 4,099 → 504MB. Needs the optional dependency `sharp` |
+| `imagePlacement` | `--image-placement flow` | where PDF image blocks go. Default `"page-end"` (page end, no `bbox`). `"flow"`: between text blocks by position on the page — after the last block in the same column (blocks that overlap horizontally) that starts at or above the image's top edge, otherwise before that column's first block. Image blocks get a `bbox`. A repeated image appears only where it is first drawn |
+| `dropBlankImages` | `--drop-blank-images` | drop near-uniform images (after compositing on white, every channel's max − min ≤ 24: blank panels, solid bars, faint gradients) from image blocks, `images` and references in text (default false; only when image bytes are produced). All formats — PDFs use the decoded pixels, other formats decode the original (built-in BMP decoder, otherwise the optional dependency `sharp`; WMF/EMF are kept) |
+| `qrCodes` | `--qr-codes` | read QR codes in images into the image block's `qr` and the line after the Markdown image placeholder (an http(s) URL as the autolink `<url>`; all formats, also with `images: false`). Needs the optional dependency `zxing-wasm` |
 | `classifyTables` | — | classify tables as data / layout / uncertain into `IRTable.classification` |
 | `onProgress` | — | progress callback `(current, total)` |
 
@@ -249,6 +254,7 @@ await parse(buffer, {                   // external OCR (Claude Vision, Tesserac
 })
 ```
 
+- Full external OCR example: [`examples/minicpm-ocr`](../examples/minicpm-ocr) — wires a self-hosted MiniCPM-OCR server (vLLM, SGLang, llama.cpp, Ollama) into `OcrProvider`. The example code owns the network call; kordoc itself never talks to the endpoint. It also ships a timing / page-level CER script.
 - Runs on local CPU with no API key (PP-OCRv5 korean ONNX — all 11,172 precomposed Hangul syllables).
 - Only pages without a text layer or with a broken one are OCR'd, and table structure is recovered from scans.
 - Model management: `kordoc models --status` (`--export`/`--import` for air-gapped networks).
@@ -265,20 +271,23 @@ for (const page of r.success ? r.ocrLines ?? [] : []) {
 }
 await parse(buffer, { ocrRec: { path: "/models/my-rec.onnx", sha256: "…" } })   // fine-tuned rec (same dictionary)
 await parse("handwritten-form.pdf", { ocr: true, ocrRec: "handwriting" })        // handwriting recognition model
-await parse("scanned-batch.pdf", { ocr: true, ocrRec: "auto" })                   // handwriting model only on handwritten pages
+await parse("scanned-batch.pdf", { ocr: true, ocrRec: "auto" })                   // handwritten pages with a looser threshold
+await parse("printed-scan.pdf", { ocr: true, ocrRec: "printed" })                 // never downloads or uses the handwriting model
 ```
 
-- `ocrLines` boxes are in OCR raster pixels (top-left origin). Each page carries `width`, `height`, `scale` (px/pt, 3 = 216dpi for PDF by default) and `deskewAngle`;
-  convert to block `bbox` space (PDF pt, bottom-left origin) with `x / scale` and `pageHeight − (y + h) / scale`. For image input the raster is the image as shown (EXIF orientation applied; shrunk if over 24MP).
-  Deskewed pages (`deskewAngle` ≠ 0) use the rotated raster — map back with θ = `deskewAngle` (degrees), (cx, cy) = ((`width`−1)/2, (`height`−1)/2):
-  `x₀ = cx + (x−cx)·cosθ − (y−cy)·sinθ`, `y₀ = cy + (x−cx)·sinθ + (y−cy)·cosθ` (apply to the four box corners).
+- `ocrLines` boxes are in OCR raster pixels (top-left origin). Each page carries `width`, `height`, `scale` (px/pt, 3 = 216dpi for PDF by default), and `deskewAngle`.
+  Orientation correction also sets `pageRotation` (90 or 270 degrees counter-clockwise); dimensions and boxes use the corrected raster.
+  Without rotation, convert PDF boxes to block `bbox` space with `x / scale` and `pageHeight − (y + h) / scale`.
+  For deskew, orientation correction or PDF rotation, use `ocrLinesInPdfSpace(result.ocrLines)` to obtain the original PDF coordinates.
+  For image input the raster follows EXIF orientation and is shrunk if over 24MP.
 - Lines are the ones used to build blocks. Pages where only figure regions were read (the page has a text layer) are marked `regionsOnly: true` and list only lines inside those regions (before the figure-text merge). This path keeps the original PDF region coordinates without rotating the whole page, so `deskewAngle` is 0.
   A user OcrProvider and OCR of images embedded in HWP have no line geometry and are not covered. With the option off, results are unchanged.
 - Local model files need an absolute path and a SHA-256; the engine reads the bytes, checks them and loads those bytes. A rec whose output classes are not dictionary + 2 is rejected.
   Built-in models (including `"server"` and `"handwriting"`) are cached under `~/.cache/kordoc/models/ppocr/` and never downloaded under `KORDOC_OFFLINE`. Automatic OCR (no `ocr` option) runs only when the selected model files are present.
 - `ocrRec: "handwriting"` is a public model fine-tuned from PP-OCRv5 korean rec on handwriting and government-form data ([korean-handwriting-rec](https://github.com/VerifiedIdiot/korean-handwriting-rec), Apache-2.0).
   It uses the built-in Korean dictionary. It is meant for documents with a lot of handwriting such as handwritten applications and survey forms; it can misread narrow digits and slashes (e.g. the page mark `1/2`) that the default model reads correctly, so the default is unchanged.
-  `ocrRec: "auto"` reads each page with the default model and re-reads only pages whose mean character confidence is below 0.9 with the handwriting model, switching when the mean rises by 0.06 or more (printed pages keep the default model; handwritten pages are recognized twice, so they take longer).
+  By default (4.24.42+) each page is read with the default model and only pages whose mean character confidence is below 0.9 are re-read with the handwriting model, switching when the mean rises by more than 0.10, or by more than 0.08 when the handwriting-model mean is at least 0.95, the two readings differ by more than 8% and the page has at least 80 characters (4.24.55+; previously 0.85 and 0.10). The handwriting model is downloaded the first time such a page is met (PDF auto-OCR without an `ocr` option uses it only when already cached); if it cannot be fetched the default result is kept. `ocrRec: "printed"` uses the default model only.
+  `ocrRec: "auto"` uses a looser threshold — pages below 0.9 are re-read and switched when the mean rises by 0.06 or more — and downloads the handwriting model up front (handwritten pages are recognized twice, so they take longer).
   If the selected model cannot be downloaded or opened, kordoc does not fall back to the default model and reports a failure (an `OCR_FAILED` warning for PDFs).
 - MCP `parse_document` accepts preset names only: `ocr_rec: "handwriting" | "auto"`, `ocr_det: "mobile" | "server" | "medium"` and `ocr_det_long_side` (32 to 4096). Local model files are set through the CLI or the library.
 - One engine session is cached per model selection (a resident worker using several selections keeps each in memory).

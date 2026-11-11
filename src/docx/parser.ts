@@ -1,7 +1,7 @@
 /**
  * DOCX (Office Open XML Document) 파서
  *
- * ZIP + XML 구조를 jszip + xmldom으로 파싱하여 IRBlock[]로 변환.
+ * ZIP + XML 구조를 jszip + XML 파서(src/xml/dom)로 파싱하여 IRBlock[]로 변환.
  * w:p → paragraph/heading, w:tbl → table, w:drawing → image.
  */
 
@@ -9,7 +9,7 @@ import { escapeLiteralTags, wrapScript, tidyScriptTags } from "../script-tags.js
 import JSZip from "jszip"
 import { ListCounter } from "./numbering.js"
 import { symbolChar } from "./symbol-font.js"
-import { DOMParser } from "@xmldom/xmldom"
+import { DOMParser, warnInto } from "../xml/dom.js"
 import type {
   CellContext, IRBlock, DocumentMetadata, InternalParseResult,
   ParseOptions, ParseWarning, ExtractedImage, InlineStyle,
@@ -19,6 +19,7 @@ import { blocksToMarkdown, buildTable, escapeLiteralDollar } from "../table/buil
 import { ommlElementToLatex, isDisplayMath } from "./equation.js"
 import { detectImageMime } from "../hwp5/images.js"
 import { readZipEntry } from "../hwpx/parser-shared.js"
+import { parsePageRange } from "../page-range.js"
 
 /** ZIP 압축 해제 누적 최대 크기 (100MB) — ZIP bomb 방지 */
 const MAX_DECOMPRESS_SIZE = unzipLimitBytes(100 * 1024 * 1024)
@@ -100,8 +101,8 @@ function getAttr(el: Element, localName: string): string | null {
   return null
 }
 
-function parseXml(text: string): Document {
-  return new DOMParser().parseFromString(stripDtd(text), "text/xml") as unknown as Document
+function parseXml(text: string, warnings?: ParseWarning[], part = ""): Document {
+  return new DOMParser(warnInto(warnings, `DOCX ${part}`)).parseFromString(stripDtd(text), "text/xml") as unknown as Document
 }
 
 // ─── 스타일 파싱 ────────────────────────────────────────
@@ -115,8 +116,8 @@ interface StyleInfo {
   ilvl?: number
 }
 
-function parseStyles(xml: string): Map<string, StyleInfo> {
-  const doc = parseXml(xml)
+function parseStyles(xml: string, warnings?: ParseWarning[]): Map<string, StyleInfo> {
+  const doc = parseXml(xml, warnings, "word/styles.xml")
   const styles = new Map<string, StyleInfo>()
   const styleElements = findElements(doc, "style")
 
@@ -199,8 +200,8 @@ interface NumberingInfo {
   pStyle?: string
 }
 
-function parseNumbering(xml: string): Map<string, Map<number, NumberingInfo>> {
-  const doc = parseXml(xml)
+function parseNumbering(xml: string, warnings?: ParseWarning[]): Map<string, Map<number, NumberingInfo>> {
+  const doc = parseXml(xml, warnings, "word/numbering.xml")
   const abstractNums = new Map<string, Map<number, NumberingInfo>>()
 
   // abstractNum 파싱
@@ -255,8 +256,8 @@ function parseNumbering(xml: string): Map<string, Map<number, NumberingInfo>> {
 
 // ─── 관계 파싱 ─────────────────────────────────────────
 
-function parseRels(xml: string): Map<string, string> {
-  const doc = parseXml(xml)
+function parseRels(xml: string, warnings?: ParseWarning[], part?: string): Map<string, string> {
+  const doc = parseXml(xml, warnings, part)
   const map = new Map<string, string>()
   const rels = findElements(doc, "Relationship")
   for (const rel of rels) {
@@ -269,8 +270,8 @@ function parseRels(xml: string): Map<string, string> {
 
 // ─── 각주 파싱 ─────────────────────────────────────────
 
-function parseFootnotes(xml: string): Map<string, string> {
-  const doc = parseXml(xml)
+function parseFootnotes(xml: string, warnings?: ParseWarning[]): Map<string, string> {
+  const doc = parseXml(xml, warnings, "word/footnotes.xml")
   const notes = new Map<string, string>()
   const fnElements = findElements(doc, "footnote")
   for (const fn of fnElements) {
@@ -605,6 +606,55 @@ function collectTextboxParagraphs(node: Element, inTxbx = false, out: Element[] 
   return out
 }
 
+interface RenderedPageBreaks {
+  /** 첫 글자 앞 표지 수 — 요소가 새 쪽에서 시작한다 */
+  leading: number
+  /** 첫 글자 뒤 표지 수 — 다음 요소부터 새 쪽이다 */
+  trailing: number
+  /** 그림(a:blip·v:imagedata) → 그 앞 표지 수. 글 뒤 표지 다음의 그림은 문단과 다른 쪽에 있다 */
+  imageBreaks: Map<Element, number>
+  text: boolean
+}
+
+/**
+ * 블록 요소 하나에 든 Word 조판 쪽 나눔 표지(w:lastRenderedPageBreak)를 센다.
+ * 명시 나눔(w:br type="page"·w:pageBreakBefore)은 따로 세지 않는다 — 표지가 빠진 문서는 app.xml Pages 대조에서 걸러진다.
+ * 글상자(w:txbxContent)는 본문 쪽 흐름 밖이고 mc:Fallback 은 Choice 의 사본이라 건너뛴다.
+ */
+function countRenderedPageBreaks(
+  node: Element,
+  acc: RenderedPageBreaks = { leading: 0, trailing: 0, imageBreaks: new Map(), text: false },
+  depth = 0,
+): RenderedPageBreaks {
+  if (depth > 40) return acc
+  for (const el of effectiveChildElements(node)) {
+    if (matchesLocal(el, "txbxContent") || matchesLocal(el, "Fallback")) continue
+    if (matchesLocal(el, "lastRenderedPageBreak")) {
+      if (acc.text) acc.trailing++
+      else acc.leading++
+    } else if (matchesLocal(el, "t") && el.textContent) {
+      acc.text = true
+    } else if (matchesLocal(el, "blip") || matchesLocal(el, "imagedata")) {
+      acc.imageBreaks.set(el, acc.leading + acc.trailing)
+    } else {
+      countRenderedPageBreaks(el, acc, depth + 1)
+    }
+  }
+  return acc
+}
+
+/** Word 가 저장할 때 적은 쪽 수(docProps/app.xml Pages). 없거나 읽지 못하면 undefined */
+async function readSavedPageCount(zip: JSZip): Promise<number | undefined> {
+  const file = zip.file("docProps/app.xml")
+  if (!file) return undefined
+  try {
+    const text = parseXml(await readZipEntry(file, "text")).getElementsByTagNameNS("*", "Pages")[0]?.textContent?.trim()
+    return text && /^\d+$/.test(text) ? Number(text) : undefined
+  } catch {
+    return undefined
+  }
+}
+
 interface RawDocxCell {
   /** 그리드 열 주소 — gridSpan 누적 합 (배열 인덱스는 span 앞에서 어긋난다) */
   col: number
@@ -836,6 +886,7 @@ function emitParagraphImages(
   imageMap: Map<string, string>,
   linked: Set<string>,
   out: IRBlock[],
+  pageOf?: (blip: Element) => number,
 ): void {
   for (const blip of collectParagraphBlips(p)) {
     // a:blip은 r:embed, v:imagedata는 r:id
@@ -844,7 +895,7 @@ function emitParagraphImages(
     const filename = imageMap.get(embedId)
     if (!filename) continue
     linked.add(embedId)
-    out.push({ type: "image", text: filename })
+    out.push({ type: "image", text: filename, ...(pageOf ? { pageNumber: pageOf(blip) } : {}) })
   }
 }
 
@@ -867,6 +918,7 @@ async function parseHeaderFooterBlocks(
   styles: Map<string, StyleInfo>,
   numbering: Map<string, Map<number, NumberingInfo>>,
   footnotes: Map<string, string>,
+  warnings: ParseWarning[],
 ): Promise<IRBlock[]> {
   const out: IRBlock[] = []
   const seenParts = new Set<string>()
@@ -879,9 +931,9 @@ async function parseHeaderFooterBlocks(
     seenParts.add(path)
     if (!file) continue
     const xml = await readZipEntry(file, "text")
-    const partDoc = parseXml(xml)
+    const partDoc = parseXml(xml, warnings, path)
     const relsFile = zip.file(path.replace(/([^/]+)$/, "_rels/$1.rels"))
-    const partRels = relsFile ? parseRels(await readZipEntry(relsFile, "text")) : new Map<string, string>()
+    const partRels = relsFile ? parseRels(await readZipEntry(relsFile, "text"), warnings, relsFile.name) : new Map<string, string>()
     const found: IRBlock[] = []
     for (const el of partDoc.documentElement ? effectiveChildElements(partDoc.documentElement) : []) {
       if (matchesLocal(el, "p")) {
@@ -912,7 +964,8 @@ export async function parseDocxDocument(
   options?: ParseOptions,
 ): Promise<InternalParseResult> {
   // ZIP bomb 사전 검사
-  const readImages = options?.images !== false
+  // QR(qrCodes)은 images: false 여도 그림을 읽는다 — 바이트는 parse() 가 뗀다
+  const readImages = options?.images !== false || !!options?.qrCodes
   precheckZipSize(buffer, MAX_DECOMPRESS_SIZE, undefined, { re: MEDIA_PART_RE, skip: !readImages, never: NEVER_READ_RE })
 
   const zip = await JSZip.loadAsync(buffer)
@@ -928,7 +981,7 @@ export async function parseDocxDocument(
   let rels = new Map<string, string>()
   const relsFile = zip.file("word/_rels/document.xml.rels")
   if (relsFile) {
-    rels = parseRels(await readZipEntry(relsFile, "text"))
+    rels = parseRels(await readZipEntry(relsFile, "text"), warnings, "word/_rels/document.xml.rels")
   }
 
   // 2. 스타일 로드
@@ -936,7 +989,7 @@ export async function parseDocxDocument(
   const stylesFile = zip.file("word/styles.xml")
   if (stylesFile) {
     try {
-      styles = parseStyles(await readZipEntry(stylesFile, "text"))
+      styles = parseStyles(await readZipEntry(stylesFile, "text"), warnings)
     } catch (err) {
       warnings.push({
         code: "PARTIAL_PARSE",
@@ -950,7 +1003,7 @@ export async function parseDocxDocument(
   const numFile = zip.file("word/numbering.xml")
   if (numFile) {
     try {
-      numbering = parseNumbering(await readZipEntry(numFile, "text"))
+      numbering = parseNumbering(await readZipEntry(numFile, "text"), warnings)
     } catch (err) {
       warnings.push({
         code: "PARTIAL_PARSE",
@@ -964,7 +1017,7 @@ export async function parseDocxDocument(
   const fnFile = zip.file("word/footnotes.xml")
   if (fnFile) {
     try {
-      footnotes = parseFootnotes(await readZipEntry(fnFile, "text"))
+      footnotes = parseFootnotes(await readZipEntry(fnFile, "text"), warnings)
     } catch (err) {
       warnings.push({
         code: "PARTIAL_PARSE",
@@ -975,7 +1028,7 @@ export async function parseDocxDocument(
 
   // 5. 본문 파싱
   const docXml = await readZipEntry(docFile, "text")
-  const doc = parseXml(docXml)
+  const doc = parseXml(docXml, warnings, "word/document.xml")
   const body = findElements(doc, "body")
   if (body.length === 0) {
     throw new KordocError("DOCX 본문(w:body)을 찾을 수 없습니다")
@@ -989,44 +1042,83 @@ export async function parseDocxDocument(
   const bodyEl = body[0]
   // sdt(콘텐츠 컨트롤)로 감싼 블록 문단/표도 펼쳐서 본다
   const topLevel = effectiveChildElements(bodyEl)
+  // 쪽 번호는 Word 가 저장한 조판 표지로만 — 표지가 없는 문서(Word 밖에서 만든 문서)는 쪽을 매기지 않는다.
+  // 명시 나눔만 세면 넘쳐서 넘어간 쪽이 빠져 실제보다 작은 번호가 된다.
+  // 표지는 Word 판·저장 시점에 따라 빠진 자리가 있어, 같은 저장의 docProps/app.xml Pages 와 쪽 수가 같을 때만 쓴다
+  const pageBreaks = topLevel.map(el => countRenderedPageBreaks(el))
+  const breakCount = pageBreaks.reduce((n, b) => n + b.leading + b.trailing, 0)
+  const rendered = breakCount > 0 && breakCount + 1 === await readSavedPageCount(zip)
+  // 그림 관계 id → 쪽. 본문 워크에서 링크되지 않아 문서 끝에 붙는 그림(표 칸 안 등)에 쓴다
+  const imagePages = new Map<string, number>()
+  let page = 1
 
-  for (const el of topLevel) {
+  for (const [k, el] of topLevel.entries()) {
     const localName = el.localName ?? el.tagName?.split(":").pop()
+    const first = blocks.length
+    const start = page
+    const breaks = rendered ? pageBreaks[k] : undefined
+    const pageOf = breaks && ((blip: Element) => start + (breaks.imageBreaks.get(blip) ?? breaks.leading))
+    if (breaks) {
+      page += breaks.leading
+      for (const blip of breaks.imageBreaks.keys()) {
+        const embedId = getAttr(blip, "embed") ?? getAttr(blip, "id")
+        if (embedId && !imagePages.has(embedId)) imagePages.set(embedId, pageOf!(blip))
+      }
+    }
 
     if (localName === "p") {
       const block = parseParagraph(el, styles, numbering, footnotes, rels)
       if (block) blocks.push(block)
       // 문단 내 이미지를 문서 순서대로 본문에 삽입 (저장만 되고 링크 누락되던 버그 수정)
-      if (imageMap.size > 0) emitParagraphImages(el, imageMap, linkedImages, blocks)
+      if (imageMap.size > 0) emitParagraphImages(el, imageMap, linkedImages, blocks, pageOf)
       // 텍스트박스(도형 안 글) 문단 — 앵커 문단 뒤에 별도 블록으로
       for (const tp of collectTextboxParagraphs(el)) {
         const tb = parseParagraph(tp, styles, numbering, footnotes, rels)
         if (tb) blocks.push(tb)
-        if (imageMap.size > 0) emitParagraphImages(tp, imageMap, linkedImages, blocks)
+        if (imageMap.size > 0) emitParagraphImages(tp, imageMap, linkedImages, blocks, pageOf)
       }
     } else if (localName === "tbl") {
       const block = parseTable(el, styles, numbering, footnotes, rels, options?.keepTrailingEmptyCols)
       if (block) blocks.push(block)
+    }
+    if (breaks) {
+      for (let i = first; i < blocks.length; i++) blocks[i].pageNumber ??= page
+      page += breaks.trailing
     }
   }
 
   // 본문 워크에서 링크되지 않은 이미지(표 셀 안 등)는 문서 끝에 참조 추가 —
   // 위치는 부정확하지만 "파일만 저장되고 본문 링크 없음"을 방지
   for (const [embedId, filename] of imageMap) {
-    if (!linkedImages.has(embedId)) blocks.push({ type: "image", text: filename })
+    if (!linkedImages.has(embedId)) blocks.push({ type: "image", text: filename, ...(imagePages.has(embedId) ? { pageNumber: imagePages.get(embedId) } : {}) })
+  }
+
+  // 쪽 범위(-p·pages) — Word 조판 쪽으로 거른다. 표지가 없는 문서는 쪽이 없어 종전처럼 거르지 않는다
+  if (rendered && options?.pages) {
+    const keep = parsePageRange(options.pages, page)
+    blocks.splice(0, blocks.length, ...blocks.filter(b => b.pageNumber === undefined || keep.has(b.pageNumber)))
   }
 
   // 머리글은 본문 앞, 바닥글은 문서 끝 (HWPX 머리말·꼬리말 배치와 같다)
-  blocks.unshift(...await parseHeaderFooterBlocks(zip, doc, rels, "header", styles, numbering, footnotes))
-  blocks.push(...await parseHeaderFooterBlocks(zip, doc, rels, "footer", styles, numbering, footnotes))
+  blocks.unshift(...await parseHeaderFooterBlocks(zip, doc, rels, "header", styles, numbering, footnotes, warnings))
+  const footerBlocks = await parseHeaderFooterBlocks(zip, doc, rels, "footer", styles, numbering, footnotes, warnings)
+  // 바닥글은 남은 본문의 마지막 쪽에 — 쪽 번호가 없으면 직전 블록(문서 끝 그림)의 쪽으로 붙는다
+  const lastPage = blocks.reduce((m, b) => Math.max(m, b.pageNumber ?? 0), 0)
+  if (lastPage > 0) for (const b of footerBlocks) b.pageNumber ??= lastPage
+  blocks.push(...footerBlocks)
+  if (rendered && options?.pages) {
+    // 걸러진 쪽의 그림은 결과 이미지에서도 뺀다
+    const shown = new Set(blocks.filter(b => b.type === "image").map(b => b.text))
+    images.splice(0, images.length, ...images.filter(img => shown.has(img.filename)))
+  }
 
   // 7. 메타데이터
-  const metadata: DocumentMetadata = {}
+  const metadata: DocumentMetadata = rendered ? { pageCount: page, pageMode: "layout" } : {}
   const coreFile = zip.file("docProps/core.xml")
   if (coreFile) {
     try {
       const coreXml = await readZipEntry(coreFile, "text")
-      const coreDoc = parseXml(coreXml)
+      const coreDoc = parseXml(coreXml, warnings, "docProps/core.xml")
       const getFirst = (tag: string) => {
         const els = coreDoc.getElementsByTagName(tag)
         return els.length > 0 ? (els[0].textContent ?? "").trim() : undefined
@@ -1049,7 +1141,7 @@ export async function parseDocxDocument(
   // 8. 아웃라인
   const outline = blocks
     .filter(b => b.type === "heading")
-    .map(b => ({ level: b.level ?? 2, text: b.text ?? "" }))
+    .map(b => ({ level: b.level ?? 2, text: b.text ?? "", pageNumber: b.pageNumber }))
 
   const markdown = blocksToMarkdown(blocks, { tableFormat: options?.tableFormat })
 

@@ -86,9 +86,24 @@ describe("사전·직접 호출", () => {
 describe("모델 선택·기본 설정", () => {
   it("옵션이 없으면 기본 설정 객체 그대로 — 엔진은 종전과 같은 모델·튜닝", () => {
     assert.equal(builtinOcrConfig(undefined), DEFAULT_BUILTIN_OCR)
-    assert.equal(builtinOcrConfig({ ocr: true, ocrLines: false }), DEFAULT_BUILTIN_OCR)
     assert.equal(DEFAULT_BUILTIN_OCR.tuning, DEFAULT_OCR_TUNING)
     assert.equal(DEFAULT_BUILTIN_OCR.lines, undefined)
+    // OCR 을 켜면 같은 모델·튜닝에 손글씨 rec 받기만 허용한다
+    const on = builtinOcrConfig({ ocr: true, ocrLines: false })
+    assert.equal(on.models, DEFAULT_BUILTIN_OCR.models)
+    assert.equal(on.tuning, DEFAULT_OCR_TUNING)
+    assert.equal(on.autoRec?.fetch, true)
+    assert.equal(DEFAULT_BUILTIN_OCR.autoRec?.fetch, undefined)
+  })
+
+  it("기본은 뚜렷한 손글씨 쪽만 손글씨 rec 로(.9 아래·.10 상승, 또는 .08 상승에 손글씨 rec .95 이상·글 8% 차이·80자 이상, 미리 받지 않음) — auto 는 너그러운 문턱, printed 는 끔", () => {
+    assert.deepEqual(DEFAULT_BUILTIN_OCR.autoRec, { pageConf: 0.9, gain: 0.08, altConf: 0.95, sureGain: 0.1, minDiff: 0.08, minChars: 80, lazy: true })
+    assert.ok(DEFAULT_BUILTIN_OCR.handwriting)
+    assert.deepEqual(builtinOcrConfig({ ocrRec: "auto" }).autoRec, { pageConf: 0.9, gain: 0.06 })
+    const printed = builtinOcrConfig({ ocrRec: "printed" })
+    assert.equal(printed.handwriting, undefined)
+    assert.equal(printed.models.rec, DEFAULT_OCR_MODELS.rec)
+    assert.equal(builtinOcrConfig({ ocrRec: "handwriting" }).handwriting, undefined)
   })
 
   it("ocrDet·ocrDetLongSide·로컬 파일 → 선택·튜닝·캐시 키", () => {
@@ -307,6 +322,38 @@ describe("손글씨 rec 프리셋 E2E (손글씨 rec 가 캐시에 있을 때만
     assert.match(low.map(it => it.text).join(""), /대한민국/)
     const high = await recognizeOcrPage(fake(0.99), config, config.tuning, data, width, height, { droppedLowConf: 0 })
     assert.deepEqual(high.map(it => it.text), ["가짜"])
+  })
+})
+
+describe("저신뢰로 버린 줄이 많은 쪽은 큰 검출로 다시 읽기 (가짜 엔진)", () => {
+  // 검출 크기마다 다른 결과를 내는 가짜 엔진 — 부른 크기를 적는다
+  const engine = (by: Record<number, { conf: number; n: number; dropped: number }>, calls: number[]) => ({
+    recognizePage: async (_d: unknown, _w: number, _h: number, stats: { droppedLowConf: number }, tuning: { detLongSide: number }) => {
+      calls.push(tuning.detLongSide)
+      const r = by[tuning.detLongSide]
+      stats.droppedLowConf = r.dropped
+      return Array.from({ length: r.n }, (_, i) => ({ text: `줄${tuning.detLongSide}`, x: 0, y: i * 20, w: 10, h: 10, confidence: r.conf }))
+    },
+  }) as never
+  const config = builtinOcrConfig({ ocrRec: "printed" })
+  const data = new Uint8Array(4 * 4 * 4)
+
+  it("버린 줄 15+·15%+ 이면 5/3 배 검출로 다시 읽고, 버린 줄이 줄고 확신도가 오르면 그것을 쓴다", async () => {
+    const calls: number[] = [], stats = { droppedLowConf: 0 }
+    const items = await recognizeOcrPage(engine({ 960: { conf: 0.85, n: 60, dropped: 40 }, 1600: { conf: 0.92, n: 90, dropped: 2 } }, calls), config, config.tuning, data, 4, 4, stats)
+    assert.deepEqual(calls, [960, 1600])
+    assert.equal(items[0].text, "줄1600")
+    assert.equal(stats.droppedLowConf, 2)
+  })
+
+  it("큰 검출이 확신도를 못 올리거나, 버린 줄이 적은 쪽은 그대로", async () => {
+    let calls: number[] = []
+    const worse = await recognizeOcrPage(engine({ 960: { conf: 0.85, n: 60, dropped: 40 }, 1600: { conf: 0.8, n: 30, dropped: 4 } }, calls), config, config.tuning, data, 4, 4, { droppedLowConf: 0 })
+    assert.deepEqual(calls, [960, 1600])
+    assert.equal(worse[0].text, "줄960")
+    calls = []
+    await recognizeOcrPage(engine({ 960: { conf: 0.85, n: 200, dropped: 20 } }, calls), config, config.tuning, data, 4, 4, { droppedLowConf: 0 })
+    assert.deepEqual(calls, [960], "버린 줄 20 은 전체 220 의 9% — 다시 읽지 않는다")
   })
 })
 

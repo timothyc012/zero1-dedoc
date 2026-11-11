@@ -38,11 +38,12 @@ export function bandBoxes(b: Box, bands: Array<{ y0: number; y1: number; x0: num
  * — 공식 전처리(cv2.resize 기본)와 같은 보간.
  */
 /** keep: 박스 로컬 [x0, x1)×[y0, y1) 밖은 배경 휘도 bg 로 칠한다 (rot 0 만 — 박스 끝에 걸린 이웃 줄 조각·상자 테두리 지우기) */
-export function lineCrop(rgba: Uint8Array, pageW: number, box: Box, rot: 0 | 90 | 270, keep?: { x0: number; x1: number; y0: number; y1: number; bg: number }): { rgb: Uint8Array; w: number } {
-  if (box.quad && rot === 0) return quadCrop(rgba, pageW, box.quad)
+export function lineCrop(rgba: Uint8Array, pageW: number, box: Box, rot: 0 | 90 | 270, keep?: { x0: number; x1: number; y0: number; y1: number; bg: number }, stretch = 1): { rgb: Uint8Array; w: number } {
+  if (box.quad && rot === 0) return quadCrop(rgba, pageW, box.quad, stretch)
   const srcW = rot === 0 ? box.w : box.h
   const srcH = rot === 0 ? box.h : box.w
-  const rw = Math.min(REC_MAX_WIDTH, Math.max(16, Math.round((srcW * REC_HEIGHT) / srcH)))
+  // stretch: 가로로 늘려 읽기 — 자간 좁은 글꼴의 같은 숫자 연속("000")을 CTC 가 한 자로 합치지 않게 (engine 숫자 자릿수 재인식)
+  const rw = Math.min(REC_MAX_WIDTH, Math.max(16, Math.round((srcW * REC_HEIGHT * stretch) / srcH)))
   const rgb = new Uint8Array(rw * REC_HEIGHT * 3)
   // 회전 좌표 → 페이지 픽셀
   const at = (u: number, v: number): number => {
@@ -85,13 +86,13 @@ export function lineCrop(rgba: Uint8Array, pageW: number, box: Box, rot: 0 | 90 
 /** Affine rectification of a detector's oriented rectangle, sampled at pixel
  * centers. Outside-page padding is white; the caller retains page geometry.
  */
-function quadCrop(rgba: Uint8Array, pageW: number, q: [Point, Point, Point, Point]): { rgb: Uint8Array; w: number } {
+function quadCrop(rgba: Uint8Array, pageW: number, q: [Point, Point, Point, Point], stretch: number): { rgb: Uint8Array; w: number } {
   const sourceW = Math.hypot(q[1].x - q[0].x, q[1].y - q[0].y)
   const sourceH = Math.hypot(q[3].x - q[0].x, q[3].y - q[0].y)
   if (!Number.isFinite(sourceW) || !Number.isFinite(sourceH) || sourceW < 1 || sourceH < 1) {
     throw new Error("Invalid OCR oriented crop dimensions")
   }
-  const rw = Math.min(REC_MAX_WIDTH, Math.max(16, Math.round(sourceW * REC_HEIGHT / sourceH)))
+  const rw = Math.min(REC_MAX_WIDTH, Math.max(16, Math.round(sourceW * REC_HEIGHT * stretch / sourceH)))
   const rgb = new Uint8Array(rw * REC_HEIGHT * 3).fill(255)
   const pageH = rgba.length / (pageW * 4)
   for (let y = 0; y < REC_HEIGHT; y++) for (let x = 0; x < rw; x++) {
@@ -113,16 +114,20 @@ function quadCrop(rgba: Uint8Array, pageW: number, q: [Point, Point, Point, Poin
 }
 
 
+/** 칸 경계 세로선이 상자 끝에서 이만큼(상자 높이 배수) 안쪽이어야 가른다 — 이웃 칸 글자 하나("6,796몽")는 높이보다 좁다 */
+const CELL_RULE_MARGIN = 0.7
+
 /** Split a detected line at ruled cell boundaries before recognizing its text. */
 export function splitBoxAtCellRules(b: Box, rules: Array<{ x1: number; y1: number; y2: number; thicknessPx: number }>): Box[] {
-  const cuts = rules.filter(r => r.x1 > b.x + b.h && r.x1 < b.x + b.w - b.h
+  const m = b.h * CELL_RULE_MARGIN
+  const cuts = rules.filter(r => r.x1 > b.x + m && r.x1 < b.x + b.w - m
     && r.y1 <= b.y + b.h * 0.25 && r.y2 >= b.y + b.h * 0.75).sort((a, c) => a.x1 - c.x1)
   if (!cuts.length) return [b]
   const out: Box[] = []
   let left = b.x
   for (const r of cuts) {
     const edge = Math.floor(r.x1 - r.thicknessPx / 2 - 1)
-    if (edge - left < b.h) continue
+    if (edge - left < m) continue
     out.push(sliceBox(b, left, edge))
     left = Math.ceil(r.x1 + r.thicknessPx / 2 + 1)
   }

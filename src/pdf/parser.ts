@@ -20,7 +20,11 @@ import { unframeLayoutTables, CONTENT_CELLS, CELL_BASELINES } from "../table/lay
 import { CELL_LINES, CLIP_TABLES, IMAGE_CELLS } from "./table-meta.js"
 import { extractImageRegions, extractLines } from "./line-detector.js"
 import { mergeOcrImageRegions, type ImageRegion } from "./ocr-region-merge.js"
-import { createPdfImageState, extractPageImages, injectPageImageBlocks } from "./image-extract.js"
+import { blankLargeImageStreams } from "./image-blank.js"
+import { openPdfiumImages } from "./pdfium-images.js"
+import { createPdfImageState, extractPageImages, flushPdfImages, injectPageImageBlocks, moveImagesInFlow } from "./image-extract.js"
+import { loadWebpEncoder, WEBP_UNAVAILABLE } from "../image/webp.js"
+import { loadQrReader, QR_UNAVAILABLE } from "../qr.js"
 import { computePageQuality, summarizeDocumentQuality, type PageQuality } from "./quality.js"
 import { scanVectorGlyphs, ocrVectorOps } from "./vector-glyphs.js"
 import { type PdfTextItem, type NormItem, normalizeItems, filterHiddenText } from "./text-line.js"
@@ -132,10 +136,10 @@ export const PDFJS_DOCUMENT_OPTIONS = {
 }
 
 /** getDocument + 타임아웃 래퍼 */
-async function loadPdfWithTimeout(buffer: ArrayBuffer) {
+async function loadPdfWithTimeout(buffer: ArrayBuffer, data?: Uint8Array) {
   const loadingTask = getDocument({
     // pdfjs transfers its input to the worker; retain the caller's buffer for reuse.
-    data: new Uint8Array(buffer.slice(0)),
+    data: data ?? new Uint8Array(buffer.slice(0)),
     ...PDFJS_DOCUMENT_OPTIONS,
   })
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -164,7 +168,13 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
   const autoOcr = options?.ocr === undefined && await ocrModelsCached(resolveOcrModels(options)) &&
     (options?.ocrRec !== "auto" || await ocrModelsCached(handwritingFallbackModels(resolveOcrModels(options))))
   const ocrBuffer: ArrayBuffer | null = options?.ocr || autoOcr ? buffer : null
-  const doc = await loadPdfWithTimeout(buffer)
+  // 큰 그림은 pdfjs 사본에서 표본을 지우고 PDFium 이 원본에서 디코딩한다 (#186) — PDFium 이 없거나 못 열면 지우지 않은 사본
+  const pdfjsData = new Uint8Array(buffer.slice(0))
+  const blanked = blankLargeImageStreams(pdfjsData)
+  const pdfium = blanked.byRaw.size > 0 ? await openPdfiumImages(buffer, blanked) : null
+  const doc = await loadPdfWithTimeout(buffer, blanked.byRaw.size === 0 || pdfium ? pdfjsData : undefined).catch(e => { pdfium?.close(); throw e })
+  // PDFium 이 못 찾는 지운 그림은 지우지 않은 pdfjs 문서로 — 필요할 때만 연다
+  let pristine: ReturnType<typeof loadPdfWithTimeout> | undefined
 
   try {
     const pageCount = doc.numPages
@@ -206,7 +216,12 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     // 이미지 XObject 바이트 추출 상태 (문서 단위 중복 억제·상한).
     // image 블록은 페이지 경계 표 병합(mergeCrossPageTables)의 인접성을 깨지 않도록
     // 페이지별로 모아뒀다가 병합 후 주입한다.
-    const imageState = createPdfImageState()
+    const wantWebp = options?.imageFormat === "webp" && options.images !== false
+    const encodeWebp = wantWebp ? await loadWebpEncoder() : null
+    if (wantWebp && !encodeWebp) warnings.push(WEBP_UNAVAILABLE)
+    const imageState = createPdfImageState(pdfium ? { decoder: pdfium, sizes: blanked.sizes, pristine: () => (pristine ??= loadPdfWithTimeout(buffer)) } : undefined, encodeWebp ?? undefined, options?.imagePlacement === "flow", !!options?.dropBlankImages && options?.images !== false)
+    const readQr = options?.qrCodes ? await loadQrReader() : null
+    if (options?.qrCodes && !readQr) warnings.push(QR_UNAVAILABLE)
     const imageBulletShapes = new Map<string, boolean>()
     const imageArrowDirections = new Map<string, -1 | 0 | 1>()
     const extractedImages: ExtractedImage[] = []
@@ -358,7 +373,10 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
             // 아이콘이 잡음 글("0 0")로 들어와 제목 구조가 흐트러진다(ODL 200 실측)
             // 쪽 머리 띠(위 20%)의 작은 로고(0.5% 이상)도 — 기관·사업 이름이 로고 글로만 있다(ODL 147·148·150 "ECO Circle")
             const headerLogo = area >= pageArea * 0.005 && r.y1 >= pageH * 0.8
-            if (area < pageArea * 0.02 && !headerLogo) continue // 작은 장식 이미지 무시
+            // 글 한 줄을 그림으로 찍은 가는 띠(0.5% 이상, 가로가 높이 6배 이상·쪽 높이 4% 이하)도 — 각주를 띠 그림으로 둔 쪽(ODL 184 "1 Evaluated
+            // against …")은 줄이 쪽 면적 1~2% 띠 여럿이다. 기본 자동 OCR 은 5% 넘는 그림만 읽어 `ocr: true` 에서만 쓰인다
+            const textStrip = area >= pageArea * 0.005 && r.x2 - r.x1 >= (r.y2 - r.y1) * 6 && r.y2 - r.y1 <= pageH * 0.04
+            if (area < pageArea * 0.02 && !headerLogo && !textStrip) continue // 작은 장식 이미지 무시
             const large = area >= pageArea * 0.05
             if (large) pagesWithLargeImage.add(i)
             const hasText = visible.some(it => {
@@ -393,7 +411,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
         // 이미지 XObject 바이트 추출 — 블록 주입은 표 병합 후(injectPageImageBlocks)
         // images:false 면 PNG 인코딩을 건너뛰고 자리 표시 블록만 받는다
         try {
-          const { blocks: imgBlocks, images: pageImages } = await extractPageImages(page, opList.fnArray, opList.argsArray, i, imageState, warnings, options?.images !== false)
+          const { blocks: imgBlocks, images: pageImages } = await extractPageImages(page, opList.fnArray, opList.argsArray, i, imageState, warnings, options?.images !== false, readQr ?? undefined)
           if (imgBlocks.length > 0) pageImageBlocks.set(i, imgBlocks)
           extractedImages.push(...pageImages)
         } catch { /* 이미지 추출 실패가 텍스트 파싱을 막지 않도록 */ }
@@ -591,6 +609,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     // 쪽 넘김으로 꺾인 본문 문단 잇기 — 머리말·꼬리말 제거 뒤, 쪽 끝 그림 주입 전 (line-wrap.ts)
     joinPageBreakWraps(blocks, wrapLexicon)
 
+    await flushPdfImages(imageState, warnings, pageImageBlocks)
     // 추출 이미지 참조를 페이지 말미 위치에 주입 (표 병합 뒤 — 인접성 보존)
     injectPageImageBlocks(blocks, pageImageBlocks)
 
@@ -635,6 +654,9 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     // 메트릭 수집 끝났으니 블록 텍스트의 C0/C1 제어문자(NUL 등) 정리
     sanitizeBlockControlChars(blocks)
     // 1×1 상자는 원문 기하에서 얻은 문단·중첩표 순서로 편다. keep 모드의 원 구조는 반환 blocks 에 남긴다.
+    // 그림 제자리(imagePlacement "flow") — 제목·캡션·목록 판정이 4.24.50 과 같은 블록 열(쪽 끝 그림)로 끝난 뒤에 옮긴다.
+    // 먼저 옮기면 그림이 이웃 블록을 갈라 제목·캡션 잇기가 달라졌다(ODL 062 제목이 문단으로)
+    if (options?.imagePlacement === "flow") moveImagesInFlow(blocks)
     let outBlocks = splitSingleCellTables(blocks)
     if (options?.layoutTables !== "keep") {
       blocks.length = 0
@@ -706,6 +728,8 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     }
   } finally {
     await doc.destroy().catch(() => {})
+    pdfium?.close()
+    await pristine?.then(d => d.destroy()).catch(() => {})
   }
 }
 

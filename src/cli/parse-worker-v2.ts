@@ -13,6 +13,7 @@ import { parseWorkerFile } from "./worker-parse.js"
 import { validateOcrOptions } from "../ocr/options.js"
 import { lintBlocks } from "../hwpx/lint-blocks.js"
 import { PRESET_ALIAS } from "../hwpx/gongmun.js"
+import { insideSandbox } from "../shared/sandbox.js"
 
 export const PARSE_WORKER_PROTOCOL_V2 = 2
 export const CAPABILITIES = ["parse", "options", "transport.images.inline", "transport.images.files", "lint.blocks"] as const
@@ -40,6 +41,7 @@ const modelFileSchema = z.object({ path: z.string(), sha256: z.string() }).stric
 const optionsSchema = z.object({
   tableFormat: z.literal("gfm"),
   htmlTables: z.boolean(),
+  htmlCellLinks: z.boolean(),
   layoutTables: z.enum(["visual", "keep"]),
   classifyTables: z.boolean(),
   tables: z.boolean(),
@@ -54,11 +56,15 @@ const optionsSchema = z.object({
   pages: z.union([z.string(), z.array(z.number().int().positive())]),
   images: z.boolean(),
   inlineImages: z.boolean(),
+  qrCodes: z.boolean(),
+  imageFormat: z.enum(["png", "webp"]),
+  imagePlacement: z.enum(["page-end", "flow"]),
+  dropBlankImages: z.boolean(),
   ocr: z.union([z.boolean(), z.literal("force")]),
   ocrLines: z.union([z.boolean(), z.literal("all")]),
   ocrDet: z.union([z.enum(["mobile", "server", "medium"]), modelFileSchema]),
   ocrDetLongSide: z.number().int(),
-  ocrRec: z.union([z.literal("handwriting"), z.literal("auto"), modelFileSchema]),
+  ocrRec: z.union([z.literal("handwriting"), z.literal("auto"), z.literal("printed"), modelFileSchema]),
   ocrRecDict: modelFileSchema,
   formulaOcr: z.boolean(),
   password: z.string(),
@@ -249,7 +255,10 @@ export async function runParseWorkerV2(opts: ParseWorkerV2Options = {}): Promise
   const fail = (id: unknown, code: WorkerErrorCode, message: string) =>
     write({ ...(validId(id) ? { id } : {}), error: { code, message } })
 
-  await write({ ready: true, version: VERSION, protocol: PARSE_WORKER_PROTOCOL_V2, capabilities: [...CAPABILITIES] })
+  // gVisor 샌드박스 안에서 쓴 파일은 끝나면 사라진다 — files 전송을 알리지 않고 요청도 거절한다
+  const sandboxed = insideSandbox()
+  const capabilities = sandboxed ? CAPABILITIES.filter((c) => c !== "transport.images.files") : [...CAPABILITIES]
+  await write({ ready: true, version: VERSION, protocol: PARSE_WORKER_PROTOCOL_V2, capabilities })
 
   /** stdout 이 닫혀 stdin 을 끊어 생긴 premature close 는 입력의 끝으로 본다 */
   async function* requests(): AsyncGenerator<{ line?: string; tooLarge?: true }> {
@@ -295,6 +304,7 @@ export async function runParseWorkerV2(opts: ParseWorkerV2Options = {}): Promise
     const { file, transport } = req.data
     if (!isAbsolute(file)) { await fail(id, "INVALID_REQUEST", "file 은 절대 경로여야 합니다"); continue }
     const files = transport?.images === "files"
+    if (files && sandboxed) { await fail(id, "INVALID_REQUEST", "transport.images \"files\" 는 KORDOC_SANDBOX=gvisor 에서 쓸 수 없습니다 — 샌드박스 안에서 쓴 파일은 사라집니다. \"inline\" 을 쓰세요"); continue }
     if (files) {
       const dir = transport?.assetsDir
       let isDir = false

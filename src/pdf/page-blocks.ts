@@ -11,9 +11,10 @@ import type { IRBlock, IRTable, IRCell, BoundingBox, InlineStyle } from "../type
 import { safeMin, safeMax } from "../utils.js"
 import { buildClipCellGrids, dropGridsInside, type ClipPage } from "./clip-cells.js"
 import { dropShadingClipGrids, dropInsetClipGrids, dropHeadBandClipGrids, dropRuledFragmentClipGrids, dropCoarseClipGrids } from "./table-grid.js"
-import { chainShortSegments } from "./line-extract.js"
+import { chainShortSegments, type ClipRect } from "./line-extract.js"
 import { isTextRunClipStrip, isProseBoxGrid, isSparseProseGrid } from "./grid-classify.js"
 import { extractLines, preprocessLines, filterPageBorderLines, closeOpenTableEdges, bridgeSplitColumnVerticals, buildTableGrids, extractCells, mapTextToCells, cellTextToString, normalizeUndersegmentedTable, type TextItem, type TableGrid, type LineSegment } from "./line-detector.js"
+import { extendStraddledVerticals } from "./ocr-straddle-verticals.js"
 import { detectClusterTables, findTwoColumnProseCutX, sideTabGlyphs, type ClusterItem, type ClusterTableResult } from "./cluster-detector.js"
 import { copyOcrTextGaps } from "../ocr/text-gaps.js"
 import { type NormItem, computeBBox, dominantStyle, groupByY, mergeSuperscriptLines, mergeLineSimple } from "./text-line.js"
@@ -53,6 +54,9 @@ import { extendNestedShadedHeaders } from "./nested-shaded-headers.js"
 import { isChartTable, isExamLayoutTable, isFormulaTable, isTableOfContents, tocBlock, valueAxisBeside } from "./table-roles.js"
 import { isSideTabTable, SIDE_TAB_TABLES } from "./side-tabs.js"
 import { attachSideTabBlocks } from "./side-tab-blocks.js"
+
+/** 그림 클립 판정 — 클립 사각형과 그림 영역의 변이 이 안(pt)이면 그 그림만 잘라 내는 클립이다 */
+const IMAGE_CLIP_TOL = 1
 import { splitTwoColumnProse, figureColumnBands, topTableBand, tieredHeaderTable, stackedTableBands, threeColumnCards, threeColumnInfographic } from "./page-regions.js"
 
 /** 쪽 사이로 넘기는 칸 이어짐 상태 — 앞 쪽 번호와 그 쪽 클립 사실 (다음 쪽 첫 클립이 앞 쪽 마지막 칸의 이어짐인지 가른다, clip-cells) */
@@ -161,8 +165,13 @@ export function extractPageBlocksWithLines(
   // 1.2단계: 셀 클립 사각형 → 테두리 없는 표 그리드 (법령 별지서식 외곽 표). 셀 기하가 확정돼
   // 있어 line 경로를 거치지 않고, 실선 표는 아래 line 경로가 그대로 맡는다 (clip-cells.ts)
   const prevPage = carry?.page === pageNum - 1 ? carry.clip : undefined
+  // 그림 한 장을 잘라 내는 클립(네 변이 그 그림 영역과 맞는 사각형)끼리만 맞댄 묶음은 칸이 아니다 — 띠 그림을 쌓아 그린 상자는
+  // 띠마다 클립을 깔아 맞댄 클립 묶음이 되고, 띠 이음선마다 행이 갈린 1열 표로 읽혔다(주택청약 FAQ: 1열 표 58개 579행 중 빈 행 165).
+  // 그림 아닌 클립(글 칸)과 변을 맞댄 그림 클립은 여백 없이 그림만 든 표 칸이라 남긴다(한컴 보도자료 그림 칸)
+  const images = extractImageRegions(opList.fnArray, opList.argsArray)
+  const clipRects = images.length ? withoutImageOnlyClips(extracted.clipRects, images) : extracted.clipRects
   const clipResult = detectTables
-    ? buildClipCellGrids(extracted.clipRects, horizontals, verticals, pageWidth, pageHeight, items.map(it => ({ x: it.x + it.w / 2, y: it.y + it.h / 2 })), extracted.fillRects, prevPage)
+    ? buildClipCellGrids(clipRects, horizontals, verticals, pageWidth, pageHeight, items.map(it => ({ x: it.x + it.w / 2, y: it.y + it.h / 2 })), extracted.fillRects, prevPage)
     : { grids: [], containers: [], page: undefined }
   if (carry) { carry.page = pageNum; carry.clip = clipResult.page }
   // 글 조각마다 깐 클립(ezPDF Builder·MS Print To PDF)이 맞대어 선 한 줄은 표가 아니다 (isTextRunClipStrip)
@@ -222,10 +231,12 @@ export function extractPageBlocksWithLines(
 
   // 2단계: 선으로 테이블 그리드 구성 (표 감지 opt-out 시 건너뜀 — #64)
   const ocrItems = items.length > 0 && items.every(it => it.fontName === "ocr")
+  if (ocrItems && detectTables) verticals = extendStraddledVerticals(horizontals, verticals, items)
   let lineGrids = detectTables ? buildTableGrids(horizontals, verticals, !ocrItems, items) : []
   // OCR 통계표의 묶음 안 빈칸 열 — 숫자 값 빈 구간이 줄마다 맞으면 가상 세로선 (ocr-gutter-columns)
   // 가상선을 받은 격자만 그 영역 안 선으로 다시 짠다 — 전역으로 다시 짜면 바깥 틀 격자가 가상선을 먹고 쪽 전체 표가 된다
   if (ocrItems && lineGrids.length) {
+    lineGrids = lineGrids.map(g => openSideColumns(g, horizontals, verticals, items, lineGrids))
     for (const [grid, gutters] of ocrGutterVerticals(lineGrids, items)) {
       const { x1, y1, x2, y2 } = grid.bbox, tol = 1.5
       const within = (l: LineSegment) => Math.min(l.x1, l.x2) >= x1 - tol && Math.max(l.x1, l.x2) <= x2 + tol && Math.min(l.y1, l.y2) >= y1 - tol && Math.max(l.y1, l.y2) <= y2 + tol
@@ -292,7 +303,8 @@ export function extractPageBlocksWithLines(
   // 한 단 안에 든 1칸 틀(<보기> 상자, 쪽 폭 55% 미만)도 같다 — 틀 하나가 격자 경로를 끌면 두 단 줄을 이어 붙였다(수능 국어 6쪽)
   if (ocrItems && ocrSpan >= pageHeight * 0.5 && grids.length > 0 && grids.every(g => g.rowYs.length === 2 && g.colXs.length === 2 && !g.cells &&
       ((g.bbox.x2 - g.bbox.x1) * (g.bbox.y2 - g.bbox.y1) < pageWidth * pageHeight * 0.02 || g.bbox.x2 - g.bbox.x1 < pageWidth * 0.55))) {
-    return extractPageBlocksFallback(items, pageNum, true, detectTables, lex, figures())
+    return ruledColumnBlocks(items, horizontals, verticals, pageWidth, pageHeight, pageNum, detectTables, lex)
+      ?? extractPageBlocksFallback(items, pageNum, true, detectTables, lex, figures())
   }
 
   // 가로 괘선만 있는 표(booktabs)는 표를 먼저 세우고 나머지 글은 격자 경로의 두 단·밴드 순서를 따른다
@@ -326,7 +338,32 @@ export function extractPageBlocksWithLines(
   }
 
   // Fallback: 기존 휴리스틱 (선이 없는 PDF). 단 안의 그림은 글이 없는 자리라 거터 판정에 점유 사각형으로 넘긴다
-  return extractPageBlocksFallback(items, pageNum, true, detectTables, lex, figures())
+  return (ocrItems ? ruledColumnBlocks(items, horizontals, verticals, pageWidth, pageHeight, pageNum, detectTables, lex) : null)
+    ?? extractPageBlocksFallback(items, pageNum, true, detectTables, lex, figures())
+}
+
+/**
+ * OCR 쪽의 단 구분선 — 쪽 가운데(폭 40~60%)를 쪽 높이 45% 넘게 내리긋는 세로 괘선을 가로지르는 가로선이 없으면 두 단을 가르는 선이다.
+ * 글이 적은 시험지 쪽(수학 "23. …" | "24. …")은 글만으로 단 틈을 못 찾아 두 단 줄을 이어 읽었다. 선 위(머리글)·두 단·선 아래(꼬리) 차례로
+ * 읽는다. 선 양쪽에 글이 셋 이상씩 있을 때만
+ */
+function ruledColumnBlocks(items: NormItem[], horizontals: LineSegment[], verticals: LineSegment[], pageWidth: number, pageHeight: number,
+  pageNum: number, detectTables: boolean, lex?: WrapLexicon): IRBlock[] | null {
+  const rule = verticals.find(v => {
+    const x = v.x1, top = Math.max(v.y1, v.y2), bottom = Math.min(v.y1, v.y2)
+    if (x < pageWidth * 0.4 || x > pageWidth * 0.6 || top - bottom < pageHeight * 0.45) return false
+    return !horizontals.some(h => Math.min(h.x1, h.x2) < x - 5 && Math.max(h.x1, h.x2) > x + 5 && h.y1 > bottom + 5 && h.y1 < top - 5)
+  })
+  if (!rule) return null
+  const x = rule.x1, top = Math.max(rule.y1, rule.y2), bottom = Math.min(rule.y1, rule.y2)
+  const mid = (it: NormItem) => it.y + it.h / 2
+  const head = items.filter(it => mid(it) > top), foot = items.filter(it => mid(it) < bottom)
+  const body = items.filter(it => mid(it) <= top && mid(it) >= bottom)
+  const left = body.filter(it => it.x + it.w <= x + 2)
+  const right = body.filter(it => it.x >= x - 2 && it.x + it.w > x + 2)
+  if (left.length < 3 || right.length < 3 || left.length + right.length !== body.length) return null
+  const read = (group: NormItem[], full: boolean) => group.length ? extractPageBlocksFallback(group, pageNum, full, detectTables, lex) : []
+  return [...read(head, false), ...read(left, false), ...read(right, false), ...read(foot, false)]
 }
 
 // ─── 취소선 감지 (ODL StrikethroughProcessor 포팅) ─────
@@ -429,8 +466,42 @@ function rotatedGridBlocks(
  * 선 기반 그리드가 감지된 경우: 테이블 영역의 텍스트는 셀에 매핑,
  * 나머지는 일반 텍스트 블록으로 처리.
  */
-/** OCR 숫자 표 행 펼치기의 격자 행 수 상한 */
-const OCR_NUMERIC_MAX_ROWS = 12
+/**
+ * 열린 표(바깥 세로 테두리 없음)의 바깥 이름표 열 — 격자는 첫·끝 세로선에서 끝나 그 바깥 이름표 열("계"·"19세 이하"…)이 표에서 빠졌다
+ * (혼인 통계 연령별 표). 위·아래 가로 괘선이 둘 다 세로선 바깥까지(15pt 넘게) 뻗고 그 사이에 글이 있으면, 괘선 끝(짧은 쪽)에 가상 세로선을
+ * 세우고 열을 더한다. 가로 괘선 증거가 없는 바깥 글(본문 여백 글)은 건드리지 않는다. 격자 안 글이 절반 넘게 숫자인 통계표만, 넓힐 자리에
+ * 다른 격자가 없을 때만 — 서식(신청서)은 이웃 칸 격자가 붙어 괘선이 바깥까지 뻗는다
+ */
+export function openSideColumns(g: TableGrid, horizontals: LineSegment[], verticals: LineSegment[], items: NormItem[], grids: TableGrid[] = []): TableGrid {
+  // 열 셋 이상 격자만 — 세로선 두 줄뿐인 좁은 쪽 번호 칸(개정 이력 표 "22·33·45")을 넓히면 옆 표 행을 삼켰다
+  if (g.cells || g.colXs.length < 4) return g
+  const { x1, x2, y1, y2 } = g.bbox
+  const inside = items.filter(it => it.text.trim() && it.x >= x1 - 2 && it.x + it.w <= x2 + 2 && it.y >= y1 && it.y + it.h <= y2)
+  if (!inside.length || inside.filter(it => /^[\d.,%()+\-−–△▲▽▼\s]+$/.test(it.text.trim())).length < inside.length * 0.5) return g
+  const free = (a: number, b: number) => !grids.some(o => o !== g && o.bbox.x1 < b - 2 && o.bbox.x2 > a + 2 && o.bbox.y1 < y2 - 2 && o.bbox.y2 > y1 + 2)
+  const reach = (y: number, side: -1 | 1): number | null => {
+    const ends = horizontals.filter(h => Math.abs(h.y1 - y) <= 3).map(h => [Math.min(h.x1, h.x2), Math.max(h.x1, h.x2)])
+      .filter(([a, b]) => side < 0 ? a <= x1 - 15 && b >= x1 - 3 : b >= x2 + 15 && a <= x2 + 3).map(([a, b]) => side < 0 ? a : b)
+    return ends.length ? (side < 0 ? Math.min(...ends) : Math.max(...ends)) : null
+  }
+  const textBetween = (a: number, b: number) => free(a, b) && items.some(it => it.text.trim() && it.x >= a - 2 && it.x + it.w <= b + 2 && it.y >= y1 && it.y + it.h <= y2)
+  let colXs = g.colXs
+  const lt = reach(y2, -1), lb = reach(y1, -1)
+  if (lt !== null && lb !== null) {
+    const left = Math.max(lt, lb)
+    if (textBetween(left, x1)) { colXs = [left, ...colXs]; verticals.push({ x1: left, y1, x2: left, y2, lineWidth: 1 }) }
+  }
+  const rt = reach(y2, 1), rb = reach(y1, 1)
+  if (rt !== null && rb !== null) {
+    const right = Math.min(rt, rb)
+    if (textBetween(x2, right)) { colXs = [...colXs, right]; verticals.push({ x1: right, y1, x2: right, y2, lineWidth: 1 }) }
+  }
+  return colXs === g.colXs ? g : { ...g, colXs, bbox: { ...g.bbox, x1: colXs[0], x2: colXs[colXs.length - 1] } }
+}
+
+/** OCR 숫자 표 행 펼치기의 격자 행 수 상한 — 점선 행마다 격자 행이 있는 관보 계속비 표는 26행. 전폭 긴 글 칸이 있는 격자는 12 */
+const OCR_NUMERIC_MAX_ROWS = 40
+const OCR_NUMERIC_MAX_ROWS_FRAMED = 12
 
 function extractBlocksWithGrids(
   items: NormItem[],
@@ -611,6 +682,7 @@ function extractBlocksWithGrids(
     let finalGrid = irGrid
     let finalRows = numRows
     let rebuiltUsed = false
+    let keptRows: Set<number> | null = null
     const unitLine = !grid.cells && numRows >= 3 && numRows <= 5 && numCols >= 3 ? rebuildUnitLine(items, grid) : []
     // OCR 숫자 표는 단위 줄이 없어도 본문을 글줄로 펼친다 — 행 사이 괘선 없는 통계표 본문이 한 행에 27줄씩 쌓였다(국가·권역별 무역액).
     // 칸 글줄 절반 이상이 숫자일 때만: 긴 글 칸 표(관보 당초·변경)는 펼치면 두 칸 글이 줄마다 섞인다
@@ -618,17 +690,44 @@ function extractBlocksWithGrids(
       const ls = irGrid.slice(1).flat().flatMap(c => c.text.split("\n")).map(t => t.trim()).filter(Boolean)
       // 숫자 글줄 = 공백 뺀 글자의 85% 이상이 숫자·소수점·부호 — 이웃 열 수가 붙어 읽힌 줄("-5.4−0.9−0.5")도 숫자 줄이다
       const numericLine = (t: string) => { const cs = t.replace(/\s+/g, ""); return cs.length > 0 && (cs.match(/[\d.,%()+\-−–—△▲▽▼]/g)?.length ?? 0) >= cs.length * 0.85 }
+      // 이름·값이 한 상자로 읽힌 줄("중국64,822"·"인도네 7,827시아" — 국적별 순위표처럼 이름 열과 값 열 사이 세로선이 없다)도 숫자 줄이다.
+      // 이름이 짧고(한글 6자까지) 값이 천 단위 쉼표 수일 때만 — 긴 글 줄은 숫자가 섞여도 글이고, 지번("광암리528-2답일원")은 값이 아니다
+      const labelValueLine = (t: string) => { const hangul = t.match(/[가-힣]/g)?.length ?? 0; return hangul > 0 && hangul <= 6 && /\d,\d{3}/.test(t) && numericLine(t.replace(/[가-힣()]/g, "")) }
       // 글머리(○·□·"- 글", 음수 "-5.4"·빈 값 "-" 아님) 줄이 둘 넘는 칸은 칸 하나에 담긴 목록이다(세입예산 사업명세서 "○자활근로사업…" 칸) — 행으로 펼치지 않는다
-      const bulletList = irGrid.slice(1).flat().some(c => c.text.split("\n").filter(t => /^\s*(?:[○◦•□■▪]|-\s*[^\d\s.,−-])/.test(t)).length >= 2)
-      return !bulletList && ls.length > 0 && ls.filter(numericLine).length >= ls.length * 0.5
+      // 짧은 대시 이름표("- 산 란 계"·"- 육 용 계", 가구당 마릿수 아래 하위 행)는 목록이 아니라 행 이름이다
+      const bulletLine = (t: string) => /^\s*[○◦•□■▪]/.test(t) || (/^\s*-\s*[^\d\s.,−-]/.test(t) && t.replace(/\s+/g, "").length > 7)
+      const bulletList = irGrid.slice(1).flat().some(c => c.text.split("\n").filter(bulletLine).length >= 2)
+      if (bulletList || !ls.length) return false
+      // 이름·값 줄은 한 칸짜리 칸에서만 — 여러 칸에 걸친 틀 칸(대차대조표 두 단 "1.화폐발행 27,163,663")은 펼치면 두 단 글이 줄마다 섞인다
+      const lvLines = new Set(irGrid.slice(1).flat().filter(c => c.colSpan === 1).flatMap(c => c.text.split("\n")).map(t => t.trim()).filter(labelValueLine))
+      const share = ls.filter(t => numericLine(t) || lvLines.has(t)).length / ls.length
+      if (share >= 0.5) return true
+      // 이름표·값 표(대차대조표 "Ⅱ.비유동자산 / 1.투자자산 / …" | 금액) — 이름표 줄이 많아 숫자 줄이 반에 못 미쳐도, 열마다 숫자 열(80%+)이거나
+      // 이름표 열(20%-)로 깔끔히 갈리면 숫자 표다. 긴 글 칸 표는 글이 여러 열에 걸쳐 숫자 줄이 적다
+      const colShares = Array.from({ length: numCols }, (_, c) => {
+        const cl = irGrid.slice(1).flatMap(row => (row[c]?.text ?? "").split("\n")).map(t => t.trim()).filter(Boolean)
+        return cl.length ? cl.filter(numericLine).length / cl.length : null
+      }).filter((v): v is number => v !== null)
+      return share >= 0.35 && colShares.some(v => v >= 0.8) && colShares.every(v => v >= 0.8 || v <= 0.2)
     })()
-    // OCR 숫자 표는 연도 묶음마다 격자 행이 있어(시도별 이동자 수 2024·2025·2026 묶음) 행 상한을 늘린다
-    const maxRows = numericBody ? OCR_NUMERIC_MAX_ROWS : 5
-    if (!grid.cells && numRows <= maxRows && numCols >= 3 && !nestedAttached && (numRows <= 2 || unitLine.length > 0 || numericBody)) {
+    // OCR 숫자 표는 연도 묶음마다 격자 행이 있어(시도별 이동자 수 2024·2025·2026 묶음) 행 상한을 늘린다.
+    // 12행 넘는 격자는 전폭 긴 글 칸(쪽 레이아웃 틀 — 설명 글 아래 표들)이 없을 때만 — 틀까지 글줄로 펼치면 쪽 전체가 한 표가 된다
+    const layoutProse = irGrid.some(row => row.some(c => c.colSpan >= numCols - 1 && c.text.length > 60))
+    const maxRows = numericBody ? (layoutProse ? OCR_NUMERIC_MAX_ROWS_FRAMED : OCR_NUMERIC_MAX_ROWS) : 5
+    // OCR 두 행 표(머리 + 본문 한 행)에서 본문 칸 둘 이상이 여러 줄 글(줄 셋 이상, 60% 이상이 한글 6자 넘는 숫자 아닌 줄)이면 펼치지 않는다 —
+    // 관보 민원사무 "당초 | 변경" 구비서류는 두 칸 글이 줄마다 행으로 갈려 섞였다. 글 칸 하나 + 금액 열(예산서 산출근거)은 종전대로 펼친다
+    const proseLine = (t: string) => (t.match(/[가-힣]/g)?.length ?? 0) > 6 && !/^[-−]?[\d,.]+$/.test(t.replace(/\s+/g, ""))
+    const proseCols = numRows === 2 ? (irGrid[1] ?? []).filter(c => {
+      const ls = c.text.split("\n").map(t => t.trim()).filter(Boolean)
+      return ls.length >= 3 && ls.filter(proseLine).length >= ls.length * 0.6
+    }).length : 0
+    const twoRowOk = !ocrPage || proseCols < 2
+    if (!grid.cells && numRows <= maxRows && numCols >= 3 && !nestedAttached && (numRows <= 2 ? twoRowOk : unitLine.length > 0 || numericBody)) {
       const kept = new Map<number, number>()
       const rebuilt = normalizeUndersegmentedTable(irGrid, grid.colXs, textItems, grid.rowYs, kept, maxRows)
       if (rebuilt) {
         rebuiltUsed = true
+        if (ocrPage && numRows >= 3) keptRows = new Set(kept.values())
         // OCR 쪽은 그대로 둔 행(머리 행)의 칸 합침을 잇는다 — 다 1 로 풀면 묶음 제목("중위 추계" 3칸)이 첫 칸에만 남았다.
         // 행 합침은 덮는 행이 모두 그대로 둔 이웃 행일 때만. 글 PDF 는 종전대로(벼·고추 재배면적 표 머리가 HWPX 원본과 더 어긋났다)
         if (!ocrPage) kept.clear()
@@ -652,6 +751,17 @@ function extractBlocksWithGrids(
     if (!rebuiltUsed) {
       for (let ti = 0; ti < textItems.length; ti++) {
         if (!assignedItems.has(textItems[ti])) usedItems.delete(owners[ti])
+      }
+    } else if (keptRows) {
+      // OCR 3행 이상 재구축은 펼친 행의 띠 안 글만 다시 담는다 — 칸에 못 든 글이 그대로 둔 행·격자 밖(표 위 "항:216 이자수입"·
+      // "(단위:천원)")에 있으면 버려졌다(무증상 유실). 그 글은 본문으로 돌려보낸다
+      const inExpanded = (it: (typeof textItems)[number]) => {
+        const cy = it.y + (it.h > 0 ? it.h : it.fontSize) / 2
+        for (let r = 1; r < numRows; r++) if (!keptRows!.has(r) && cy <= grid.rowYs[r] + 1 && cy >= grid.rowYs[r + 1] - 1) return true
+        return false
+      }
+      for (let ti = 0; ti < textItems.length; ti++) {
+        if (!assignedItems.has(textItems[ti]) && !inExpanded(textItems[ti])) usedItems.delete(owners[ti])
       }
     }
     if (unitLine.length > 0 && rebuiltUsed && !/^\s*\(\s*단위\s*[:：]/.test(finalGrid[0]?.[0]?.text ?? "")) {
@@ -812,7 +922,7 @@ function extractBlocksWithGrids(
   for (const p of pendingNested) blocks.push(p.block)
 
   // 테이블에 속하지 않은 나머지 텍스트 → 일반 블록
-  let remaining = items.filter(i => !usedItems.has(i))
+  let remaining = attachParagraphNumbers(items.filter(i => !usedItems.has(i)))
   const groupSizes: number[] = []
   let finalTextBlocks: IRBlock[] = []
   let gutterX: number | null = null
@@ -1065,6 +1175,30 @@ export function isProseBesidePanel(unit: IRBlock[], box: { x: number; y: number;
 const SIDEBAR_ITEMS = new WeakMap<IRBlock, NormItem[]>()
 
 /** 무괘선 표 후보를 역할대로 낸다 — 목차는 "항목 쪽번호" 줄, 차트는 영역 안 위→아래 줄 글, 나머지는 표 */
+/**
+ * 특허 명세서 문단 번호 — 왼쪽 여백의 "[0230]" 은 같은 줄 오른쪽 문단 첫 줄에 붙인다. 따로 두면 번호 열이 군집 표의 첫 열이 되거나(KoOCR 특허
+ * 85쪽 중 21쪽이 "[0230] | 문단" 표) 단 나누기에서 한 단으로 떨어져 번호가 문단 뒤에 몰렸다. 같은 줄(기준선 글자 크기 절반 안)·틈 글자 크기 6배 안만(특허 공보 번호 열 틈 3.5배)
+ */
+export function attachParagraphNumbers(items: NormItem[]): NormItem[] {
+  const nums = items.filter(it => /^\[\d{3,5}\]$/.test(it.text.trim()))
+  if (!nums.length) return items
+  const drop = new Set<NormItem>()
+  for (const n of nums) {
+    let next: NormItem | null = null
+    for (const it of items) {
+      if (it === n || drop.has(it) || Math.abs(it.y - n.y) > n.fontSize * 0.5 || it.x < n.x + n.w) continue
+      if (it.x - (n.x + n.w) > n.fontSize * 6) continue
+      if (!next || it.x < next.x) next = it
+    }
+    if (!next || nums.includes(next)) continue
+    next.text = n.text.trim() + " " + next.text
+    next.w = next.x + next.w - n.x
+    next.x = n.x
+    drop.add(n)
+  }
+  return drop.size ? items.filter(it => !drop.has(it)) : items
+}
+
 function clusterTableBlock(cr: ClusterTableResult, source: NormItem[], pageNum: number, horizontals: LineSegment[] = []): IRBlock {
   // 목차 역할은 괘선 증거가 없는 후보에만 — 폭 대부분을 가로지르는 괘선이 행을 가르는 목차는 원문에서도 표다(한컴 목차 표를 OCR 로 읽은 쪽).
   // 라벨 밑 짧은 밑줄은 증거가 아니다. 괘선이 행 절반도 못 가르면 장 제목 밑줄이다(교육청 학교 매뉴얼 목차: 장마다 제목 밑 색 괘선 하나 —
@@ -1125,7 +1259,7 @@ function mergeAdjacentTableBlocks(blocks: IRBlock[]): IRBlock[] {
         bbox: { ...pb, y: cb.y, height: pb.y + pb.height - cb.y } }
     } else if (prev.type === "table" && curr.type === "table" && prev.table && curr.table &&
         prev.table.cols === curr.table.cols && prev.table.renderAsTable === curr.table.renderAsTable &&
-        !CLIP_TABLES.has(prev.table) && !CLIP_TABLES.has(curr.table) && !separateRepeatedHeadings(prev, curr)) {
+        !CLIP_TABLES.has(prev.table) && !CLIP_TABLES.has(curr.table) && !separateRepeatedHeadings(prev, curr) && !sideBySide(prev, curr)) {
       // 합치기: prev의 cells에 curr의 cells 추가
       const merged: IRTable = {
         rows: prev.table.rows + curr.table.rows,
@@ -1140,6 +1274,16 @@ function mergeAdjacentTableBlocks(blocks: IRBlock[]): IRBlock[] {
     }
   }
   return result
+}
+
+/** 좌우로 나란히 놓인 두 표(가로 범위가 안 겹치고 세로로 절반 넘게 겹침)는 행으로 잇지 않는다 — 읽기 순서로 연달아 와도
+ *  오른쪽 표가 왼쪽 표 아래 행으로 쌓였다(지역별 혼인 건수 두 표·소관부처 목록 두 표, 스캔 쪽) */
+function sideBySide(a: IRBlock, b: IRBlock): boolean {
+  const ab = a.bbox, bb = b.bbox
+  if (!ab || !bb || ab.page !== bb.page) return false
+  const xOverlap = Math.min(ab.x + ab.width, bb.x + bb.width) - Math.max(ab.x, bb.x)
+  const yOverlap = Math.min(ab.y + ab.height, bb.y + bb.height) - Math.max(ab.y, bb.y)
+  return xOverlap <= 1 && yOverlap > Math.min(ab.height, bb.height) * 0.5
 }
 
 /** 같은 쪽에서 간격을 두고 자기 머리행을 다시 시작한 표는 독립 표다. 붙은 한 격자와 머리 없는 파편은 그대로 잇는다. */
@@ -1401,8 +1545,13 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
     const regions = splitTrailingColumnRegion(items)
     if (regions) return regions.flatMap(region => extractPageBlocksFallback(region, pageNum, false, detectTables, lex))
   }
-  const rejected = { prose: 0 }
+  const rejected: { prose: number; cutX?: number } = { prose: 0 }
   const clusterResults = detectTables ? detectClusterTables(clusterItems, pageNum, rejected, lex) : []
+  // 두 단 본문으로 걸러낸 OCR 군집의 단 경계 — 단마다 다시 읽는다(단 안 진짜 표는 다시 잡힌다). 경계 줄 글은 splitTwoColumnProse 가 띠로 둔다
+  if (rejected.cutX !== undefined) {
+    const groups = splitTwoColumnProse(items, rejected.cutX)
+    if (groups.length > 1 && groups.every(g => g.length < items.length)) return groups.flatMap(g => extractPageBlocksFallback(g, pageNum, false, detectTables, lex))
+  }
 
   if (clusterResults.length > 0) {
     const ciToIdx = new Map<ClusterItem, number>()
@@ -1534,4 +1683,33 @@ function buildNumericBandTable(
     } },
     used: allItems,
   }
+}
+
+/** 그림 클립(네 변이 한 그림 영역과 IMAGE_CLIP_TOL 안)끼리만 맞댄 묶음을 통째로 뺀다 — 변을 맞댄 클립 묶음에 그림 아닌 클립이
+ *  하나라도 있거나 그림 클립이 가로로도 맞대 있으면 묶음 전체를 남긴다 */
+function withoutImageOnlyClips(clips: ClipRect[], images: ImageRegion[]): ClipRect[] {
+  const near = (a: number, b: number) => Math.abs(a - b) <= IMAGE_CLIP_TOL
+  const isImage = clips.map(c => images.some(r => near(r.x1, c.x1) && near(r.x2, c.x2) && near(r.y1, c.y1) && near(r.y2, c.y2)))
+  if (!isImage.some(Boolean)) return clips
+  const touches = (a: ClipRect, b: ClipRect) => {
+    const ox = Math.min(a.x2, b.x2) - Math.max(a.x1, b.x1), oy = Math.min(a.y2, b.y2) - Math.max(a.y1, b.y1)
+    return (oy > 0 && (near(a.x2, b.x1) || near(b.x2, a.x1))) || (ox > 0 && (near(a.y2, b.y1) || near(b.y2, a.y1)))
+  }
+  // 변을 맞댄 클립 묶음(연결 요소)마다 — 모두 그림 클립인 묶음만 뺀다
+  const group = clips.map((_, i) => i)
+  const find = (i: number): number => (group[i] === i ? i : (group[i] = find(group[i])))
+  for (let i = 0; i < clips.length; i++) for (let j = i + 1; j < clips.length; j++) if (touches(clips[i], clips[j])) group[find(i)] = find(j)
+  const keep = new Set<number>()
+  clips.forEach((_, i) => { if (!isImage[i]) keep.add(find(i)) })
+  // 띠를 세로로 쌓은 묶음(좌우 변이 모두 같은 그림 클립, 서로 다른 띠 셋 이상)만 뺀다 — 그림 클립끼리 가로로 맞댄 상자(보도자료 머리 상자·개념도)는
+  // 빼면 그 안 글이 남은 클립 격자로 깨진 표가 됐다. 띠 둘(보도자료 배포 시각 그림 칸)은 상자가 아니다
+  const members = new Map<number, number[]>()
+  clips.forEach((_, i) => members.set(find(i), [...(members.get(find(i)) ?? []), i]))
+  for (const [root, idx] of members) {
+    if (keep.has(root)) continue
+    const a = clips[idx[0]]
+    const bands = new Set(idx.map(i => Math.round(clips[i].y1)))
+    if (bands.size < 3 || !idx.every(i => near(clips[i].x1, a.x1) && near(clips[i].x2, a.x2))) keep.add(root)
+  }
+  return clips.filter((_, i) => keep.has(find(i)))
 }

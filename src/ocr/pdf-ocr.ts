@@ -13,17 +13,24 @@
  */
 
 import { splitStackedOcrRows, unframeOcrLayoutTables } from "./ocr-stacked-rows.js"
-import type { IRBlock, OcrLine, OcrPageLines, OcrProvider, ParseOptions, ParseWarning } from "../types.js"
+import { splitOcrNameValueColumns } from "./ocr-name-value-columns.js"
+import type { BoundingBox, IRBlock, OcrLine, OcrPageLines, OcrProvider, ParseOptions, ParseWarning } from "../types.js"
 import type { NormItem } from "../pdf/text-line.js"
 import type { LineSegment } from "../pdf/line-types.js"
 import { extractPageBlocksWithLines } from "../pdf/page-blocks.js"
 import { UNRULED_REGION_TABLES } from "../pdf/ocr-region-merge.js"
 import { detectRulingLines, rulingToPdfLines, type RulingLines } from "./ruling-lines.js"
 import { DEFAULT_OCR_TUNING, getOcrEngine, type OcrItem, type OcrPageStats, type OcrTuning } from "./engine.js"
-import { deskewPage } from "./deskew.js"
+import { deskewPage, rotateQuarter } from "./deskew.js"
 import { copyOcrTextGaps } from "./text-gaps.js"
-import { DEFAULT_OCR_MODELS, ensureOcrModelsFor, handwritingFallbackModels, resolveOcrModels, type OcrModelSelection } from "./models.js"
-import { validateOcrOptions } from "./options.js"
+import { similarity } from "../diff/text-diff.js"
+import { DEFAULT_OCR_MODELS, ensureOcrModelsFor, handwritingFallbackModels, ocrModelsCached, resolveOcrModels, type OcrModelSelection } from "./models.js"
+import { ocrLanguageOf, validateOcrOptions } from "./options.js"
+import { chartPlotItems } from "./ocr-chart-axes.js"
+import { splitOcrContactColumns } from "./ocr-contact-columns.js"
+import { splitOcrJoinedHeaders } from "./ocr-header-split.js"
+import { splitOcrProseRows } from "./ocr-prose-rows.js"
+import { rescueEmptyCells } from "./empty-cell-rescue.js"
 import { KordocError, OPTIONAL_DEP_INSTALL_HINT } from "../utils.js"
 
 /** OCR 렌더 스케일 (72dpi × 3 = 216dpi) — 10pt 본문이 rec 입력 높이(48px)에 근접 */
@@ -55,44 +62,99 @@ export interface BuiltinOcrConfig {
   tuning: Readonly<OcrTuning>
   /** 줄 내보내기 — undefined 면 끔(종전과 같은 일만 한다) */
   lines?: "kept" | "all"
-  /** `ocrRec: "auto"` — 확신도 낮은 쪽을 다시 읽을 손글씨 rec 모델 */
+  /** 확신도 낮은 쪽을 다시 읽을 손글씨 rec 모델 — 기본 설정·`ocrRec: "auto"` */
   handwriting?: OcrModelSelection
+  /** 손글씨 rec 로 바꿀 문턱 — 쪽 평균 확신도 상한·확신도 상승 하한. lazy 면 모델을 미리 받지 않고 받기·인식 실패는 기본 rec 결과로 둔다.
+   *  fetch 가 없으면(OCR 을 따로 켜지 않은 자동 OCR) 캐시에 있을 때만 쓴다 — 자동 OCR 은 내려받지 않는다 */
+  autoRec?: { pageConf: number; gain: number; altConf?: number; sureGain?: number; minDiff?: number; minChars?: number; lazy?: true; fetch?: true }
 }
 
-export const DEFAULT_BUILTIN_OCR: Readonly<BuiltinOcrConfig> = Object.freeze({ models: DEFAULT_OCR_MODELS, tuning: DEFAULT_OCR_TUNING })
+/** 저신뢰로 버린 줄이 많은 쪽을 큰 검출로 다시 읽는 문턱 (recognizeOcrPage) */
+const REDETECT = { minDropped: 15, minShare: 0.15, scale: 5 / 3 }
+
+/** `ocrRec: "auto"` 문턱 — 쪽 평균 확신도(글자 수 가중)가 이보다 낮은 쪽만 손글씨 rec 로 다시 읽고, 평균이 gain 이상 오를 때만 바꾼다.
+ *  KoOCR-Bench 손글씨 쪽은 기본 rec .74~.90 → 손글씨 rec +.07~.22, 인쇄 쪽은 .87~.98 에 대개 +.05 이하였다 */
+const AUTO_REC = { pageConf: 0.9, gain: 0.06 }
+/** 기본 설정 문턱 — 쪽 확신도 .9 아래에서 손글씨 rec 가 +.10 넘게 오르면 바꾸고, +.08~.10 이면 손글씨 rec 확신도 .95 이상·두 결과 글
+ *  8% 이상 차이·글자 80자 이상일 때만 바꾼다(altConf·minDiff·minChars). 인쇄 시험지(기본 .84~.90)는 손글씨 rec 로 +.066~.077·확신도
+ *  .91~.94 에 그치고(수능 수학 CER .65 → .86 으로 망가졌다), 잡음 낀 인쇄 스캔은 .95 를 넘어도 두 rec 가 거의 같은 글을 읽으며(차이
+ *  .007~.07), 짧은 영역(목차 64자)은 평균이 흔들린다. 손글씨 쪽은 +.08 넘게 올라 .95 를 넘고 글이 8.5~15% 다르다(기본 rec 가 실제로
+ *  틀림). 종전(.85·.10)은 .85~.90 손글씨 쪽을 놓쳤다 */
+const DEFAULT_AUTO_REC = { pageConf: 0.9, gain: 0.08, altConf: 0.95, sureGain: 0.1, minDiff: 0.08, minChars: 80, lazy: true as const }
+
+export const DEFAULT_BUILTIN_OCR: Readonly<BuiltinOcrConfig> = Object.freeze({
+  models: DEFAULT_OCR_MODELS, tuning: DEFAULT_OCR_TUNING, handwriting: handwritingFallbackModels(DEFAULT_OCR_MODELS), autoRec: DEFAULT_AUTO_REC,
+})
+/** OCR 을 켠(`ocr: true`·`"force"`) 기본 설정 — 손글씨 쪽을 처음 만나면 손글씨 rec 를 받는다 */
+const DEFAULT_BUILTIN_OCR_FETCH: Readonly<BuiltinOcrConfig> = Object.freeze({ ...DEFAULT_BUILTIN_OCR, autoRec: { ...DEFAULT_AUTO_REC, fetch: true as const } })
 
 /** ParseOptions → 내장 엔진 설정. 옵션이 없으면 기본 설정 객체 그대로. 잘못된 옵션은 throw — parse() 는 먼저 걸러 실패 결과로 낸다 */
 export function builtinOcrConfig(o: ParseOptions | undefined): Readonly<BuiltinOcrConfig> {
-  if (!o || (o.ocrLanguage === undefined && o.ocrDet === undefined && o.ocrDetLongSide === undefined && o.ocrRec === undefined && o.ocrRecDict === undefined && !o.ocrLines)) return DEFAULT_BUILTIN_OCR
+  if (!o || (o.ocrLanguage === undefined && o.ocrDet === undefined && o.ocrDetLongSide === undefined && o.ocrRec === undefined && o.ocrRecDict === undefined && !o.ocrLines)) return o?.ocr ? DEFAULT_BUILTIN_OCR_FETCH : DEFAULT_BUILTIN_OCR
   const bad = validateOcrOptions(o)
   if (bad) throw new KordocError(bad)
   const models = resolveOcrModels(o)
   return {
     models,
-    ...(o.ocrRec === "auto" ? { handwriting: handwritingFallbackModels(models) } : {}),
+    ...(o.ocrRec === "auto" ? { handwriting: handwritingFallbackModels(models), autoRec: AUTO_REC }
+      : o.ocrRec === undefined && (!o.ocrLanguage || ocrLanguageOf(o.ocrLanguage) === "korean") ? { handwriting: handwritingFallbackModels(models), autoRec: o.ocr ? { ...DEFAULT_AUTO_REC, fetch: true as const } : DEFAULT_AUTO_REC } : {}),
     tuning: o.ocrDetLongSide === undefined ? DEFAULT_OCR_TUNING : { ...DEFAULT_OCR_TUNING, detLongSide: o.ocrDetLongSide },
     lines: o.ocrLines === "all" ? "all" : o.ocrLines ? "kept" : undefined,
   }
 }
 
-/** `ocrRec: "auto"` 문턱 — 쪽 평균 확신도(글자 수 가중)가 이보다 낮은 쪽만 손글씨 rec 로 다시 읽고, 평균이 GAIN 이상 오를 때만 바꾼다.
- *  KoOCR-Bench 손글씨 쪽은 기본 rec .74~.90 → 손글씨 rec +.07~.22, 인쇄 쪽은 .87~.98 에 대개 +.05 이하였다 */
-const AUTO_REC_PAGE_CONF = 0.9
-const AUTO_REC_GAIN = 0.06
-
-/** 쪽 인식 — `ocrRec: "auto"` 면 확신도 낮은 쪽을 손글씨 rec 로 다시 읽어 더 확신하는 쪽을 쓴다(stats 도 고른 쪽 것으로) */
+/** 쪽 인식 — 손글씨 rec 가 있으면(기본·`ocrRec: "auto"`) 확신도 낮은 쪽을 손글씨 rec 로 다시 읽어 더 확신하는 쪽을 쓴다(stats 도 고른 쪽 것으로) */
 export async function recognizeOcrPage(
   engine: Awaited<ReturnType<typeof getOcrEngine>>, config: Readonly<BuiltinOcrConfig>, tuning: Readonly<OcrTuning>,
   rgba: Uint8Array, width: number, height: number, stats: OcrPageStats,
   cellRules?: Array<{ x1: number; y1: number; y2: number; thicknessPx: number }>, rowRules?: Array<{ x1: number; x2: number; y1: number; thicknessPx: number }>,
 ): Promise<OcrItem[]> {
-  const items = await engine.recognizePage(rgba, width, height, stats, tuning, cellRules, rowRules)
+  const read = async (t: Readonly<OcrTuning>, st: OcrPageStats) => {
+    const items = await engine.recognizePage(rgba, width, height, st, t, cellRules, rowRules)
+    return st.pageRotation ? items : withHandwritingRec(items, config, t, rgba, width, height, st, cellRules, rowRules)
+  }
+  const items = await read(tuning, stats)
+  // 검출 상자 여럿이 저신뢰로 버려진 쪽 — 검출 크기를 5/3 배로 키워 다시 읽고(손글씨 rec 판정까지) 버린 줄이 줄고 확신도가 오르면 그것을
+  // 쓴다. 하늘 수채화 바탕 손편지(640×920)는 960 검출에서 글줄이 획 조각으로 갈려 124줄 중 66줄을 버려 CER .51 이었고, 1600 검출 +
+  // 손글씨 rec 면 버린 줄 0·CER .15. 검출 크기를 늘 키우면 손글씨 쪽 다수가 나빠졌다(1280 일괄 반려) — KoOCR 손글씨 108쪽 중 버린 줄
+  // 15+·전체 줄 15%+ 인 쪽은 둘뿐(그 밖은 7줄 이하)
+  if (!tuning.redetect || stats.pageRotation || stats.droppedLowConf < REDETECT.minDropped || stats.droppedLowConf < (items.length + stats.droppedLowConf) * REDETECT.minShare) return items
+  const bigStats: OcrPageStats = { droppedLowConf: 0, ...(stats.dropped ? { dropped: [] } : {}) }
+  const big = await read({ ...tuning, detLongSide: Math.round(tuning.detLongSide * REDETECT.scale) }, bigStats)
+  if (bigStats.pageRotation || bigStats.droppedLowConf >= stats.droppedLowConf || meanConfidence(big) <= meanConfidence(items)) return items
+  Object.assign(stats, bigStats)
+  return big
+}
+
+/** 확신도 낮은 쪽을 손글씨 rec 로 다시 읽어 더 확신하는 쪽을 쓴다(stats 도 고른 쪽 것으로) */
+async function withHandwritingRec(
+  items: OcrItem[], config: Readonly<BuiltinOcrConfig>, tuning: Readonly<OcrTuning>,
+  rgba: Uint8Array, width: number, height: number, stats: OcrPageStats,
+  cellRules?: Array<{ x1: number; y1: number; y2: number; thicknessPx: number }>, rowRules?: Array<{ x1: number; x2: number; y1: number; thicknessPx: number }>,
+): Promise<OcrItem[]> {
   if (!config.handwriting) return items
+  const auto: NonNullable<BuiltinOcrConfig["autoRec"]> = config.autoRec ?? AUTO_REC
   const base = meanConfidence(items)
-  if (base >= AUTO_REC_PAGE_CONF) return items
+  if (base >= auto.pageConf) return items
   const altStats: OcrPageStats = { droppedLowConf: 0, ...(stats.dropped ? { dropped: [] } : {}) }
-  const alt = await (await getOcrEngine(config.handwriting)).recognizePage(rgba, width, height, altStats, tuning, cellRules, rowRules)
-  if (meanConfidence(alt) - base < AUTO_REC_GAIN) return items
+  let alt: OcrItem[]
+  try {
+    if (auto.lazy && !auto.fetch && !await ocrModelsCached(config.handwriting)) return items
+    if (auto.lazy) await ensureOcrModelsFor(config.handwriting, reportModelDownload)
+    alt = await (await getOcrEngine(config.handwriting)).recognizePage(rgba, width, height, altStats, tuning, cellRules, rowRules)
+  } catch (e) {
+    // 기본 설정은 손글씨 rec 를 고르지 않았다 — 받기(오프라인)·인식 실패는 기본 rec 결과로 둔다
+    if (!auto.lazy) throw e
+    return items
+  }
+  const altMean = meanConfidence(alt)
+  if (altMean - base < auto.gain) return items
+  if (auto.altConf !== undefined && altMean - base < (auto.sureGain ?? Infinity)) {
+    if (altMean < auto.altConf) return items
+    const text = (xs: OcrItem[]) => xs.map(it => it.text).join("").replace(/\s/g, "")
+    const a = text(items), b = text(alt)
+    if (a.length < (auto.minChars ?? 0) || 1 - similarity(a, b) < (auto.minDiff ?? 0)) return items
+  }
   Object.assign(stats, altStats)
   return alt
 }
@@ -164,7 +226,7 @@ export async function runPdfOcr(
     () => import("@hyzyla/pdfium"),
   )
   if (mode === "builtin") await ensureOcrModelsFor(config.models, reportModelDownload)
-  if (mode === "builtin" && config.handwriting) await ensureOcrModelsFor(config.handwriting, reportModelDownload)
+  if (mode === "builtin" && config.handwriting && !config.autoRec?.lazy) await ensureOcrModelsFor(config.handwriting, reportModelDownload)
   const engine = mode === "builtin" ? await getOcrEngine(config.models) : null
 
   const pdfium = await pdfiumMod.PDFiumLibrary.init()
@@ -215,7 +277,7 @@ export async function ocrOnePage(
   regions?: Array<{ x1: number; y1: number; x2: number; y2: number }>,
   config: Readonly<BuiltinOcrConfig> = DEFAULT_BUILTIN_OCR,
 ): Promise<{ blocks: IRBlock[]; lines?: OcrPageLines }> {
-  const { originalWidth: pdfW, originalHeight: pdfH } = page.getOriginalSize()
+  let { originalWidth: pdfW, originalHeight: pdfH } = page.getOriginalSize()
   const renderScale = Math.min(OCR_RENDER_SCALE, Math.sqrt(MAX_OCR_PIXELS / Math.max(1, pdfW * pdfH)))
   if (renderScale < OCR_RENDER_SCALE) {
     warnings.push({ page: pageNo, code: "PARTIAL_PARSE", message: `OCR 래스터 픽셀 상한으로 렌더 해상도를 축소했습니다 (작은 글자 인식 결손 가능)` })
@@ -229,7 +291,7 @@ export async function ocrOnePage(
     render: async ({ data }) => data,
   })
   const hiRgba = closer ? bgraToRgba(rendered.data) : null
-  const { rgba, width: rw, height: rh } = hiRgba
+  let { rgba, width: rw, height: rh } = hiRgba
     ? halve(hiRgba, rendered.width, rendered.height)
     : { rgba: bgraToRgba(rendered.data), width: rendered.width, height: rendered.height }
 
@@ -237,16 +299,29 @@ export async function ocrOnePage(
     // 스캔 기울기 보정 — 인식과 괘선 감지가 같은(바로 선) 래스터를 본다. 클린 렌더는 무보정.
     // 벡터 글자·그림 영역 쪽은 PDF 원본 좌표를 유지한다. 회전하면 벡터 괘선·영역 경계 및
     // 원본 래스터를 잘라 읽는 closerReads와 좌표계가 달라져 줄 선택·병합이 어긋난다.
-    const { rgba: upright, angle } = vectorOps || regions ? { rgba, angle: 0 } : deskewPage(rgba, rw, rh)
+    let { rgba: upright, angle } = vectorOps || regions ? { rgba, angle: 0 } : deskewPage(rgba, rw, rh)
     const stats: OcrPageStats = { droppedLowConf: 0, ...(config.lines === "all" ? { dropped: [] } : {}) }
-    const ruling = vectorOps ? undefined : detectRulingLines(upright, rw, rh, rh / pdfH)
-    const tuning = regions ? regionTuning(config.tuning) : config.tuning
+    let ruling = vectorOps ? undefined : detectRulingLines(upright, rw, rh, rh / pdfH)
+    // 눕힌 쪽 판정은 쪽 래스터 전체를 읽을 때만 — 벡터 글자 쪽은 벡터 괘선, 그림 영역은 PDF 좌표를 그대로 써야 한다
+    const tuning = regions ? regionTuning(config.tuning) : vectorOps ? { ...config.tuning, orientPage: false } : config.tuning
     // 검출 박스가 표 칸 경계를 가로지르면 그 선에서 가른다 — 연한 칸 구분선(cellDividers)만이 아니라 진한 칸 경계도. 촘촘한 표에서
     // 검출기가 이웃 칸 글을 한 줄로 묶었다(검정고시 계획 과목 표). 칸 경계 = 위아래 끝이 모두 가로 괘선에 닿는 세로선 — 끝이 떠 있는
     // 여백선·단 구분선은 글줄을 가르면 안 된다(속기록 2단)
     // 위아래 두 행을 한 박스로 묶은 검출도 그 사이 행 경계(양끝이 세로 괘선에 닿는 가로선)에서 가른다
-    const items = await recognizeOcrPage(engine!, config, tuning, upright, rw, rh, stats, ruling ? [...(ruling.cellDividers ?? []), ...cellEdgeVerticals(ruling)] : undefined,
+    let items = await recognizeOcrPage(engine!, config, tuning, upright, rw, rh, stats, ruling ? [...(ruling.cellDividers ?? []), ...cellEdgeVerticals(ruling)] : undefined,
       ruling ? cellEdgeHorizontals(ruling) : undefined)
+    // 가로 표를 눕혀 찍은 쪽 — 래스터를 세워 괘선부터 다시 읽는다. 쪽 가로·세로도 바꿔 블록 상자는 세운 쪽 기준이다
+    const pageRotation = stats.pageRotation
+    if (stats.pageRotation) {
+      ({ rgba: upright, width: rw, height: rh } = rotateQuarter(upright, rw, rh, stats.pageRotation));
+      [pdfW, pdfH] = [pdfH, pdfW]
+      delete stats.pageRotation
+      ruling = detectRulingLines(upright, rw, rh, rh / pdfH)
+      items = await recognizeOcrPage(engine!, config, { ...tuning, orientPage: false }, upright, rw, rh, stats,
+        [...(ruling.cellDividers ?? []), ...cellEdgeVerticals(ruling)], cellEdgeHorizontals(ruling))
+    }
+    // 쪽 검출이 놓친 빈 칸 글 — 괘선 칸만 잘라 다시 읽는다(empty-cell-rescue). 그림 영역·벡터 글자 쪽은 쪽 래스터를 다 읽지 않는다
+    if (ruling && !regions && !vectorOps && config.tuning.postprocess) items = [...items, ...await rescueEmptyCells(engine!, tuning, upright, rw, rh, ruling, items)]
     if (stats.droppedLowConf > 0) {
       warnings.push({
         page: pageNo,
@@ -260,7 +335,7 @@ export async function ocrOnePage(
     const scale = rh / pdfH
     /** 블록과 함께 돌려줄 쪽 줄 (config.lines 일 때만) */
     const withLines = (blocks: IRBlock[], kept: OcrItem[], regionsOnly = false) =>
-      config.lines ? { blocks, lines: pageLines(pageNo, rw, rh, scale, angle, kept, stats.dropped, regionsOnly) } : { blocks }
+      config.lines ? { blocks, lines: { ...pageLines(pageNo, rw, rh, scale, angle, kept, stats.dropped, regionsOnly), ...(pageRotation ? { pageRotation } : {}) } } : { blocks }
     // 텍스트층이 있는 쪽의 그림 영역만 읽을 때는 영역마다 그 안 글줄로 따로 블록을 만든다 — 쪽 전체로 묶으면 본문 줄과 그림 글이
     // 한 문단으로 합쳐져 영역 판정(mergeOcrImageRegions)에서 빠진다
     if (regions) {
@@ -295,7 +370,9 @@ export async function ocrOnePage(
     if (vectorOps) return withLines(ocrItemsToBlocks(items, pageNo, pdfW, pdfH, scale, undefined, detectTables, vectorOps), items)
     // 래스터에서 표 괘선 감지 — 스캔본 병합셀 서식도 선 기반 표 파이프라인을 탄다
     const extraLines = rulingToPdfLines(ruling!, scale, pdfH)
-    return withLines(ocrItemsToBlocks(items, pageNo, pdfW, pdfH, scale, extraLines, detectTables), items)
+    const blocks = ocrItemsToBlocks(items, pageNo, pdfW, pdfH, scale, extraLines, detectTables)
+    if (pageRotation) restoreOcrPageOrientation(blocks, pageRotation, pdfW, pdfH)
+    return withLines(blocks, items)
   }
 
   // 사용자 프로바이더 — PNG 인코딩 후 호출, 페이지당 paragraph (종전 계약)
@@ -320,6 +397,41 @@ export async function ocrOnePage(
   return { blocks: [{ type: "paragraph", text: text.trim(), pageNumber: pageNo }] }
 }
 
+/** Restore boxes to the original PDF raster orientation after layout, without reordering text. */
+export function restoreOcrPageOrientation(blocks: IRBlock[], rotation: 90 | 270, rotatedWidth: number, rotatedHeight: number): void {
+  const seenBlocks = new WeakSet<IRBlock>()
+  const seenBoxes = new WeakSet<BoundingBox>()
+  const restoreBox = (box: BoundingBox) => {
+    if (seenBoxes.has(box)) return
+    seenBoxes.add(box)
+    const { x, y, width, height } = box
+    if (rotation === 90) {
+      box.x = y
+      box.y = rotatedWidth - x - width
+    } else {
+      box.x = rotatedHeight - y - height
+      box.y = x
+    }
+    box.width = height
+    box.height = width
+  }
+  const visit = (block: IRBlock) => {
+    if (seenBlocks.has(block)) return
+    seenBlocks.add(block)
+    if (block.bbox) restoreBox(block.bbox)
+    for (const child of block.children ?? []) visit(child)
+    for (const child of block.footnoteBlocks ?? []) visit(child)
+    if (block.table) {
+      for (const box of block.table.regions ?? []) restoreBox(box)
+      for (const child of block.table.captionBlocks ?? []) visit(child)
+      for (const row of block.table.cells) for (const cell of row) {
+        for (const child of cell.blocks ?? []) visit(child)
+      }
+    }
+  }
+  for (const block of blocks) visit(block)
+}
+
 /** 2×2 평균 축소 (RGBA) */
 function halve(src: Uint8Array, w: number, h: number): { rgba: Uint8Array; width: number; height: number } {
   const W = w >> 1, H = h >> 1
@@ -332,13 +444,31 @@ function halve(src: Uint8Array, w: number, h: number): { rgba: Uint8Array; width
 }
 
 /** 그림 영역만 읽을 때 — 끝자락 지우기를 끈다 (engine OcrTuning.trimEdges 주석) */
-const REGION_TUNING: Readonly<OcrTuning> = Object.freeze({ ...DEFAULT_OCR_TUNING, trimEdges: false })
-const regionTuning = (t: Readonly<OcrTuning>): Readonly<OcrTuning> => t === DEFAULT_OCR_TUNING ? REGION_TUNING : { ...t, trimEdges: false }
+const REGION_TUNING: Readonly<OcrTuning> = Object.freeze({ ...DEFAULT_OCR_TUNING, trimEdges: false, orientPage: false, redetect: false })
+const regionTuning = (t: Readonly<OcrTuning>): Readonly<OcrTuning> => t === DEFAULT_OCR_TUNING ? REGION_TUNING : { ...t, trimEdges: false, orientPage: false, redetect: false }
 
 function meanConfidence(items: OcrItem[]): number {
   let n = 0, sum = 0
   for (const it of items) { const len = [...it.text].length; n += len; sum += it.confidence * len }
   return n ? sum / n : 0
+}
+
+/**
+ * 옅은 그림 글 명암 늘리기 — 투명도(소프트 마스크)를 씌운 글 그림은 흰 바탕에 휘도 230 언저리로 그려져 검출기가 글줄을 못 잡았다
+ * (ODL 184 각주 띠 "1 Evaluated against …", 그림 파일만 따로 읽으면 읽힌다). 영역 휘도의 어두운 끝(1%)이 밝은 끝(99%)과 120 넘게
+ * 차이 나지 않으면 그 폭을 0~255 로 늘린다 — 대비가 제대로 된 영역은 그대로
+ */
+export function stretchFaintCrop(rgba: Uint8Array): void {
+  const n = rgba.length >> 2
+  if (!n) return
+  const hist = new Uint32Array(256)
+  for (let i = 0; i < n; i++) hist[(rgba[i * 4] * 77 + rgba[i * 4 + 1] * 150 + rgba[i * 4 + 2] * 29) >> 8]++
+  let lo = 0, hi = 255
+  for (let acc = 0; lo < 255 && (acc += hist[lo]) < n * 0.01;) lo++
+  for (let acc = 0; hi > 0 && (acc += hist[hi]) < n * 0.01;) hi--
+  if (hi - lo >= 120 || hi - lo < 16) return
+  const k = 255 / (hi - lo)
+  for (let i = 0; i < n * 4; i++) if ((i & 3) !== 3) rgba[i] = Math.max(0, Math.min(255, Math.round((rgba[i] - lo) * k)))
 }
 
 /** 그림 영역마다 두 배 래스터에서 잘라 다시 인식한 글줄 — 좌표는 쪽 배율 래스터 기준으로 되돌린다 */
@@ -355,6 +485,8 @@ async function closerReads(
     if (cw < 16 || ch < 16) { out.push(null); continue }
     const crop = new Uint8Array(cw * ch * 4)
     for (let y = 0; y < ch; y++) crop.set(rgba.subarray(((y0 + y) * rw + x0) * 4, ((y0 + y) * rw + x0 + cw) * 4), y * cw * 4)
+    // 글 한 줄 띠(가로가 높이 6배 이상)만 — 큰 그림(손글씨 판서 사진, ODL 106)까지 늘리면 잡음 글이 달라졌다
+    if (cw >= ch * 6) stretchFaintCrop(crop)
     const items = await engine.recognizePage(crop, cw, ch, undefined, tuning)
     out.push(items.map(it => {
       const placed = { ...it, x: (it.x + x0) / 2, y: (it.y + y0) / 2, w: it.w / 2, h: it.h / 2 }
@@ -447,6 +579,11 @@ export function ocrItemsToBlocks(
   opList: PageOps = { fnArray: [], argsArray: [] },
   figureRegion = false,
 ): IRBlock[] {
+  // 쪽 OCR 의 그림 속 차트(두 축 눈금이 감싼 판) 글은 뺀다 — 원본에선 그림이다(ocr-chart-axes.ts)
+  if (!figureRegion) {
+    const chart = chartPlotItems(items)
+    if (chart.size) items = items.filter((_, i) => !chart.has(i))
+  }
   // 줄마다 아래 끝을 중앙값으로 맞추고, 겹친 이웃 박스는 겹친 구간 가운데서 갈라 낱말 경계(따로 검출된 상자)를 공백으로 남긴다
   const bottoms = items.map(it => it.y + it.h)
   const xs = items.map(it => ({ x: it.x, r: it.x + it.w, space: false }))
@@ -492,7 +629,25 @@ export function ocrItemsToBlocks(
     copyOcrTextGaps(it, normalized, 1 / scale)
     return normalized
   }).filter(it => it.text)
-  const blocks = unframeOcrLayoutTables(splitStackedOcrRows(extractPageBlocksWithLines(norm, pageNumber, opList, pdfW, pdfH, extraLines, detectTables)), pdfH)
+  // 글자 획이 이은 가짜 세로 괘선 — 줄 간격 좁은 두 줄 칸에서 위아래 줄 글자의 세로 획이 이어져 최소 괘선 길이를 넘었고(60px), 그 칸 열이
+  // 다섯 칸으로 갈렸다(복지사업 우수기관 표 "자치단체명"). 진짜 칸 경계는 검출 상자를 미리 가르므로 아이템 상자 안쪽을 지나지 않는다 —
+  // 글자 높이 중앙값의 2.5배 이하인 세로선이 아이템 상자 안쪽(좌우 끝 3px 안)을 세로로 절반 넘게 지나가면 뺀다
+  if (extraLines?.verticals.length && items.length) {
+    const hs = items.map(it => it.h).sort((p, q) => p - q)
+    const maxLen = hs[hs.length >> 1] * 2.5 / scale
+    const boxes = items.map(it => ({ x0: (it.x + 3) / scale, x1: (it.x + it.w - 3) / scale, yTop: pdfH - it.y / scale, yBot: pdfH - (it.y + it.h) / scale }))
+    extraLines = {
+      ...extraLines,
+      verticals: extraLines.verticals.filter(v => {
+        const lo = Math.min(v.y1, v.y2), hi = Math.max(v.y1, v.y2)
+        if (hi - lo > maxLen) return true
+        return !boxes.some(b => v.x1 > b.x0 && v.x1 < b.x1 && Math.min(hi, b.yTop) - Math.max(lo, b.yBot) > (hi - lo) * 0.5)
+      }),
+    }
+  }
+  const laid = unframeOcrLayoutTables(splitOcrJoinedHeaders(splitOcrContactColumns(splitOcrNameValueColumns(splitStackedOcrRows(extractPageBlocksWithLines(norm, pageNumber, opList, pdfW, pdfH, extraLines, detectTables))))), pdfH)
+  // 표 속 산문 행 꺼내기는 쪽 OCR 에만 — 그림 영역 OCR 은 조각을 위치로 다시 늘어놓아 표 상자를 받은 문단이 앞으로 간다
+  const blocks = figureRegion ? laid : splitOcrProseRows(laid)
   if (!figureRegion) markOcrHeadings(blocks)
   return blocks
 }
@@ -514,8 +669,28 @@ export function markOcrHeadings(blocks: IRBlock[]): void {
   for (const b of sized) {
     const text = b.text!.trim(), size = b.style!.fontSize!
     const ratio = size / body
+    // 번호 붙은 장·절 제목("제1절 임금변동성과 측정방법")은 본문보다 조금만 커도 제목이다 — 1.3배 문턱에 못 미쳐 절 제목을 놓쳤다(KDI
+    // 보고서). 한 줄·30자 안·문장부호로 안 끝날 때만(본문 "제1절에서는 …" 은 길거나 여러 줄이다). OCR 이 번호 뒤 공백을 빠뜨린 "제1절미국" 도 —
+    // 번호 바로 뒤에 붙은 조사("제1절의")는 본문이다. 띄어 쓴 뒤의 첫 글자는 조사가 아니다("제1절 의장의 직권상정")
+    if (ratio >= 1 && ratio < 1.3 && /^제\s*\d+\s*[장절편부](?:\s+\S|(?![에의은는을를이가와과로도만\s])\S)/.test(text) && text.length <= 30 && !/[.!?。,]$|다\.?$/.test(text) &&
+        (!b.bbox || b.bbox.height <= size * 1.6)) {
+      b.type = "heading"
+      b.level = /^제\s*\d+\s*절/.test(text) ? 2 : 1
+      continue
+    }
+    // 영문 대문자만으로 된 한 줄("BUT COPYRIGHT DOESN'T COVER EVERYTHING")은 제목이다 — 글자 그림을 OCR 한 쪽은 줄마다 잰 크기가
+    // 들쭉날쭉해(본문 16~45) 크기 문턱으로 못 가린다(ODL 141). 두 낱말·글자 12자 이상, 소문자·한글 없이, 마침표·쉼표로 안 끝날 때만(두 줄로 꺾인 것까지)
+    if (text.length <= 60 && /^[A-Z0-9][A-Z0-9 '’&:!,-]*$/.test(text) && (text.match(/[A-Z]/g) ?? []).length >= 12 &&
+        /[A-Z]{2,}[,:]?\s+[A-Z]{2,}/.test(text) && !/[.,]$/.test(text) && (!b.bbox || b.bbox.height <= size * 3.2)) {
+      b.type = "heading"
+      b.level = ratio >= 1.5 ? 1 : 2
+      continue
+    }
     if (ratio < 1.3) continue
     if (text.length < 2 || text.length > (ratio >= 1.5 ? 60 : 40) || /[.!?。]$|다\.?$/.test(text) || /^[\d\s.,%·-]+$/.test(text)) continue
+    // 크게 읽힌 수식 조각("1g(w)=Dt−()+, =1980")·문장 조각(", n"·"can be explained with the")은 제목이 아니다 — 등호가 있거나
+    // 문장부호·영문 소문자로 시작한다
+    if (/=/.test(text) || /^[,.;:)\]}]/.test(text) || /^[a-z]/.test(text)) continue
     // 한 줄만 — 1.5배 넘게 큰 짧은 글은 두 줄로 꺾인 장 제목까지
     if (b.bbox && b.bbox.height > size * (ratio >= 1.5 ? 3.2 : 1.6)) continue
     b.type = "heading"

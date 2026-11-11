@@ -16,6 +16,8 @@ import { hwpToHwpx, convertToHwpx, parse, patchHwp, fillForm } from "../src/inde
 import { registerConvertTools } from "../src/mcp/tools-convert.js"
 import { registerFormTools } from "../src/mcp/tools-form.js"
 import { needsRewrite, rewriteEdited } from "../src/roundtrip/rewrite-fallback.js"
+import { _decryptDistributePayload, _extractAesKey } from "../src/hwp5/crypto.js"
+import { createCipheriv } from "node:crypto"
 
 const require = createRequire(import.meta.url)
 const CFB = require("cfb")
@@ -82,6 +84,41 @@ function table2x2(cells: string[][]): Buffer {
   return Buffer.concat(parts)
 }
 
+/** 글자처럼 취급한 사각형 앵커 문단 — 바깥 여백(왼·오·위·아래)·그림자(종류·x·y) */
+function rectGso(margin: number[], shadow: [number, number, number], instanceId = 555): Buffer {
+  const anchor = Buffer.alloc(16)
+  anchor.writeUInt16LE(0x0b, 0)
+  anchor.write(" osg", 2, "ascii")
+  anchor.writeUInt16LE(0x0b, 14)
+  const text = Buffer.concat([anchor, Buffer.from([0x0d, 0])])
+  const header = Buffer.alloc(24)
+  header.writeUInt32LE(text.length / 2, 0)
+  header.writeUInt32LE(1 << 11, 4)
+  header.writeUInt16LE(1, 12)
+  const ctrl = Buffer.alloc(46)
+  ctrl.write(" osg", 0, "ascii")
+  ctrl.writeUInt32LE(1, 4) // 글자처럼 취급
+  ctrl.writeUInt32LE(10000, 16)
+  ctrl.writeUInt32LE(3000, 20)
+  margin.forEach((v, i) => ctrl.writeInt16LE(v, 28 + 2 * i))
+  ctrl.writeUInt32LE(instanceId, 36)
+  const comp = Buffer.alloc(8 + 44 + 48 + 13 + 8 + 16 + 6)
+  comp.write("cer$cer$", 0, "latin1")
+  comp.writeUInt32LE(10000, 20)
+  comp.writeUInt32LE(3000, 24)
+  comp.writeUInt32LE(10000, 28)
+  comp.writeUInt32LE(3000, 32)
+  comp.writeDoubleLE(1, 52) // 변환 행렬
+  comp.writeDoubleLE(1, 52 + 32)
+  const s = 52 + 48 + 13 + 8 // 선(13) · 채우기 없음(종류 0·추가 길이 0) 뒤 그림자
+  comp.writeUInt32LE(shadow[0], s)
+  comp.writeUInt32LE(0xb2b2b2, s + 4)
+  comp.writeInt32LE(shadow[1], s + 8)
+  comp.writeInt32LE(shadow[2], s + 12)
+  return Buffer.concat([rec(0x42, 0, header), rec(0x43, 1, text), rec(0x44, 1, Buffer.alloc(8)), rec(0x47, 1, ctrl),
+    rec(0x4c, 2, comp), rec(0x4f, 3, Buffer.alloc(33))])
+}
+
 /** 문단 모양 기록(58바이트) — 왼쪽 여백·속성2 */
 function paraShapeRec(left: number, attr2 = 0): Buffer {
   const d = Buffer.alloc(58)
@@ -102,6 +139,25 @@ function buildHwp(section: Buffer, docInfo = Buffer.alloc(0), extra: Record<stri
   CFB.utils.cfb_add(cfb, "/BodyText/Section0", section)
   CFB.utils.cfb_add(cfb, "/PrvText", utf16("미리보기"))
   for (const [path, data] of Object.entries(extra)) CFB.utils.cfb_add(cfb, path, data)
+  return new Uint8Array(CFB.write(cfb, { type: "buffer" }) as Buffer)
+}
+
+/**
+ * 배포용 문서 — 본문을 ViewText/Section0 에 DISTRIBUTE_DOC_DATA(256바이트 payload) + AES-128 ECB 로 넣고 BodyText 에는 안내 문구만,
+ * FileHeader 속성 비트 2 를 세운다. AES 키는 payload 를 복호한 값에서 꺼낸다(공개 HWP 5.0 배포용 문서 구조)
+ */
+function distributionHwp(section: Buffer): Uint8Array {
+  const payload = Buffer.alloc(256)
+  for (let i = 0; i < 256; i++) payload[i] = (i * 37 + 11) & 0xff
+  const key = _extractAesKey(_decryptDistributePayload(payload))
+  const body = Buffer.concat([section, Buffer.alloc((16 - (section.length % 16)) % 16)])
+  const aes = createCipheriv("aes-128-ecb", key, null).setAutoPadding(false)
+  const viewText = Buffer.concat([rec(0x1c, 0, payload), aes.update(body), aes.final()])
+  const cfb = CFB.read(Buffer.from(buildHwp(paragraph("이 문서는 상위 버전의 배포용 문서입니다."), Buffer.alloc(0), { "/ViewText/Section0": viewText })), { type: "buffer" })
+  const fh = CFB.find(cfb, "/FileHeader")
+  const hdr = Buffer.from(fh.content)
+  hdr.writeUInt32LE(hdr.readUInt32LE(36) | 4, 36)
+  fh.content = hdr
   return new Uint8Array(CFB.write(cfb, { type: "buffer" }) as Buffer)
 }
 
@@ -159,6 +215,138 @@ describe("hwpToHwpx — 합성 문서", () => {
     assert.match(await zip.file("Contents/memoExtended.xml")!.async("string"),
       /<he:memosEx xmlns:he="http:\/\/www\.hancom\.co\.kr\/hwpml\/2021\/extended"><he:memo id="11" parentId="21"\/><he:memo id="12" parentId="22"\/><\/he:memosEx>$/)
     assert.match(await zip.file("Contents/content.hpf")!.async("string"), /<opf:item id="memoextended" href="Contents\/memoExtended\.xml" media-type="application\/xml"\/>/)
+  })
+
+  it("배포용 문서는 복호한 ViewText 본문으로 보통 HWPX 를 쓴다", async () => {
+    const section = Buffer.concat([paragraph("배포용 본문", [[0, 0]], 0, 41), table2x2([["가", "나"], ["다", "라"]])])
+    const dist = distributionHwp(section)
+    const out = await hwpToHwpx(dist)
+    const xml = await sectionOf(out)
+    assert.match(xml, /<hp:p id="41"[^>]*><hp:run charPrIDRef="0"><hp:t>배포용 본문<\/hp:t>/)
+    assert.match(xml, /<hp:tbl id="777"/)
+    assert.doesNotMatch(xml, /상위 버전의 배포용/)
+    // 같은 본문을 보통 문서로 둔 것과 섹션이 같다
+    assert.equal(await sectionOf(await hwpToHwpx(buildHwp(section))), xml)
+    const md = (await parse(out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer)).markdown
+    for (const t of ["배포용 본문", "가", "나", "다", "라"]) assert.ok(md.includes(t), md)
+  })
+
+  it("평행 그림자가 개체 밖으로 나간 만큼을 바깥 여백에서 뺀다 (HWP 여백은 그림자를 품는다)", async () => {
+    const xml = await sectionOf(await hwpToHwpx(buildHwp(Buffer.concat([
+      rectGso([0, 883, 0, 883], [4, 283, 283], 1), // 오른쪽 아래 283 → 오른쪽·아래 883
+      rectGso([101, 202, 303, 404], [1, 300, 700], 2), // 왼쪽 위 (300 − 600, 700 − 600) → 왼쪽 300 · 아래 100
+      rectGso([101, 202, 303, 404], [0, 300, 700], 3), // 그림자 없음
+      rectGso([101, 202, 303, 404], [5, 250, 250], 4), // 기울인 그림자는 그대로
+    ]))))
+    const margins = [...xml.matchAll(/<hp:outMargin ([^>]*)\/>/g)].map(m => m[1])
+    assert.deepEqual(margins, ['left="0" right="0" top="0" bottom="0"', 'left="4294967097" right="202" top="303" bottom="304"',
+      'left="101" right="202" top="303" bottom="404"', 'left="101" right="202" top="303" bottom="404"'])
+    assert.match(xml, /<hp:rect id="1"[\s\S]*?<hp:shadow type="PARELLEL_RIGHTBOTTOM" color="#B2B2B2" offsetX="283" offsetY="283"/)
+  })
+
+  it("투명도 바이트가 있는 색은 한글처럼 그 바이트를 앞자리 0 없이 붙인다", async () => {
+    const bf = Buffer.alloc(2 + 6 * 5 + 8)
+    ;[0x0aa0fc10, 0xff000000, 0x10000000, 0x00563412].forEach((c, i) => { bf[2 + 6 * i] = 1; bf.writeUInt32LE(c, 2 + 6 * i + 2) })
+    const zip = await JSZip.loadAsync(await hwpToHwpx(buildHwp(paragraph("본문"), rec(0x14, 0, bf))))
+    const header = await zip.file("Contents/header.xml")!.async("string")
+    assert.deepEqual([...header.matchAll(/<hh:(left|right|top|bottom)Border [^>]*color="([^"]+)"/g)].map(m => m[2]),
+      ["#A10FCA0", "#FF000000", "#10000000", "#123456"])
+  })
+
+  it("변경 추적 설정 기록이 없으면 한글 기본값 56, 있으면 기록 값", async () => {
+    const config = async (docInfo: Buffer): Promise<string | undefined> => (await (await JSZip.loadAsync(await hwpToHwpx(buildHwp(paragraph("본문"), docInfo))))
+      .file("Contents/header.xml")!.async("string")).match(/<hh:trackchageConfig flags="(\d+)"\/>/)?.[1]
+    const track = Buffer.alloc(1032)
+    track.writeUInt32LE(60, 0)
+    assert.equal(await config(Buffer.alloc(0)), "56")
+    assert.equal(await config(rec(0x20, 0, track)), "60")
+  })
+
+  it("같은 문단에 똑같은 쪽 번호 위치가 둘이면 한글처럼 하나만 쓴다", async () => {
+    /** 쪽 번호 위치 컨트롤(아래 가운데, 줄표) n 개 뒤 글 */
+    const pageNumPara = (n: number, tail: string): Buffer => {
+      const ch = Buffer.alloc(16)
+      ch.writeUInt16LE(0x15, 0)
+      ch.write("pngp", 2, "latin1")
+      ch.writeUInt16LE(0x15, 14)
+      const text = Buffer.concat([...Array(n).fill(ch), utf16(tail), Buffer.from([0x0d, 0])])
+      const header = Buffer.alloc(24)
+      header.writeUInt32LE(text.length / 2, 0)
+      header.writeUInt16LE(1, 12)
+      const ctrl = Buffer.alloc(16)
+      ctrl.write("pngp", 0, "latin1")
+      ctrl.writeUInt32LE(5 << 8, 4)
+      ctrl.writeUInt16LE(0x2d, 14)
+      return Buffer.concat([rec(0x42, 0, header), rec(0x43, 1, text), rec(0x44, 1, Buffer.alloc(8)), ...Array(n).fill(rec(0x47, 1, ctrl))])
+    }
+    const xml = await sectionOf(await hwpToHwpx(buildHwp(Buffer.concat([pageNumPara(2, "첫 문단"), pageNumPara(1, "둘째 문단")]))))
+    const pageNum = '<hp:ctrl><hp:pageNum pos="BOTTOM_CENTER" formatType="DIGIT" sideChar="-"/></hp:ctrl>'
+    assert.equal(xml.split(pageNum).length - 1, 2)
+    assert.ok(xml.includes(`<hp:run charPrIDRef="0">${pageNum}<hp:t>첫 문단</hp:t></hp:run>`), xml)
+    assert.ok(xml.includes(`<hp:run charPrIDRef="0">${pageNum}<hp:t>둘째 문단</hp:t></hp:run>`), xml)
+  })
+
+  it("변경 추적 문서는 ViewText 를 옮겨 지운 글·표를 deleteBegin·deleteEnd 로 남기고 변경 목록·작성자를 header 에 쓴다", async () => {
+    const range = (...tags: Array<[number, number, number, number]>): Buffer => {
+      const d = Buffer.alloc(12 * tags.length)
+      tags.forEach(([s, e, kind, v], i) => { d.writeUInt32LE(s, i * 12); d.writeUInt32LE(e, i * 12 + 4); d.writeUInt32LE(((kind << 24) | v) >>> 0, i * 12 + 8) })
+      return rec(0x46, 1, d)
+    }
+    // 지금 내용(BodyText)에는 지운 글·표가 없다. ViewText: "지운 글"(0~4, 지움 1·글자 모양 바꿈 3) + "남은 글", 지운 표 문단
+    const body = paragraph("남은 글", [[0, 1]], 0, 61)
+    const view = Buffer.concat([paragraph("지운 글남은 글", [[0, 0], [4, 1]], 0, 61), range([0, 4, 0x11, 1], [0, 4, 0x12, 3], [0, 8, 0x13, 2]),
+      table2x2([["가", "나"], ["다", "라"]]), range([0, 8, 0x11, 1])])
+    const change = (type: number, minute: number, extra: number[], hide: number): Buffer => {
+      const d = Buffer.alloc(14 + 8 + 4 * extra.length + 4)
+      d.writeUInt32LE(type, 0)
+      ;[2026, 6, 5, 18, minute].forEach((v, i) => d.writeUInt16LE(v, 4 + 2 * i))
+      d.writeUInt32LE(1, 14)
+      d.writeUInt32LE(4 * extra.length, 18)
+      extra.forEach((v, i) => d.writeUInt32LE(v, 22 + 4 * i))
+      d.writeUInt32LE(hide, 22 + 4 * extra.length)
+      return rec(0x60, 0, d)
+    }
+    const author = Buffer.concat([Buffer.from([4, 0, 0, 0]), utf16("user"), Buffer.from([1, 0, 0, 0, 0x1b, 0xc3, 0x70, 0x5b])])
+    const docInfo = Buffer.concat([rec(0x61, 0, author), change(0x11, 32, [], 1), change(0x13, 36, [0], 0), change(0x12, 36, [0], 0)])
+    const cfb = CFB.read(Buffer.from(buildHwp(body, docInfo, { "/ViewText/Section0": view })), { type: "buffer" })
+    const fh = CFB.find(cfb, "/FileHeader")
+    const hdr = Buffer.from(fh.content)
+    hdr.writeUInt32LE(hdr.readUInt32LE(36) | (1 << 14), 36)
+    fh.content = hdr
+    const zip = await JSZip.loadAsync(await hwpToHwpx(new Uint8Array(CFB.write(cfb, { type: "buffer" }) as Buffer)))
+    const xml = await zip.file("Contents/section0.xml")!.async("string")
+    assert.match(xml, /<hp:p id="61" [^>]* merged="0" paraTcId="2"><hp:run charPrIDRef="0" charTcId="3"><hp:t><hp:deleteBegin Id="1" TcId="1"\/>지운 글<hp:deleteEnd Id="1" TcId="1" paraend="0"\/><\/hp:t><\/hp:run><hp:run charPrIDRef="1"><hp:t>남은 글<\/hp:t><\/hp:run>/)
+    assert.match(xml, /<hp:t><hp:deleteBegin Id="2" TcId="1"\/><\/hp:t><hp:tbl [\s\S]*<\/hp:tbl><hp:t><hp:deleteEnd Id="2" TcId="1" paraend="0"\/><\/hp:t><hp:t\/><\/hp:run>/)
+    const header = await zip.file("Contents/header.xml")!.async("string")
+    // 한글처럼 지역 시각을 이 컴퓨터 시간대로 UTC 로
+    const utc = (m: number): string => new Date(2026, 5, 5, 18, m).toISOString().replace(/\.\d+Z$/, "Z")
+    assert.ok(header.includes('<hh:trackChanges itemCnt="3">'
+      + `<hh:trackChange type="Delete" date="${utc(32)}" authorID="1" hide="1" id="1"/>`
+      + `<hh:trackChange type="ParaShape" date="${utc(36)}" authorID="1" hide="0" id="2" parashapeID="0"/>`
+      + `<hh:trackChange type="CharShape" date="${utc(36)}" authorID="1" hide="0" id="3" charshapeID="0"/></hh:trackChanges>`
+      + '<hh:trackChangeAuthors itemCnt="1"><hh:trackChangeAuthor name="user" mark="1" id="1"/></hh:trackChangeAuthors></hh:refList>'), header)
+  })
+
+  it("형광펜 끝은 끝 앞 글자의 run 에서 닫고, 문단 끝 run 에서 닫힌 것이면 그 run 에 빈 글 마디를 둔다", async () => {
+    const pen = (s: number, e: number): Buffer => {
+      const d = Buffer.alloc(12)
+      d.writeUInt32LE(s, 0); d.writeUInt32LE(e, 4); d.writeUInt32LE(((2 << 24) | 0xffff00) >>> 0, 8)
+      return rec(0x46, 1, d)
+    }
+    const runs: Array<[number, number]> = [[0, 0], [2, 1], [5, 2]]
+    const xml = await sectionOf(await hwpToHwpx(buildHwp(Buffer.concat([paragraph("가나다라마", runs), pen(0, 2), paragraph("가나다라마", runs), pen(2, 5)]))))
+    const begin = '<hp:markpenBegin color="#00FFFF"/>'
+    assert.ok(xml.includes(`<hp:run charPrIDRef="0"><hp:t>${begin}가나<hp:markpenEnd/></hp:t></hp:run><hp:run charPrIDRef="1"><hp:t>다라마</hp:t></hp:run><hp:run charPrIDRef="2"/>`), xml)
+    assert.ok(xml.includes(`<hp:run charPrIDRef="0"><hp:t>가나</hp:t></hp:run><hp:run charPrIDRef="1"><hp:t>${begin}다라마<hp:markpenEnd/></hp:t></hp:run><hp:run charPrIDRef="2"><hp:t/></hp:run>`), xml)
+  })
+
+  it("메모 모양은 선 종류가 굵기보다 앞이다", async () => {
+    const memo = Buffer.alloc(22)
+    memo.writeUInt32LE(15591, 0)
+    memo[4] = 1 // 선 종류(실선)
+    memo[5] = 3 // 선 굵기
+    const zip = await JSZip.loadAsync(await hwpToHwpx(buildHwp(paragraph("본문"), rec(0x5c, 0, memo))))
+    assert.match(await zip.file("Contents/header.xml")!.async("string"), /<hh:memoPr id="1" width="15591" lineWidth="3" lineType="SOLID"/)
   })
 
   it("패키지에 한글이 읽는 항목을 갖춘다", async () => {

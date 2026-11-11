@@ -674,6 +674,8 @@ const EDGE_NEAR = 10
 const EDGE_CONNECT_TOL = 5
 /** 상하 스택 표 분할: 그룹 내 세로 간격이 중앙값의 이 배를 넘으면 표 경계로 보고 쪼갬 */
 const EDGE_YGAP_SPLIT_K = 2.5
+/** 상하 스택 표 분할: 다리 없는 띠의 위아래 괘선이 묶음 가는 선의 이 배 이상 굵으면 두 표의 바깥 테두리로 보고 쪼갬 */
+const EDGE_FRAME_WIDTH_K = 1.5
 /** y-간격 분할 절대 하한(pt) — 이중괘선 중앙값 붕괴 시 정상 행간을 표 경계로 오인하지 않게 */
 const EDGE_YGAP_ABS_MIN = 30
 /** 체인 뷰: 같은 논리 괘선으로 묶는 y 허용 오차 (pt) */
@@ -755,12 +757,25 @@ export function closeOpenTableEdges(
   //     EDGE_YGAP_SPLIT_K배를 넘고 양쪽이 각각 최소 괘선 수를 만족할 때만 분할하므로,
   //     행 간격이 균일한 연속 단일 표에는 발동하지 않는다(무회귀).
   const splitGroups: LineSegment[][] = []
+  /** 표 사이로 가른 띠 — 다른 묶음도 이 띠를 넘어 변을 합성하지 않는다 */
+  const cuts: Array<{ yLo: number; yHi: number; x1: number; x2: number }> = []
   for (const g of groups) {
     const sorted = [...g].sort((a, b) => a.y1 - b.y1)
     const gaps: number[] = []
     for (let i = 1; i < sorted.length; i++) gaps.push(sorted[i].y1 - sorted[i - 1].y1)
     const median = gaps.length ? [...gaps].sort((a, b) => a - b)[gaps.length >> 1] : 0
     const threshold = median * EDGE_YGAP_SPLIT_K
+    // 표마다 위·머리 아래·바닥 괘선만 그은 통계표는 본문 행 간격이 표 사이 간격보다 커 중앙값으로 못 가른다(1인당 지역내총생산
+    // 만원 표 / 달러 표, 사이에 제목·단위 줄). 표 바깥 테두리만 굵고 안쪽 선은 가늘다 — 다리 없는 띠 양쪽이 각각 "굵은 테두리 ·
+    // 가는 안쪽 선 · 굵은 테두리" 한 벌이면 표 사이다. 굵기가 들쭉날쭉한 스캔 서식(안쪽에도 굵은 선)은 걸리지 않는다
+    const thin = Math.min(...sorted.map(l => l.lineWidth))
+    const frame = (l: LineSegment) => thin > 0 && l.lineWidth >= thin * EDGE_FRAME_WIDTH_K
+    /** sorted[from..] 이 굵은 선으로 시작해 가는 선들 뒤 굵은 선으로 닫히면 그 끝 번호 */
+    const frameEnd = (from: number, step: 1 | -1) => {
+      if (!frame(sorted[from])) return -1
+      for (let j = from + step; j >= 0 && j < sorted.length; j += step) if (frame(sorted[j])) return Math.abs(j - from) >= EDGE_MIN_RULES - 1 ? j : -1
+      return -1
+    }
     let cur: LineSegment[] = sorted.length ? [sorted[0]] : []
     for (let i = 1; i < sorted.length; i++) {
       const yLo = sorted[i - 1].y1, yHi = sorted[i].y1
@@ -779,14 +794,34 @@ export function closeOpenTableEdges(
       const bridged = verticals.some(vl =>
         vl.y1 <= yLo + EDGE_NEAR && vl.y2 >= yHi - EDGE_NEAR &&
         vl.x1 >= gx1 - EDGE_CONNECT_TOL && vl.x1 <= gx2 + EDGE_CONNECT_TOL)
-      if (median > 0 && gap > threshold && gap > EDGE_YGAP_ABS_MIN && !bridged
+      const between = gap > threshold || frameEnd(i - 1, -1) >= 0 && frameEnd(i, 1) >= 0
+      if (median > 0 && between && gap > EDGE_YGAP_ABS_MIN && !bridged
           && cur.length >= EDGE_MIN_RULES && sorted.length - i >= EDGE_MIN_RULES) {
         splitGroups.push(cur)
         cur = []
+        cuts.push({ yLo, yHi, x1: gx1, x2: gx2 })
       }
       cur.push(sorted[i])
     }
     if (cur.length) splitGroups.push(cur)
+  }
+  // 한 묶음이 표 사이로 가른 띠는 겹쳐 놓인 다른 묶음도 가른다 — 첫 열이 열린 안쪽 괘선 묶음은 아래 표 몫이 두 줄뿐이라 제 간격만으로는
+  // 못 갈라, 그 묶음의 합성 변이 위아래 두 표를 한 격자로 용접했다(고용 동향 교육·보건복지 가입자 표: 바깥 전폭 괘선 묶음은 갈림)
+  if (cuts.length) {
+    const parts: LineSegment[][] = []
+    for (const g of splitGroups) {
+      const gx1 = Math.min(...g.map(l => l.x1)), gx2 = Math.max(...g.map(l => l.x2))
+      const own = cuts.filter(c => Math.min(c.x2, gx2) - Math.max(c.x1, gx1) >= (gx2 - gx1) * 0.5)
+      let cur: LineSegment[] = []
+      for (const l of g) {
+        const prev = cur[cur.length - 1]
+        if (prev && own.some(c => prev.y1 <= c.yLo + EDGE_CONNECT_TOL && l.y1 >= c.yHi - EDGE_CONNECT_TOL)) { parts.push(cur); cur = [] }
+        cur.push(l)
+      }
+      if (cur.length) parts.push(cur)
+    }
+    splitGroups.length = 0
+    splitGroups.push(...parts)
   }
 
   const synthesized: LineSegment[] = []

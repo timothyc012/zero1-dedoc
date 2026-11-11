@@ -44,7 +44,7 @@ const MAX_DIM = 0x7fff
  * 36MP = A4 전면 600dpi 스캔(≈35MP)까지 허용 — 그 이상은 rgba+raw 로 300MB 를 넘겨
  * MCP 서버 이벤트루프를 수 초 세우므로 원본 바이트 폴백으로 돌린다.
  */
-const MAX_PIXELS = 36_000_000
+export const MAX_PIXELS = 36_000_000
 
 /**
  * 비압축 BMP(24/32bpp, BI_RGB) → PNG(8bit RGBA).
@@ -55,6 +55,12 @@ const MAX_PIXELS = 36_000_000
  * 호출부가 원본 바이트로 폴백하게 한다.
  */
 export function bmpToPng(bmp: Uint8Array): Uint8Array | null {
+  const px = bmpToRgba(bmp)
+  return px && encodePng(px.width, px.height, px.data)
+}
+
+/** 비압축 BMP(24/32bpp, BI_RGB) → 8bit RGBA 픽셀. 미지원 변형은 null (bmpToPng 와 같은 조건) */
+export function bmpToRgba(bmp: Uint8Array): { data: Uint8Array; width: number; height: number } | null {
   // BITMAPFILEHEADER(14) + BITMAPINFOHEADER(40)
   if (bmp.length < 54) return null
   if (bmp[0] !== 0x42 || bmp[1] !== 0x4d) return null // "BM"
@@ -110,7 +116,7 @@ export function bmpToPng(bmp: Uint8Array): Uint8Array | null {
     for (let i = 3; i < rgba.length; i += 4) rgba[i] = 255
   }
 
-  return encodePng(width, height, rgba)
+  return { data: rgba, width, height }
 }
 
 // ─── PNG 인코드 (8bit RGBA, color type 6) ────────────

@@ -37,3 +37,20 @@ Dropped in favour of upstream, by decision:
 - Detection tiling and multi-pass merging for the Korean/English engine (`detection-tiles.ts`). German pages use the v6 path.
 - The fork's cooperative OCR cancellation and late-result draining in `pdf-ocr.ts` (`tests/pdf-ocr-lifecycle.test.ts`). Upstream's loop already closes PDFium in `finally` and only records lines from pages that finished.
 - The fork's model download single-flight and its test (`tests/model-preparation-concurrency.test.ts`, which hung against the new implementation). Upstream added its own concurrent-download protection, covered by `tests/model-concurrent-download.test.ts` and `tests/model-download-cleanup.test.ts`.
+
+## Full merge: upstream v4.24.63 (2026-11-11)
+
+Branch `codex/upstream-4-24-63` merges `upstream/main` `a71bdba` (v4.24.63) into the fork as a normal merge commit; the merge base moves from `d4050eac` (v4.24.38). 165 upstream commits landed, including the OCR page-orientation detection (`pageRotation`), the Rust `xml-flat` XML reader replacing `@xmldom/xmldom`, the gVisor sandbox worker (`KORDOC_SANDBOX=gvisor`), QR-code reading (`zxing-wasm`), HTML cell links, and Office hardening fixes.
+
+Conflict policy was unchanged: upstream code wins where it supersedes a fork port; fork features are re-applied on top. 12 files conflicted (`CHANGELOG.md`, `README.md`, `package*.json`, `src/ocr/{crop,engine,models,pdf-ocr}.ts`, `src/pdf/page-blocks.ts`, `src/pptx/parser.ts`, `src/xlsx/{parser,sheet-blocks}.ts`).
+
+Kept from the fork:
+
+- `ocrLanguage` routing including German (`de`), the generation-6 dispatch in `src/ocr/engine.ts`, and `src/ocr/engine-v6.ts` untouched.
+- `ocrLinesInPdfSpace()` and `PdfOcrLine`; it now also undoes upstream's quarter-turn `pageRotation` before mapping to PDF space.
+- `includeCellProvenance` (XLS/XLSX), PPTX group reading order, notes boxes and picture warnings, `--ocr-language`, the worker's OCR-off default, and the `zero1-dedoc` identity. `server.json` keeps the upstream registry name by convention and follows the upstream version.
+
+Post-merge review fixes on top of the conflict resolution:
+
+- Full-page OCR on quarter-turned rasters (PDF and image inputs) returned blocks in the corrected raster's coordinates while `ocrLines` reported original-frame lines; `restoreOcrPageOrientation()` now maps block, nested-block, caption, footnote and table-cell boxes back to the original orientation, preserving reading order.
+- `ocrLinesInPdfSpace()` undid the quarter turn with pixel-index math (`W−1−y`), off by one raster pixel; it now uses continuous box-edge transforms.

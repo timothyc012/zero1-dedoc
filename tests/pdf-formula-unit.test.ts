@@ -16,8 +16,13 @@ import {
   isTrivialFormula,
   normalizeFormulaSpacing,
   hasHighRepetition,
+  mergeContinuationLines,
+  dropNestedDisplays,
+  doubleBarNorms,
 } from "../src/pdf/formula/postprocess.js"
 import { __internal } from "../src/pdf/formula/detector.js"
+import { repeatingTail } from "../src/pdf/formula/recognizer.js"
+import { lineBands } from "../src/pdf/formula/pipeline.js"
 
 const { nms, iou, letterbox } = __internal
 
@@ -27,6 +32,11 @@ describe("formula postprocess", () => {
     assert.equal(stripTrailingWhitespace("x + y \\,"), "x + y")
     assert.equal(stripTrailingWhitespace("x + y \\! \\,"), "x + y")
     assert.equal(stripTrailingWhitespace("x + y"), "x + y")
+  })
+
+  it("잘린 인식 결과 끝의 짝 없는 역슬래시를 뗀다 — 줄바꿈 \\\\ 는 둔다", () => {
+    assert.equal(postProcessLatex("\\{\\boldsymbol{\\tau}\\"), "\\{\\boldsymbol{\\tau}")
+    assert.equal(postProcessLatex("a=b\\\\c=d"), "a=b\\\\c=d")
   })
 
   it("연속 공백 축약", () => {
@@ -342,6 +352,22 @@ describe("isTrivialFormula", () => {
       ),
       false,
     )
+    // 같은 첨자를 되풀이한 정상 식은 유지
+    assert.equal(isTrivialFormula("S=\\sum_{\\ell,m}S_{\\ell,m}Y_{\\ell,m},"), false)
+    assert.equal(isTrivialFormula("T_{\\ell,m}\\sim C_{\\ell,m}\\sim Q_{\\ell,m}."), false)
+    // 부등식으로만 잇는 여러 줄 평가식도 유지
+    assert.equal(
+      isTrivialFormula(
+        "\\begin{aligned}{I}&{\\leq\\frac{k_{0}}{4}|c\\widehat{E}|^{2}}\\\\{}&{+C(k_{0})|\\widehat{u\\times B}|^{2},}\\end{aligned}",
+      ),
+      false,
+    )
+    assert.equal(
+      isTrivialFormula(
+        "\\begin{aligned}{\\frac{d}{dt}L_{c}(t,\\xi)+k_{0}}&{|\\widehat{B}|^{2}}\\\\{}&{\\lesssim|\\widehat{u\\times B}|^{2},}\\end{aligned}",
+      ),
+      false,
+    )
   })
 
   it("\\begin{matrix} + \\downarrow 반복 trivial (architecture diagram)", () => {
@@ -485,5 +511,93 @@ trailer << /Root 1 0 R >>`)
     p.pdfium = { destroy: () => {} }
     await (p as unknown as InstanceType<typeof FormulaPipeline>).destroy()
     assert.deepEqual(released, ["mfd", "encoder", "decoder"])
+  })
+})
+
+describe("formula continuation lines (mergeContinuationLines)", () => {
+  const r = (y1: number, y2: number, latex: string, x1 = 100, x2 = 500, kind = "display") => ({ bbox: { x1, y1, x2, y2 }, kind, latex, score: 0.9 })
+  it("바로 아래 붙은 관계 기호 줄을 위 식의 다음 줄로 잇는다", () => {
+    const out = mergeContinuationLines([r(100, 140, "A=B+C"), r(150, 190, "\\leq D+E"), r(200, 240, "+F")])
+    assert.equal(out.length, 1)
+    assert.equal(out[0].latex, "\\begin{aligned}A=B+C \\\\ \\leq D+E \\\\ +F\\end{aligned}")
+    assert.deepEqual(out[0].bbox, { x1: 100, y1: 100, x2: 500, y2: 240 })
+  })
+  it("여러 줄 상자를 읽은 조각(aligned)도 관계 기호로 시작하면 바깥 aligned 를 벗겨 잇는다", () => {
+    const out = mergeContinuationLines([r(100, 240, "\\begin{aligned}&{E[u]} \\\\ {=}&{E[v]}\\end{aligned}"), r(260, 380, "\\begin{aligned}{\\leq}&{(1-\\beta)E[w]}\\end{aligned}")])
+    assert.equal(out.length, 1)
+    assert.equal(out[0].latex, "\\begin{aligned}&{E[u]} \\\\ {=}&{E[v]} \\\\ {\\leq}&{(1-\\beta)E[w]}\\end{aligned}")
+  })
+  it("기호로 시작하지 않거나 멀리 떨어진 식·inline 은 그대로", () => {
+    const regions = [r(100, 140, "A=B"), r(150, 190, "x^2+y^2=1"), r(400, 440, "=C"), r(450, 470, "=D", 100, 200, "inline")]
+    assert.equal(mergeContinuationLines(regions).length, 4)
+  })
+})
+
+describe("formula nested display boxes (dropNestedDisplays)", () => {
+  const r = (x1: number, y1: number, x2: number, y2: number, latex = "a=b", kind = "display") => ({ bbox: { x1, y1, x2, y2 }, kind, latex, score: 0.5 })
+  it("여러 줄 display 상자 안에 든 한 줄 상자는 같은 줄을 또 읽은 것이라 뺀다", () => {
+    const out = dropNestedDisplays([r(214, 268, 999, 408, "A\\leq B\\\\+C"), r(237, 341, 1023, 410, "+C"), r(183, 465, 1035, 577)])
+    assert.deepEqual(out.map(o => o.latex), ["A\\leq B\\\\+C", "a=b"])
+  })
+  it("비슷한 높이로 겹친 상자·빈 상자 안·inline 은 그대로", () => {
+    const regions = [r(100, 100, 900, 160), r(120, 110, 880, 165), r(100, 300, 900, 500, ""), r(150, 320, 800, 380), r(100, 600, 900, 800), r(200, 650, 300, 680, "x", "inline")]
+    assert.equal(dropNestedDisplays(regions).length, 6)
+  })
+})
+
+describe("formula decode loop (repeatingTail)", () => {
+  it("같은 묶음이 네 번 이어진 꼬리(24토큰 이상)를 찾는다", () => {
+    const loop = [7, 8, 9, 10, 11, 12]
+    assert.equal(repeatingTail([1, 2, 3, ...loop, ...loop, ...loop, ...loop]), 6)
+  })
+  it("짧은 되풀이(행렬 0 & 0 …)·세 번만 되풀이는 고리가 아니다", () => {
+    assert.equal(repeatingTail([1, 0, 5, 0, 5, 0, 5, 0, 5]), 0)
+    const loop = [7, 8, 9, 10, 11, 12, 13, 14]
+    assert.equal(repeatingTail([1, ...loop, ...loop, ...loop]), 0)
+  })
+})
+
+
+describe("lineBands — 여러 줄 정렬식 줄 띠", () => {
+  // w×h 흰 바탕에 [x1,y1,x2,y2) 검은 상자들을 칠한 프레임
+  const frame = (w: number, h: number, boxes: number[][]) => {
+    const data = new Uint8Array(w * h * 4).fill(255)
+    for (const [x1, y1, x2, y2] of boxes) for (let y = y1; y < y2; y++) for (let x = x1; x < x2; x++) data.fill(0, (y * w + x) * 4, (y * w + x) * 4 + 3)
+    return { width: w, height: h, data }
+  }
+
+  it("줄 다섯을 가르고, 여러 줄에 걸친 큰 괄호(세로 획)는 줄 사이를 잇지 않는다", () => {
+    const lines = [0, 1, 2, 3, 4].map(i => [20, 10 + i * 40, 300, 40 + i * 40])
+    const bands = lineBands(frame(320, 220, [...lines, [5, 10, 8, 200]]), 2)
+    assert.equal(bands.length, 5)
+    assert.deepEqual(bands[0], [8, 42])
+  })
+
+  it("본문 높이 절반을 넘는 큰 아래 첨자 띠도 줄 사이 틈보다 좁게 붙어 있으면 그 줄에 붙인다", () => {
+    // 줄마다 본문 30px + 6px 틈 + 첨자 18px, 줄 사이 틈 14px
+    const boxes = [0, 1, 2].flatMap(i => [[20, 10 + i * 68, 300, 40 + i * 68], [40, 46 + i * 68, 90, 64 + i * 68]])
+    assert.equal(lineBands(frame(320, 220, boxes), 2).length, 3)
+  })
+
+  it("한 줄 식의 합 기호 위아래 첨자 띠는 줄로 갈리지 않는다", () => {
+    // 본문 30px 줄 위아래로 8px 첨자 띠
+    const bands = lineBands(frame(320, 80, [[40, 5, 60, 13], [20, 20, 300, 50], [40, 56, 60, 64]]), 2)
+    assert.equal(bands.length, 1)
+  })
+})
+
+
+describe("doubleBarNorms", () => {
+  it("막대 둘로 읽은 노름을 \\| 로", () => {
+    assert.equal(doubleBarNorms("\\int||a(s)||_{op}ds"), "\\int\\|a(s)\\|_{op}ds")
+    assert.equal(doubleBarNorms("(||W||^{2})"), "(\\|W\\|^{2})")
+  })
+  it("디코더 원문(토큰 사이 공백)도 postProcessLatex 에서 바뀐다", () => {
+    assert.equal(postProcessLatex("\\int _ { 0 } ^ { t } | | a ( s ) | | _ { o p } d s"), "\\int_{0}^{t}\\|a(s)\\|_{op}ds")
+  })
+  it("절댓값 곱 |a||b| 와 이미 \\| 인 노름은 그대로", () => {
+    assert.equal(doubleBarNorms("|a||b|"), "|a||b|")
+    assert.equal(doubleBarNorms("\\|x\\|"), "\\|x\\|")
+    assert.equal(doubleBarNorms("1-|x||y|+||z||"), "1-|x||y|+\\|z\\|")
   })
 })

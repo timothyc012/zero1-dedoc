@@ -8,6 +8,7 @@ import { stripScriptTags } from "./script-tags.js"
 import { toPlainMarkdown } from "./plain-markdown.js"
 import { parsePageRange } from "./page-range.js"
 import { toHtmlTables } from "./html-tables.js"
+import { htmlCellLinks } from "./html-cell-links.js"
 import { memosMarkdown } from "./memo-notes.js"
 import { readFile } from "fs/promises"
 import { detectFormat, detectOle2Format, detectZipFormat, isHwpxFile, isOldHwpFile, isPdfFile, isZipFile } from "./detect.js"
@@ -31,9 +32,12 @@ import type { FillValue, FillInput } from "./form/match.js"
 import { fillHwpx } from "./form/filler-hwpx.js"
 import type { HwpxFillResult } from "./form/filler-hwpx.js"
 import { blocksToMarkdown } from "./table/builder.js"
+import { readImageQrCodes } from "./qr.js"
 import { ocrEmbeddedImages } from "./ocr/embedded-image-ocr.js"
 import { validateOcrOptions } from "./ocr/options.js"
 import { inlineImagesIntoMarkdown } from "./image/transcode.js"
+import { convertImages } from "./image/format.js"
+import { dropBlankImages } from "./image/blank.js"
 import { classifyTableTree } from "./table/analyze.js"
 import { blocksToPages } from "./page-markdown.js"
 import { markdownToHwpx } from "./hwpx/generator.js"
@@ -113,6 +117,10 @@ export async function parse(input: string | ArrayBuffer | Buffer, options?: Pars
   if (out.success && opts?.htmlTables) {
     out = { ...out, markdown: toHtmlTables(out.markdown), ...(out.pages ? { pages: out.pages.map(p => ({ ...p, markdown: toHtmlTables(p.markdown) })) } : {}) }
   }
+  // htmlCellLinks: HTML 표 셀의 링크를 <a href> 로 (htmlTables 로 HTML 이 된 표 포함)
+  if (out.success && opts?.htmlCellLinks) {
+    out = { ...out, markdown: htmlCellLinks(out.markdown), ...(out.pages ? { pages: out.pages.map(p => ({ ...p, markdown: htmlCellLinks(p.markdown) })) } : {}) }
+  }
   return out
 }
 
@@ -170,11 +178,47 @@ async function withEmbeddedImageOcr(
 ): Promise<{ markdown: string; warnings: ParseSuccess["warnings"] }> {
   const list = [...(warnings ?? [])]
   if (!(await ocrEmbeddedImages(blocks, options, list))) return { markdown, warnings: list.length ? list : undefined }
-  let md = blocksToMarkdown(blocks, { tableFormat: options?.tableFormat })
-  if (options?.inlineImages && options.images !== false && images?.length) {
-    try { md = inlineImagesIntoMarkdown(md, images, { compress: true }) } catch { /* 파서 경로와 같이 원본 참조로 둔다 */ }
-  }
-  return { markdown: md, warnings: list.length ? list : undefined }
+  return { markdown: blocksMarkdown(blocks, options, images), warnings: list.length ? list : undefined }
+}
+
+/** 그림 속 QR 값(#187, `qrCodes: true`) — 값을 붙였으면 마크다운을 블록에서 다시 만든다. PDF 는 그림 추출에서 픽셀로 읽는다.
+ *  `inline` 은 그림 인라인(inlineImages)을 쓰는 형식(HWP·HWP3)만 넘긴다 */
+async function withImageQr(
+  blocks: IRBlock[], markdown: string, warnings: ParseSuccess["warnings"], images: ParseSuccess["images"], options: ParseOptions | undefined, inline?: ParseSuccess["images"],
+): Promise<{ markdown: string; warnings: ParseSuccess["warnings"] }> {
+  if (!options?.qrCodes) return { markdown, warnings }
+  const list = [...(warnings ?? [])]
+  const found = await readImageQrCodes(blocks, images, list)
+  return { markdown: found ? blocksMarkdown(blocks, options, inline) : markdown, warnings: list.length ? list : undefined }
+}
+
+/** 빈 그림 빼기(`dropBlankImages`) — 원본 그림 파일 형식. 뺐으면 마크다운을 블록에서 다시 만든다.
+ *  `inline` 은 그림 인라인(inlineImages)을 쓰는 형식(HWP·HWP3)만 넘긴다 */
+async function withoutBlankImages(
+  blocks: IRBlock[], markdown: string, warnings: ParseSuccess["warnings"], images: ParseSuccess["images"], options: ParseOptions | undefined, inline?: ParseSuccess["images"],
+): Promise<{ markdown: string; warnings: ParseSuccess["warnings"] }> {
+  if (!options?.dropBlankImages || options.images === false || !images?.length) return { markdown, warnings }
+  const list = [...(warnings ?? [])]
+  const dropped = await dropBlankImages(blocks, images, list)
+  return { markdown: dropped ? blocksMarkdown(blocks, options, inline) : markdown, warnings: list.length ? list : undefined }
+}
+
+/** 원본 그림 파일을 명시한 형식으로(#188, `imageFormat`) — 이름을 바꿨으면 마크다운을 블록에서 다시 만든다.
+ *  `inline` 은 그림 인라인(inlineImages)을 쓰는 형식(HWP·HWP3)만 넘긴다 */
+async function withImageFormat(
+  blocks: IRBlock[], markdown: string, warnings: ParseSuccess["warnings"], images: ParseSuccess["images"], options: ParseOptions | undefined, inline?: ParseSuccess["images"],
+): Promise<{ markdown: string; warnings: ParseSuccess["warnings"] }> {
+  if (!options?.imageFormat || options.images === false || !images?.length) return { markdown, warnings }
+  const list = [...(warnings ?? [])]
+  const renamed = await convertImages(blocks, images, options.imageFormat, list)
+  return { markdown: renamed ? blocksMarkdown(blocks, options, inline) : markdown, warnings: list.length ? list : undefined }
+}
+
+/** 블록에서 마크다운을 다시 만든다 — 그림 인라인은 `images` 를 넘길 때만 다시 건다 */
+function blocksMarkdown(blocks: IRBlock[], options: ParseOptions | undefined, images: ParseSuccess["images"]): string {
+  const md = blocksToMarkdown(blocks, { tableFormat: options?.tableFormat })
+  if (!(options?.inlineImages && options.images !== false && images?.length)) return md
+  try { return inlineImagesIntoMarkdown(md, images, { compress: true }) } catch { return md /* 파서 경로와 같이 원본 참조로 둔다 */ }
 }
 
 /** 첨자 표기 끔 — 태그만 걷는다(ParseOptions.scriptTags) */
@@ -207,7 +251,10 @@ export async function parseImage(buffer: ArrayBuffer, options?: ParseOptions): P
 export async function parseHwp3(buffer: ArrayBuffer, options?: ParseOptions): Promise<ParseResult> {
   try {
     const { markdown, blocks, metadata, outline, warnings, images } = parseHwp3Document(buffer, options)
-    return { success: true, fileType: "hwp3", markdown, blocks, metadata, outline, warnings, images, pageCount: metadata?.pageCount }
+    const qr = await withImageQr(blocks, markdown, warnings, images, options, images)
+    const blank = await withoutBlankImages(blocks, qr.markdown, qr.warnings, images, options, images)
+    const webp = await withImageFormat(blocks, blank.markdown, blank.warnings, images, options, images)
+    return { success: true, fileType: "hwp3", markdown: webp.markdown, blocks, metadata, outline, warnings: webp.warnings, images, pageCount: metadata?.pageCount }
   } catch (err) {
     // 에러 메시지 정제 — KordocError만 그대로, 내부 에러는 일반화 (MCP 노출 일관성)
     return { success: false, fileType: "hwp3", error: sanitizeError(err), code: classifyError(err) }
@@ -222,8 +269,11 @@ export async function parseHwpx(buffer: ArrayBuffer, options?: ParseOptions): Pr
     const doc = await parseHwpxDocument(buffer, options)
     const { blocks, metadata, outline, images, memos } = doc
     const ocr = await withEmbeddedImageOcr(blocks, doc.markdown, doc.warnings, undefined, options)
-    const markdown = options?.memos && memos?.length ? ocr.markdown + memosMarkdown(memos) : ocr.markdown
-    return scriptsOff({ success: true, fileType: "hwpx", markdown, blocks, metadata, outline, warnings: ocr.warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount, ...(memos?.length ? { memos } : {}) }, options?.scriptTags === false)
+    const qr = await withImageQr(blocks, ocr.markdown, ocr.warnings, images, options)
+    const blank = await withoutBlankImages(blocks, qr.markdown, qr.warnings, images, options)
+    const webp = await withImageFormat(blocks, blank.markdown, blank.warnings, images, options)
+    const markdown = options?.memos && memos?.length ? webp.markdown + memosMarkdown(memos) : webp.markdown
+    return scriptsOff({ success: true, fileType: "hwpx", markdown, blocks, metadata, outline, warnings: webp.warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount, ...(memos?.length ? { memos } : {}) }, options?.scriptTags === false)
   } catch (err) {
     return { success: false, fileType: "hwpx", error: sanitizeError(err), code: classifyError(err) }
   }
@@ -257,8 +307,11 @@ export async function parseHwp(buffer: ArrayBuffer, options?: ParseOptions): Pro
     }
 
     const ocred = await withEmbeddedImageOcr(blocks, markdown, warnings, images, options)
-    const md = options?.memos && memos?.length ? ocred.markdown + memosMarkdown(memos) : ocred.markdown
-    return scriptsOff({ success: true, fileType: "hwp", markdown: md, blocks, metadata, outline, warnings: ocred.warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount, ...(memos?.length ? { memos } : {}) }, options?.scriptTags === false)
+    const qr = await withImageQr(blocks, ocred.markdown, ocred.warnings, images, options, images)
+    const blank = await withoutBlankImages(blocks, qr.markdown, qr.warnings, images, options, images)
+    const webp = await withImageFormat(blocks, blank.markdown, blank.warnings, images, options, images)
+    const md = options?.memos && memos?.length ? webp.markdown + memosMarkdown(memos) : webp.markdown
+    return scriptsOff({ success: true, fileType: "hwp", markdown: md, blocks, metadata, outline, warnings: webp.warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount, ...(memos?.length ? { memos } : {}) }, options?.scriptTags === false)
   } catch (err) {
     return { success: false, fileType: "hwp", error: sanitizeError(err), code: classifyError(err) }
   }
@@ -311,7 +364,10 @@ export async function parseXls(buffer: ArrayBuffer, options?: ParseOptions): Pro
 export async function parseDocx(buffer: ArrayBuffer, options?: ParseOptions): Promise<ParseResult> {
   try {
     const { markdown, blocks, metadata, outline, warnings, images } = await parseDocxDocument(buffer, options)
-    return scriptsOff({ success: true, fileType: "docx", markdown, blocks, metadata, outline, warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount }, options?.scriptTags === false)
+    const qr = await withImageQr(blocks, markdown, warnings, images, options)
+    const blank = await withoutBlankImages(blocks, qr.markdown, qr.warnings, images, options)
+    const webp = await withImageFormat(blocks, blank.markdown, blank.warnings, images, options)
+    return scriptsOff({ success: true, fileType: "docx", markdown: webp.markdown, blocks, metadata, outline, warnings: webp.warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount }, options?.scriptTags === false)
   } catch (err) {
     return { success: false, fileType: "docx", error: sanitizeError(err), code: classifyError(err) }
   }
@@ -321,7 +377,10 @@ export async function parseDocx(buffer: ArrayBuffer, options?: ParseOptions): Pr
 export async function parsePptx(buffer: ArrayBuffer, options?: ParseOptions): Promise<ParseResult> {
   try {
     const { markdown, blocks, metadata, outline, warnings, images } = await parsePptxDocument(buffer, options)
-    return scriptsOff({ success: true, fileType: "pptx", markdown, blocks, metadata, outline, warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount }, options?.scriptTags === false)
+    const qr = await withImageQr(blocks, markdown, warnings, images, options)
+    const blank = await withoutBlankImages(blocks, qr.markdown, qr.warnings, images, options)
+    const webp = await withImageFormat(blocks, blank.markdown, blank.warnings, images, options)
+    return scriptsOff({ success: true, fileType: "pptx", markdown: webp.markdown, blocks, metadata, outline, warnings: webp.warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount }, options?.scriptTags === false)
   } catch (err) {
     return { success: false, fileType: "pptx", error: sanitizeError(err), code: classifyError(err) }
   }

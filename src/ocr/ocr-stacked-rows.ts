@@ -6,7 +6,7 @@
  */
 import type { IRBlock, IRCell, IRTable } from "../types.js"
 
-const NUMERIC = /^[-+−△▲▽▼]?[\d.,]+[%p]?$|^[-–—·∼~]$|^\([-+−△▲▽▼]?[\d.,]+\)$/
+const NUMERIC = /^[-+−△▲▽▼]?[\d.,]+[%p원]?$|^[-–—·∼~]원?$|^\([-+−△▲▽▼]?[\d.,]+%?\)$/
 
 const blank = (): IRCell => ({ text: "", colSpan: 1, rowSpan: 1 })
 
@@ -37,10 +37,17 @@ function splitTable(t: IRTable): boolean {
   for (let r = 0; r < t.rows; r++) {
     const row = t.cells[r] ?? []
     const anchors = rowAnchors(t, r, cover[r])
-    const lines = anchors.map(a => a.cell.text.split("\n").map(s => s.trim()).filter(Boolean))
+    // 아래로 걸친 글 이름표("2024년\n(구성비)", 6행 걸침)는 한 덩이로 본다 — 첫 행에 두고 늘어난 행만큼 더 걸친다
+    const lines = anchors.map(a => {
+      const ls = a.cell.text.split("\n").map(s => s.trim()).filter(Boolean)
+      return (a.cell.rowSpan ?? 1) > 1 && ls.length > 1 && ls.every(l => !NUMERIC.test(l.replace(/\s+/g, ""))) ? [ls.join("\n")] : ls
+    })
     const counts = new Map<number, number>()
     for (const ls of lines) if (ls.length >= 2) counts.set(ls.length, (counts.get(ls.length) ?? 0) + 1)
-    const [k, n] = [...counts].sort((a, b) => b[1] - a[1])[0] ?? [0, 0]
+    // 같은 수면 줄이 많은 쪽 — 두 단 "○ 항목 | 금액" 묶음은 한쪽이 한 줄 짧다(관보 자금조달 4줄 · 자금운용 5줄)
+    const [k, n] = [...counts].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0] ?? [0, 0]
+    // 세로로 쌓은 이름표 글자("저/위" → "z / 위")는 값 줄보다 적으면 한 덩이다 — 줄 수가 안 맞아 묶음 세 행이 한 행에 남았다(시도별 합계출산율 저위)
+    lines.forEach((ls, i) => { if (ls.length > 1 && ls.length < k && ls.every(l => /^[가-힣A-Za-z]$/.test(l))) lines[i] = [ls.join("")] })
     const nonEmpty = lines.filter(ls => ls.length).length
     // 이웃 열 숫자가 한 검출 상자로 붙은 칸은 줄이 한둘 모자란다 — 다수 줄 수의 80% 이상이면 같은 쌓임으로 보고 모자란 줄은 아래를 비운다
     const near = (ls: string[]) => ls.length >= 2 && ls.length <= k && ls.length >= Math.ceil(k * 0.8)
@@ -49,7 +56,21 @@ function splitTable(t: IRTable): boolean {
     const numericShare = flat.length ? flat.filter(s => NUMERIC.test(s.replace(/\s+/g, ""))).length / flat.length : 0
     // 아래로 걸친 칸(행 합침)은 한 줄 이하일 때만 — 늘어난 행만큼 더 걸친다
     const spanOk = anchors.every((a, i) => (a.cell.rowSpan ?? 1) === 1 || lines[i].length <= 1)
-    const ok = spanOk && k >= 2 && n >= 2 && stacked.length * 2 >= nonEmpty && lines.every(ls => ls.length <= 1 || near(ls)) && numericShare >= 0.6
+    // 값 아래 괄호 친 구성비("539,940 / (17.3)")만 쌓인 칸은 절반이 못 돼도 쌓인 행이다 — 구성비 없는 열은 한 줄로 두 행에 걸친다
+    const shares = k === 2 && stacked.length >= 2 && stacked.every(ls => NUMERIC.test(ls[0].replace(/\s+/g, "")) && /^\(.*\)$/.test(ls[1]))
+    // "○ 항목" 칸과 금액 칸이 짝으로 쌓인 묶음(관보 자금조달·운용 "○ 자체수입 | 3,819,793,000,000 원")도 쌓인 행이다 — 쌓인 칸마다
+    // 숫자 칸(줄 80% 이상 숫자)이거나 항목 칸(12자 이하 글 줄, "○" 글머리 하나 이상 — OCR 이 몇 줄의 ○ 를 놓친다)이고 숫자 칸이 하나 이상
+    const isNum = (s: string) => NUMERIC.test(s.replace(/\s+/g, ""))
+    const kind = (ls: string[]) => ls.filter(isNum).length >= ls.length * 0.8 ? "num"
+      : ls.some(l => /^[○◦]/.test(l)) && ls.every(l => !isNum(l) && l.replace(/\s+/g, "").length <= 12) ? "label" : "other"
+    const kinds = stacked.map(kind)
+    const valueRows = numericShare >= 0.6 || (kinds.includes("num") && kinds.includes("label") && !kinds.includes("other"))
+    // 예산서 한 칸의 항목 + 산출 내역(이름표 둘째 줄부터 금액을 적은 줄 "○전기요금 / -취수정 경정 80,000,000원")과 재원 내역
+    // ("526,657 / 균 395,010")은 원본 한 칸이다 — 펼치면 자체 OCR 예산서 표 일치가 2/2 → 0/2 였다(부천·괴산). 금액 없는 갈래 이름
+    // ("○사업비 / -사회보험성 / -사업성", 관보 기금 운용)은 행으로 펼친다
+    const breakdown = lines.some(ls => ls.length >= 2 && !isNum(ls[0]) && ls.slice(1).some(l => !isNum(l) && /\d\s*원/.test(l)))
+      || lines.some(ls => ls.some(l => /^[국도균시군구]\s*[\d,]+$/.test(l)))
+    const ok = spanOk && k >= 2 && n >= 2 && (stacked.length * 2 >= nonEmpty || shares) && lines.every(ls => ls.length <= 1 || near(ls)) && valueRows && !breakdown
     if (!ok) { newRows.push(row); continue }
     const sub: IRCell[][] = Array.from({ length: k }, () => Array.from({ length: row.length }, blank))
     anchors.forEach(({ c, cell }, idx) => {

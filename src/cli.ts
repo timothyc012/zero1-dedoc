@@ -2,6 +2,7 @@
 
 import { Command } from "commander"
 import { VERSION, sanitizeError, routeConsoleToStderr } from "./utils.js"
+import { reexecInSandbox } from "./shared/sandbox.js"
 import { convertFiles } from "./cli/convert.js"
 import { assertDistinctStems, convertParallel, registerBatchWorker } from "./cli/batch.js"
 import { registerDocCommands } from "./cli/commands-docs.js"
@@ -35,7 +36,7 @@ program
   .option("--ocr-det <model>", "OCR 글줄 검출 모델: mobile (기본) | server (~88MB 첫 사용 시 다운로드) | medium (PP-OCRv6 ~62MB, 기울임·흐림·스캔 입력용) | 로컬 ONNX 경로 (--ocr-det-sha256 필수)")
   .option("--ocr-det-sha256 <hex>", "--ocr-det 로컬 파일의 SHA-256 — 다르면 로드 거부")
   .option("--ocr-det-long-side <px>", "OCR 글줄 검출 입력 긴 변 (32~4096, 기본 960) — 키우면 작은 글자를 더 잡고 느려진다")
-  .option("--ocr-rec <model>", "OCR 글자 인식 모델: handwriting (수기 서류용 한국어 손글씨 rec, ~15MB 첫 사용 시 다운로드) | auto (확신도 낮은 손글씨 쪽만 손글씨 rec 로 다시 읽음) | 로컬 ONNX 경로 (--ocr-rec-sha256 필수)")
+  .option("--ocr-rec <model>", "OCR 글자 인식 모델: handwriting (수기 서류용 한국어 손글씨 rec, ~15MB 첫 사용 시 다운로드) | auto (기본보다 너그러운 문턱으로 손글씨 쪽을 손글씨 rec 로 다시 읽음 — 기본도 뚜렷한 손글씨 쪽은 바꾼다) | printed (기본 rec 만) | 로컬 ONNX 경로 (--ocr-rec-sha256 필수)")
   .option("--ocr-rec-sha256 <hex>", "--ocr-rec 파일의 SHA-256")
   .option("--ocr-rec-dict <path>", "OCR 글자 인식 사전을 로컬 inference.yml 로 (--ocr-rec-dict-sha256 필수, 기본 내장 한국어 사전)")
   .option("--ocr-rec-dict-sha256 <hex>", "--ocr-rec-dict 파일의 SHA-256")
@@ -48,12 +49,17 @@ program
   .option("--image-refs", "--format json 에서 이미지 바이트를 인라인하지 않고 파일 참조(images/<문서 이름>/<파일명>)만 남김 (#65 — 이미지가 수백 장인 문서의 직렬화 한계 회피, -o/-d 와 함께 사용)")
   .option("--password <pw>", "암호로 보호된 문서의 열기 암호 (#59, HWPX·HWP3·HWP5. 한컴 DRM 문서는 해당 없음)")
   .option("--html-tables", "모든 표를 HTML 로 — 파이프 표도 HTML 표로, 태그마다 한 줄씩 들여써 냄")
+  .option("--html-cell-links", "HTML 표 셀의 [텍스트](URL)·URL 을 <a href> 로 (뷰어에서 클릭, 기본 꺼짐)")
   .option("--table-format <format>", "표 출력 형식: gfm — 모든 표를 HTML 없이 GFM 파이프 표로, 셀 안 표는 부모 뒤 독립 표 + 관계 표지(<!-- <table … /> -->) (RAG 색인용, --html-tables 와 함께 못 씀)")
   .option("--keep-layout-tables", "테두리가 안 보이는 틀 표도 원본 표 구조 그대로 (기본: 보이는 대로 — 틀은 글, 칸으로 조립한 분수는 수식). patch 로 되돌릴 편집본은 이 옵션으로 뽑는다")
   .option("--script-tags", "위·아래첨자를 <sup>·<sub> 로 표기 — PDF 는 기본 끔(논문·수식 PDF 에 권장), HWPX·HWP·DOCX 는 기본 켬")
   .option("--no-script-tags", "첨자 표기 끄기 — 모든 형식에서 평문(\"104 m2\")")
   .option("--plain", "평문 Markdown — 그림 자리 표시·링크 URL·밑줄/굵게 표기를 빼고 글만 (제목·목록·표 구조는 유지, 색인·RAG 용)")
   .option("--no-images", "이미지 바이트를 추출·출력하지 않음: 글자만 필요할 때 (그림 자리 표시는 남김, PDF 는 PNG 인코딩을 건너뜀)")
+  .option("--image-format <format>", "그림 형식: png | webp — 지정하면 모든 그림을 그 형식으로 (webp 는 무손실, optional dependency sharp 필요). 지정하지 않으면 PDF 는 PNG, 다른 형식은 원본 그대로")
+  .option("--image-placement <placement>", "PDF 그림 블록 자리: page-end (기본, 쪽 끝) | flow (쪽 위 자리로 글 사이, 그림 블록에 bbox)")
+  .option("--drop-blank-images", "거의 한 색인 그림(빈 판·단색 띠·옅은 그러데이션)을 뺀다")
+  .option("--qr-codes", "그림 속 QR 코드 값을 그림 블록 qr 과 그림 자리 다음 줄에 (optional dependency zxing-wasm 필요)")
   .option("--silent", "진행 메시지 숨기기")
   .action(async (files: string[], opts) => {
     const validFormats = ["markdown", "json", "chunks"]
@@ -63,6 +69,14 @@ program
     }
     if (opts.tableFormat !== undefined && opts.tableFormat !== "gfm") {
       process.stderr.write(`[kordoc] 지원하지 않는 표 형식: ${opts.tableFormat} (gfm)\n`)
+      process.exit(1)
+    }
+    if (opts.imageFormat !== undefined && !["png", "webp"].includes(opts.imageFormat)) {
+      process.stderr.write(`[kordoc] 지원하지 않는 그림 형식: ${opts.imageFormat} (png, webp)\n`)
+      process.exit(1)
+    }
+    if (opts.imagePlacement !== undefined && !["page-end", "flow"].includes(opts.imagePlacement)) {
+      process.stderr.write(`[kordoc] 지원하지 않는 그림 자리: ${opts.imagePlacement} (page-end, flow)\n`)
       process.exit(1)
     }
     if (opts.tableFormat && opts.htmlTables) {
@@ -109,4 +123,10 @@ program.hook("preAction", (_program, action) => {
 
 // 출처를 node 로 고정 — 정하지 않으면 commander 가 process.versions.electron 을 보고 Electron 앱 방식(argv[1]부터)으로
 // 읽어, Electron 을 node 로 띄운(ELECTRON_RUN_AS_NODE) 데스크톱 앱에서 cli.js 자신이 입력 파일로 잡힌다
+// KORDOC_SANDBOX=gvisor 면 gVisor 안에서 다시 실행한다(꺼져 있으면 아무것도 안 함).
+// 샌드박스 안에서 쓴 파일은 사라지므로 표준 출력 파싱(하위 명령 없음·-o/-d 없음)과 parse-worker 만 받는다
+const sub = process.argv[2]
+const isSubcommand = program.commands.some((c) => c.name() === sub || c.aliases().includes(sub))
+const writesFiles = process.argv.slice(2).some((a) => /^(-o|-d|--output|--out-dir)(=|$)/.test(a))
+reexecInSandbox(sub === "parse-worker" || (!isSubcommand && !writesFiles))
 program.parse(process.argv, { from: "node" })

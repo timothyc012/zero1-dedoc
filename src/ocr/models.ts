@@ -127,7 +127,7 @@ export function resolveOcrModels(o: Pick<ParseOptions, "ocrLanguage" | "ocrDet" 
   const det = o?.ocrDet
   const sel: OcrModelSelection = {
     det: det === undefined ? base.det : det === "mobile" ? DEFAULT_OCR_MODELS.det : det === "server" ? { spec: OCR_SERVER_DET_MODEL } : det === "medium" ? { spec: OCR_V6_MEDIUM_DET_MODEL } : file(det),
-    rec: o?.ocrRec === "handwriting" ? { spec: OCR_HANDWRITING_REC_MODEL } : o?.ocrRec && o.ocrRec !== "auto" ? file(o.ocrRec) : base.rec,
+    rec: o?.ocrRec === "handwriting" ? { spec: OCR_HANDWRITING_REC_MODEL } : o?.ocrRec && o.ocrRec !== "auto" && o.ocrRec !== "printed" ? file(o.ocrRec) : base.rec,
     dict: o?.ocrRecDict ? file(o.ocrRecDict) : o?.ocrRec === "handwriting" ? DEFAULT_OCR_MODELS.dict : base.dict,
   }
   // 독일어 경로는 v6 det·rec 짝이 그대로일 때만 — 하나라도 바꾸면 upstream 엔진으로 읽는다

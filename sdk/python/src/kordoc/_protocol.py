@@ -14,6 +14,7 @@ PROTOCOL = 2
 OPTION_NAMES: dict[str, str] = {
     "table_format": "tableFormat",
     "html_tables": "htmlTables",
+    "html_cell_links": "htmlCellLinks",
     "layout_tables": "layoutTables",
     "classify_tables": "classifyTables",
     "tables": "tables",
@@ -27,6 +28,10 @@ OPTION_NAMES: dict[str, str] = {
     "pages": "pages",
     "images": "images",
     "inline_images": "inlineImages",
+    "qr_codes": "qrCodes",
+    "image_format": "imageFormat",
+    "image_placement": "imagePlacement",
+    "drop_blank_images": "dropBlankImages",
     "ocr": "ocr",
     "ocr_lines": "ocrLines",
     "ocr_det": "ocrDet",

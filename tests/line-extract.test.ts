@@ -126,3 +126,34 @@ describe("dropShadingStacks — 플러시 테두리 삼킴 방지 (리뷰 #12)",
     assert.ok(!ys.some(y => y > 101 && y < 112), "fill 스택은 드랍")
   })
 })
+
+describe("closeOpenTableEdges — 굵은 바깥 테두리로 쌓인 두 표 가르기", () => {
+  // 표마다 위·머리 아래·바닥 괘선만 — 본문 행 간격(255)이 표 사이 간격(72)보다 커 중앙값으로는 못 가른다(1인당 지역내총생산 만원 / 달러)
+  const hw = (y: number, lineWidth: number): LineSegment => ({ x1: 100, y1: y, x2: 500, y2: y, lineWidth })
+  const verticals = [v(300, 75, 385), v(300, 457, 726)]
+
+  it("다리 없는 띠의 위아래 선이 둘 다 굵으면 두 표로 닫는다", () => {
+    const horizontals = [hw(75, 1.44), hw(368, 0.72), hw(385, 1.44), hw(457, 1.44), hw(712, 0.72), hw(726, 1.44)]
+    const synth = closeOpenTableEdges(horizontals, verticals).filter(s => !verticals.includes(s))
+    assert.equal(synth.filter(s => s.y1 <= 385 && s.y2 >= 457).length, 0, `표 사이를 잇는 테두리: ${JSON.stringify(synth)}`)
+    assert.equal(synth.length, 4)
+  })
+  it("굵기가 같으면 종전대로 한 표 — 굵은 선 하나뿐인 띠도 가르지 않는다", () => {
+    const same = [hw(75, 1), hw(368, 1), hw(385, 1), hw(457, 1), hw(712, 1), hw(726, 1)]
+    assert.ok(closeOpenTableEdges(same, verticals).some(s => !verticals.includes(s) && s.y1 <= 76 && s.y2 >= 725))
+    const one = [hw(75, 1.44), hw(368, 0.72), hw(385, 0.72), hw(457, 1.44), hw(712, 0.72), hw(726, 1.44)]
+    assert.ok(closeOpenTableEdges(one, verticals).some(s => !verticals.includes(s) && s.y1 <= 76 && s.y2 >= 725))
+    // 굵기가 들쭉날쭉한 스캔 서식 — 띠 아래쪽에 가는 안쪽 선이 없으면 표 한 벌이 아니다(개발행위 허가신청서 scan)
+    const form = [hw(75, 1.44), hw(368, 1.44), hw(385, 1.44), hw(457, 1.44), hw(712, 0.72), hw(726, 1.44)]
+    assert.ok(closeOpenTableEdges(form, verticals).some(s => !verticals.includes(s) && s.y1 <= 76 && s.y2 >= 725))
+  })
+  it("바깥 묶음이 가른 띠는 첫 열이 열린 안쪽 괘선 묶음도 넘지 않는다", () => {
+    // 안쪽 행 괘선(x 120~)은 아래 표 몫이 두 줄뿐이라 제 간격으로는 못 가른다 — 그 묶음의 합성 변이 두 표를 이었다(고용 동향 교육·보건복지 표)
+    const hi = (y: number, lineWidth: number): LineSegment => ({ x1: 120, y1: y, x2: 500, y2: y, lineWidth })
+    const outer = [hw(75, 1.44), hw(158, 0.72), hw(194, 1.44), hw(316, 1.44), hw(416, 0.72), hw(449, 1.8)]
+    const inner = [hi(125, 0.72), hi(141, 0.72), hi(333, 0.36), hi(350, 0.72), hi(366, 0.72), hi(383, 0.36), hi(400, 0.36)]
+    const vs = [v(300, 75, 194), v(300, 316, 449)]
+    const synth = closeOpenTableEdges([...outer, ...inner], vs).filter(s => !vs.includes(s))
+    assert.equal(synth.filter(s => s.y1 <= 200 && s.y2 >= 310).length, 0, `표 사이를 잇는 테두리: ${JSON.stringify(synth)}`)
+  })
+})

@@ -11,8 +11,8 @@ import type { NormItem } from "./text-line.js"
 import { ocrTextGaps } from "../ocr/text-gaps.js"
 import { OCR_GROUPED_NUMBER } from "./ocr-column-cuts.js"
 
-/** 값 토큰 — 수(쉼표·소수점·백분율·부호)와 빈 값 표지(-) */
-const VALUE_TOKEN = /^(?:[+-]?\d+(?:[,.]\d+)*%?|[-–—])$/
+/** 값 토큰 — 수(쉼표·소수점·백분율·부호), 괄호 친 수(구성비·증감률 "(1.7)"), 빈 값 표지(-) */
+const VALUE_TOKEN = /^(?:\(?[+-]?\d+(?:[,.]\d+)*%?\)?|[-–—])$/
 
 interface Span { left: number; right: number; text: string; estimated?: true }
 
@@ -86,14 +86,25 @@ export function ocrGutterVerticals(grids: TableGrid[], items: NormItem[]): Map<T
         for (const g of support) gaps.splice(gaps.indexOf(g), 1)
         if (x - x0 < margin || x1 - x < margin) continue
         const supportLines = new Set(support.map(g => lines[g.line].y))
-        // 값 글줄 셋 이상·40% 이상이 같은 틈을 비워야 열이다 — 몇 줄만 우연히 맞은 틈(묶음 숫자 OCR 틈)은 아니다
-        if (supportLines.size < Math.max(3, valueLines * 0.4)) continue
+        // 값 글줄 셋 이상·40% 이상이 같은 틈을 비워야 열이다 — 몇 줄만 우연히 맞은 틈(묶음 숫자 OCR 틈)은 아니다.
+        // 본문 두 행뿐인 작은 표(연평균 증감률 "1.3 -1.0" / "0.7 -0.1")는 값 글줄 전부가 같은 틈을 비우면 열이다
+        const minSupport = valueLines === 2 && supportLines.size === 2 ? 2 : Math.max(3, valueLines * 0.4)
+        if (supportLines.size < minSupport) continue
         // 격자 행마다 x 를 가로지르는 글줄이 그 행 지지 글줄의 1/4 을 넘으면 막힌 행 — 지지 없는 머리 행(묶음 제목)은 한 줄로 막힌다.
         // 본문이 괘선 없이 한 격자 행이면 빈 구간 근거를 못 얻은 상자 한둘이 행 전체를 막지 않게 한다
         const rows = grid.rowYs.length - 1
         const supportIn = (r: number) => [...supportLines].filter(y => y < grid.rowYs[r] && y > grid.rowYs[r + 1]).length
+        // 값 아닌 글 둘뿐인 글줄이 틈 양옆에 글자 높이 1.2 배 안으로 붙으면(띄어 쓴 머리 "자기 집"·"전 세") x 를 가로지른다 — 두 열에
+        // 걸친 머리 칸이다. 열마다 따로 선 머리 줄("제조업  서비스  건설", "합계 기대 국내")은 셋 이상이거나 멀어 막지 않는다
+        const spaced = (l: { spans: Span[] }) => {
+          const word = l.spans.filter(sp => sp.text)
+          if (word.length !== 2 || word.some(sp => VALUE_TOKEN.test(sp.text))) return false
+          const [left, right] = [...word].sort((a, b) => a.left - b.left)
+          return left.right <= x && right.left >= x && right.left - left.right <= size * 1.2
+        }
         const blocked = Array.from({ length: rows }, (_, r) => lines.filter(l => l.y < grid.rowYs[r] && l.y > grid.rowYs[r + 1] &&
-          l.cover.some(sp => sp.estimated ? x - sp.left > size * 0.6 && sp.right - x > size * 0.6 : sp.left < x - 0.5 && sp.right > x + 0.5)).length > supportIn(r) * 0.25)
+          (l.cover.some(sp => sp.estimated ? x - sp.left > size * 0.6 && sp.right - x > size * 0.6 : sp.left < x - 0.5 && sp.right > x + 0.5) ||
+            spaced(l))).length > supportIn(r) * 0.25)
         // 막히지 않은 연속 행 가운데 지지 글줄이 가장 많은 구간
         let bestRun: [number, number] | undefined, bestCount = 0
         for (let r = 0; r < rows;) {
@@ -103,7 +114,7 @@ export function ocrGutterVerticals(grids: TableGrid[], items: NormItem[]): Map<T
           if (n > bestCount) { bestCount = n; bestRun = [r, e] }
           r = e
         }
-        if (!bestRun || bestCount < 3) continue
+        if (!bestRun || bestCount < Math.min(3, minSupport)) continue
         const list = out.get(grid) ?? []
         list.push({ x1: x, y1: grid.rowYs[bestRun[1]], x2: x, y2: grid.rowYs[bestRun[0]], lineWidth: 0.5 })
         out.set(grid, list)
@@ -196,15 +207,21 @@ export function splitItemsAcrossColumns(items: NormItem[], grids: TableGrid[]): 
   })
 }
 
-/** 글을 값 k 개로 — 공백으로 갈린 값 토큰, 아니면 소수 자릿수 d(1·2) 가 같은 수 k 개가 이어 붙은 꼴 */
+/** 글을 값 k 개로 — 공백으로 갈린 값 토큰, 아니면 소수 자릿수 d(1·2) 가 같은 수 k 개가 이어 붙은 꼴, 아니면 천 단위 쉼표 정수 k 개가
+ *  이어 붙은 꼴("7,3022,6071,364" — 쉼표 뒤 세 자리가 끝나는 자리가 다음 수의 머리라 한 가지로만 갈린다) */
 function valueTokens(text: string, k: number): string[] | null {
   const parts = text.split(/\s+/)
   if (parts.length === k && parts.every(p => VALUE_TOKEN.test(p))) return parts
+  const bare = text.replace(/\s+/g, "")
   for (const d of [1, 2]) {
     const one = `[-−]?\\d{1,3}(?:,\\d{3})*\\.\\d{${d}}`
-    const m = new RegExp(`^(?:${one}){${k}}$`).test(text.replace(/\s+/g, ""))
-    if (m) return text.replace(/\s+/g, "").match(new RegExp(one, "g"))
+    const m = new RegExp(`^(?:${one}){${k}}$`).test(bare)
+    if (m) return bare.match(new RegExp(one, "g"))
   }
-  return null
+  const grouped = /[-−]?\d{1,3}(?:,\d{3})+/g
+  // 앞뒤 "|" 는 인식기가 표 테두리를 읽은 것이다
+  const body = bare.replace(/^\|+|\|+$/g, "")
+  const ints = body.match(grouped)
+  return ints && ints.length === k && ints.join("") === body ? ints : null
 }
 

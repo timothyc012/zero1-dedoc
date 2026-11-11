@@ -63,7 +63,7 @@ class OcrLine:
 
 @dataclass(frozen=True)
 class OcrPageLines:
-    """OCR 쪽 하나의 줄. ``scale`` 은 래스터 px / PDF pt — 블록 bbox(PDF pt, 아래 원점)로는 ``x / scale``, ``쪽 높이 − (y + h) / scale``."""
+    """OCR 쪽 하나의 줄. 보정·PDF 회전이 없을 때만 ``x / scale``, ``쪽 높이 − (y + h) / scale`` 로 PDF 좌표로 옮길 수 있다."""
 
     page_number: int
     width: int
@@ -74,6 +74,8 @@ class OcrPageLines:
     #: 텍스트층이 있는 쪽이라 그림 영역만 읽었다
     regions_only: bool
     lines: tuple[OcrLine, ...]
+    #: 방향 보정에 적용한 반시계 회전각(도); 없으면 0
+    page_rotation: int = 0
 
     @classmethod
     def from_raw(cls, raw: Mapping[str, Any]) -> "OcrPageLines":
@@ -83,6 +85,7 @@ class OcrPageLines:
             # 상자는 x·y·w·h 만 꺼낸다 — 엔진이 키를 더해도 SDK 가 깨지지 않게(엔진·SDK 버전은 따로 간다)
             lines=tuple(OcrLine(text=ln["text"], box=OcrBox(ln["box"]["x"], ln["box"]["y"], ln["box"]["w"], ln["box"]["h"]),
                                 confidence=ln["confidence"], dropped=bool(ln.get("dropped", False))) for ln in raw["lines"]),
+            page_rotation=raw.get("pageRotation", 0),
         )
 
 

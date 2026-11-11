@@ -12,7 +12,7 @@
  */
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { arrowGlyph, bracketFeatures, bracketShape, circledAt, edgeTrim, gapGlyphs, inkStats, ringBullet, serifOne, slantedPair, starRun, leaderRuns, leadingBullet, leadingTriangle, quoteHead, romanStems, splitRowBands, tallInkCount } from "../src/ocr/line-split.js"
+import { arrowGlyph, bracketFeatures, bracketShape, circledAt, edgeTrim, gapGlyphs, inkBounds, inkStats, ringBullet, serifOne, slantedPair, starRun, leaderRuns, leadingBullet, leadingTriangle, quoteHead, romanStems, splitRowBands, tallInkCount } from "../src/ocr/line-split.js"
 
 function canvas(w: number, h: number, bg = 255): Uint8Array {
   return new Uint8Array(w * h).fill(bg)
@@ -427,6 +427,25 @@ describe("edgeTrim — 한 줄 박스에 걸린 이웃 줄 끝자락·상자 테
     rect(g, w, 10, 12, 40, 38); rect(g, w, 50, 12, 80, 38)
     assert.equal(edgeTrim(g, w, h, inkStats(g)), null)
   })
+  it("겹선(‖)은 두 선을 한 테두리로, 윗변 가로 괘선은 글로 보지 않는다 (통계표 \"0:36\" → \":36\")", () => {
+    const w = 120, h = 50, g = canvas(w, h)
+    rect(g, w, 0, 1, w, 2) // 칸 윗변
+    rect(g, w, 3, 0, 4, h); rect(g, w, 6, 0, 7, h) // 겹선
+    rect(g, w, 14, 12, 40, 38); rect(g, w, 50, 12, 80, 38)
+    assert.equal(edgeTrim(g, w, h, inkStats(g))?.x0, 7)
+  })
+  it("점선 세로선과, 이웃 칸 글자 끝을 넘은 실선도 테두리 (\"60.5\" → \"(.5\")", () => {
+    const w = 120, h = 50
+    const dot = canvas(w, h)
+    for (let y = 0; y < h; y += 4) rect(dot, w, 3, y, 4, y + 2)
+    rect(dot, w, 14, 12, 40, 38); rect(dot, w, 50, 12, 80, 38)
+    assert.equal(edgeTrim(dot, w, h, inkStats(dot))?.x0, 4)
+    const nb = canvas(w, h)
+    rect(nb, w, 0, 14, 3, 21) // 옆 칸 글자 끝
+    rect(nb, w, 8, 0, 9, h) // 칸 괘선
+    rect(nb, w, 18, 12, 40, 38); rect(nb, w, 50, 12, 80, 38)
+    assert.equal(edgeTrim(nb, w, h, inkStats(nb))?.x0, 9)
+  })
 })
 
 describe("gapGlyphs — 두 글자 사이에서 빠진 기호 · ▲ 「 」 □", () => {
@@ -638,5 +657,53 @@ describe("leadingBullet — 큰 속 찬 네모 ■", () => {
     assert.deepEqual(leadingBullet(big, W, H, inkStats(big), 50), { mark: "■", covers: false })
     const small = canvas(W, H); rect(small, W, 14, 16, 24, 26); rect(small, W, 60, 6, 110, 34)
     assert.equal(leadingBullet(small, W, H, inkStats(small), 50)?.mark, "▪")
+  })
+})
+
+describe("inkBounds 점선 칸 괘선 너머 이웃 칸 글자 끝자락", () => {
+  // 폭 60·높이 40 흰 상자: 위 0~3행에 윗행 글자 끝자락(쉼표 꼬리), 8행에 점선(2px 잉크·2px 틈), 14~34행에 이 칸 글자
+  const box = (withTail: boolean) => {
+    const w = 60, h = 40, g = new Uint8Array(w * h).fill(255)
+    if (withTail) for (let y = 0; y < 4; y++) for (let x = 20; x < 24; x++) g[y * w + x] = 0
+    for (let x = 0; x < w; x++) if (x % 4 < 2) g[8 * w + x] = 0
+    for (let y = 14; y < 34; y++) for (let x = 10; x < 50; x++) if ((x + y) % 3 === 0) g[y * w + x] = 0
+    return g
+  }
+  it("점선 너머에 잉크가 있으면 점선과 너머를 빼고 칸 글자만 잰다", () => {
+    const g = box(true)
+    const b = inkBounds(g, 60, 40, inkStats(g))
+    assert.equal(b.y0, 14)
+  })
+  it("작은 글자 줄(획이 위아래로 이어지는 짧고 고른 조각)은 점선으로 보지 않는다", () => {
+    const w = 60, h = 40, g = new Uint8Array(w * h).fill(255)
+    for (let y = 0; y < 2; y++) for (let x = 20; x < 24; x++) g[y * w + x] = 0
+    for (let y = 2; y < 10; y++) for (let x = 0; x < w; x++) if (x % 4 < 2) g[y * w + x] = 0
+    for (let y = 14; y < 34; y++) for (let x = 10; x < 50; x++) if ((x + y) % 3 === 0) g[y * w + x] = 0
+    assert.equal(inkBounds(g, w, h, inkStats(g)).y0, 0)
+  })
+  it("괘선 바로 옆 번진 잉크 점은 외곽에 넣지 않는다 (잡음 섞인 상자 테두리)", () => {
+    const w = 60, h = 40, g = new Uint8Array(w * h).fill(255)
+    for (let y = 0; y < h; y++) g[y * w + 59] = 0
+    for (const y of [5, 17, 30]) g[y * w + 58] = 0
+    for (let y = 14; y < 34; y++) for (let x = 10; x < 40; x++) if ((x + y) % 3 === 0) g[y * w + x] = 0
+    assert.equal(inkBounds(g, w, h, inkStats(g)).x1, 40)
+  })
+  it("괘선에 붙었어도 본문과 이어진 글자 획은 외곽에 남긴다", () => {
+    const w = 60, h = 40, g = new Uint8Array(w * h).fill(255)
+    for (let y = 0; y < h; y++) g[y * w + 59] = 0
+    for (let y = 14; y < 34; y++) for (let x = 10; x < 58; x++) if ((x + y) % 3 === 0) g[y * w + x] = 0
+    assert.equal(inkBounds(g, w, h, inkStats(g)).x1, 58)
+  })
+  it("기울기 보정으로 옆 열로 번진 세로 괘선 가장자리는 괘선으로 뺀다 (세로 범위가 부풀지 않는다)", () => {
+    const w = 60, h = 40, g = new Uint8Array(w * h).fill(255)
+    for (let y = 0; y < h; y++) { g[y * w + 59] = 0; if (y % 3) g[y * w + 58] = 0 }
+    for (let y = 14; y < 34; y++) for (let x = 10; x < 40; x++) if ((x + y) % 3 === 0) g[y * w + x] = 0
+    const b = inkBounds(g, w, h, inkStats(g))
+    assert.deepEqual([b.y0, b.y1, b.x1], [14, 34, 40])
+  })
+  it("점선 너머가 비면 종전대로 점선까지 잰다 (띄어 쓴 머리 칸 높이를 바꾸지 않는다)", () => {
+    const g = box(false)
+    const b = inkBounds(g, 60, 40, inkStats(g))
+    assert.equal(b.y0, 8)
   })
 })

@@ -9,6 +9,7 @@ import { toArrayBuffer, sanitizeError, classifyError } from "../utils.js"
 import { detectImageMime } from "../hwp5/images.js"
 import { toPlainMarkdown } from "../plain-markdown.js"
 import { toHtmlTables } from "../html-tables.js"
+import { htmlCellLinks } from "../html-cell-links.js"
 import { createOutputGuard } from "./output-path.js"
 
 /** --ocr-lines·--ocr-det·--ocr-rec… → ParseOptions. 값 검증은 parse() 가 한다(잘못이면 실패 JSON). 로컬 경로는 현재 디렉터리 기준 절대 경로로 */
@@ -24,7 +25,7 @@ export function cliOcrEngineOptions(opts: OptionValues): Pick<ParseOptions, "ocr
   }
   // 숫자가 아니면 받은 글 그대로 넘겨 parse() 가 그 값을 들어 거부한다
   if (opts.ocrDetLongSide !== undefined) out.ocrDetLongSide = /^\d+$/.test(String(opts.ocrDetLongSide)) ? Number(opts.ocrDetLongSide) : opts.ocrDetLongSide as number
-  if (opts.ocrRec !== undefined) out.ocrRec = opts.ocrRec === "handwriting" || opts.ocrRec === "auto" ? opts.ocrRec : file(String(opts.ocrRec), opts.ocrRecSha256)
+  if (opts.ocrRec !== undefined) out.ocrRec = opts.ocrRec === "handwriting" || opts.ocrRec === "auto" || opts.ocrRec === "printed" ? opts.ocrRec : file(String(opts.ocrRec), opts.ocrRecSha256)
   if (opts.ocrRecDict !== undefined) out.ocrRecDict = file(String(opts.ocrRecDict), opts.ocrRecDictSha256)
   return out
 }
@@ -70,9 +71,14 @@ export async function convertFiles(files: string[], opts: OptionValues, writeOut
       if (opts.inlineImages) parseOptions.inlineImages = true
       if (opts.password) parseOptions.password = opts.password as string
       if (opts.images === false) parseOptions.images = false
+      if (opts.qrCodes) parseOptions.qrCodes = true
+      if (opts.imagePlacement) parseOptions.imagePlacement = opts.imagePlacement as "page-end" | "flow"
+      if (opts.dropBlankImages) parseOptions.dropBlankImages = true
+      if (opts.imageFormat) parseOptions.imageFormat = opts.imageFormat as "png" | "webp"
       if (opts.plain) parseOptions.plain = true
       if (opts.scriptTags !== undefined) parseOptions.scriptTags = opts.scriptTags as boolean
       if (opts.htmlTables) parseOptions.htmlTables = true
+      if (opts.htmlCellLinks) parseOptions.htmlCellLinks = true
       if (opts.tableFormat === "gfm") parseOptions.tableFormat = "gfm"
       if (opts.keepLayoutTables) parseOptions.layoutTables = "keep"
       if (!opts.silent) {
@@ -144,6 +150,7 @@ export async function convertFiles(files: string[], opts: OptionValues, writeOut
           let text = c.text
           if (opts.plain) text = toPlainMarkdown(text)
           if (opts.htmlTables) text = toHtmlTables(text)
+          if (opts.htmlCellLinks) text = htmlCellLinks(text)
           return { ...c, text: linkImages(text) }
         })
         output = JSON.stringify(chunks, null, 2)
@@ -179,7 +186,23 @@ export async function convertFiles(files: string[], opts: OptionValues, writeOut
         assertSafeOutputs([output, ...imageOutputs])
       }
 
-      if (opts.output && files.length === 1) {
+      // -o 문서.hwpx — 마크다운 글을 .hwpx 이름으로 쓰면 한글이 못 연다. HWP 계열은 서식 그대로 바꾸고, 그 밖(PDF·DOCX 등)은
+      // 읽은 마크다운으로 HWPX 를 만들어 그림까지 담는다
+      if (opts.output && files.length === 1 && /\.hwpx$/i.test(opts.output) && opts.format !== "json" && opts.format !== "chunks") {
+        assertSafeOutputs([opts.output])
+        let hwpx: Uint8Array
+        if (result.fileType === "hwpx") hwpx = new Uint8Array(arrayBuffer)
+        else if (result.fileType === "hwp" || result.fileType === "hwp3") {
+          const { convertToHwpx } = await import("../index.js")
+          hwpx = (await convertToHwpx(new Uint8Array(arrayBuffer), parseOptions.password ? { password: parseOptions.password } : undefined)).data
+        } else {
+          const { markdownToHwpx } = await import("../index.js")
+          const images = Object.fromEntries((result.images ?? []).map(img => [img.filename, img.data]))
+          hwpx = new Uint8Array(await markdownToHwpx(result.markdown, Object.keys(images).length ? { images } : undefined))
+        }
+        writeFileSync(opts.output, hwpx)
+        if (!opts.silent) process.stderr.write(`  → ${opts.output}\n`)
+      } else if (opts.output && files.length === 1) {
         assertSafeDestination(opts.output, resolve(opts.output, ".."))
         writeFileSync(opts.output, output, "utf-8")
         if (!opts.silent) process.stderr.write(`  → ${opts.output}\n`)

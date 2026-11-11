@@ -51,7 +51,7 @@ node node_modules/kordoc/dist/cli.js models --import ./models   # SHA-256 검증
 node node_modules/kordoc/dist/cli.js models --status
 ```
 
-선택 모델인 server det(`ocrDet: "server"`, 88MB)·v6 medium det(`ocrDet: "medium"`, 62MB)와 손글씨 rec(`ocrRec: "handwriting"`, 15MB)는 `models`·`--with-models` 묶음에 들지 않는다.
+선택 모델인 server det(`ocrDet: "server"`, 88MB)·v6 medium det(`ocrDet: "medium"`, 62MB)와 손글씨 rec(`ocrRec: "handwriting"`, 15MB — 기본 설정도 손글씨 쪽을 만나면 받는다)는 `models`·`--with-models` 묶음에 들지 않는다. 내부망에서 받지 못하면 기본 rec 결과를 그대로 쓰고, `ocrRec: "printed"` 로 아예 끌 수 있다.
 내부망에서 쓰려면 같은 파일을 모델 캐시의 `ppocr/det_server.onnx`·`ppocr/det_v6_medium.onnx`·`ppocr/rec_korean_hw.onnx` 로 반입하거나(엔진이 SHA-256 을 검증한다), `ocrDet`·`ocrRec`·`ocrRecDict` 에 로컬 파일
 `{path, sha256}` 을 준다 — 로컬 파일은 캐시에 복사하지 않고 그 경로에서 읽어 대조한다.
 
@@ -147,9 +147,9 @@ SDK 에서 엔진을 쓸 때는 번들 안의 `node_modules/kordoc/dist/cli.js` 
 
 ## 7. 의존성
 
-런타임 필수 의존성은 5개(`@modelcontextprotocol/sdk`, `@xmldom/xmldom`, `jszip`,
-`markdown-it`, `zod`)이다. `cfb` 도 `dependencies` 에 선언되어 있으나 빌드 시 번들에
-인라인되어 배포본에는 모듈 참조가 남지 않는다. OCR·PDF·인쇄 기능은
+런타임 필수 의존성은 4개(`@modelcontextprotocol/sdk`, `jszip`, `markdown-it`, `zod`)이다.
+`cfb` 도 `dependencies` 에 선언되어 있으나 빌드 시 번들에 인라인되어 배포본에는 모듈 참조가
+남지 않는다. XML 파서(quick-xml)는 wasm 으로 빌드해 배포본에 실려 있어 따로 설치하지 않는다. OCR·PDF·인쇄 기능은
 optional dependency 로 분리되어, 쓰지 않으면 설치할 필요가 없다
 (`pack-offline.mjs` 기본값이 이를 제외한다).
 

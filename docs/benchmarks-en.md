@@ -2,6 +2,202 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.63: URL links (#204), OCR dark header columns · 2026-11-11
+
+#204 (body URLs, QR URLs, `htmlCellLinks` option) was merged onto the previous main and compared per document against main on score 5,465, PDF text 744, PDF tables 730, ODL 200 (default, HTML tables, OCR off), annexes 544, formats 146, roundtrip 75, generation repro 5 and OCR 56 — all identical. OCR row boundaries in dark-filled header columns: KoOCR-Bench 0.90517 unchanged (statistics table 0079_445161_p069 TEDS 0.692 → 0.695, no drops); no per-document drops on in-house OCR, OCR robust or ODL-OCR.
+
+- Rejected: joining OCR rule bands against the previous scanline run (the cause of row rules fused with filled header cells) — tables 0.9146 → 0.9158 but notice boxes on suneung English pages became tables and the remaining page text was clustered into one table (order 0.988 → 0.82). Adding only isolated horizontal lines gives 0.90540 but the target table falls 0.703 → 0.667 (column boundaries still missing).
+
+## 4.24.62: XY-Cut far-apart pairs, OCR single-band reads · 2026-11-11
+
+External KoOCR-Bench v2.0c, 877 public pages: 0.90509 → **0.90517** (order 0.91305 → 0.91372 — the "validity period" line on 47 prescription pages now follows the tables, 0.909 → 1.0; one user document CER 0.171 → 0.152. Two suneung Korean pages rise +0.008 CER because the ground truth follows PDF stream order with the bottom page number first). ODL 0.96490 → **0.96493** (NID 0.96435 → 0.96440), PDF text order web070 0.932 → 0.955, in-house OCR CER 0.02378 → **0.02371**, OCR robust skew-2 0.0475 → **0.0463** (Hampyeong TOC 0.107 → 0.073, Yeosu org chart 0.116 → 0.064). No per-document drops on score, PDF text, PDF tables, annexes, formats, roundtrip, generation repro, ODL or ODL-OCR; formula summary unchanged.
+
+- Rejected: splitting two-item XY-Cut groups at 1× the cut threshold (a permit form's receipt cells were regrouped, web047 CER 0.054 → 0.059 — narrowed to 3×), detecting rules on a separately rotated nearest/min-of-four raster (form web050 skew-2 0.123 → 0.082 but Yeosu skew+1 0.024 → 0.420), widening the chart x-axis start allowance (a drug-label forest plot stays a table, one user document 0.515 → 0.573).
+
+## 4.24.61: OCR fake vertical rules, line boxes covering two lines · 2026-11-11
+
+External KoOCR-Bench v2.0c, 877 public pages: 0.90439 → **0.90509** (tables 0.91336 → 0.91464 — a welfare-award table .655 → .994, one suneung math page CER .396 → .263; three suneung Korean pages drop .003 on chart-legend order). In-house OCR table structure 32/65 → **33/65** (cell F1 0.617 → 0.634). OCR robust: building-permit form blur 0.159 → 0.124, org-chart page skew+1 0.258 → 0.264 and skew+3 0.207 → 0.200 (vertical text order). No drops on ODL-OCR.
+
+- Rejected: trimming thin edge bands (table rows rely on consistently padded boxes, p032 0.982 → 0.907), splitting book spreads at the gutter (the reference is PDF stream order, so the order score does not rise).
+
+## 4.24.60: XML parser swap, multi-line formulas, deskew-smeared rules · 2026-11-10
+
+Formula OCR benchmark (20 arXiv papers, 621 pages; report only, run alone): recall 0.9758 → **0.9775**, NED≤.3 recall 0.9494 → **0.9507**, precision 0.9699 → **0.9725**, exact 0.615 unchanged, BLEU-4 0.9045 → 0.9021 (newly paired long multi-line equations); no earlier pair lost or worse. OCR robust: skew+1 0.0457 → **0.0431**, skew-2 0.0503 → **0.0474**, skew+3 0.0481 → **0.0444**, scan 0.0550 → **0.0542**, one drop (web068 org-chart vertical text order, skew-2 0.248 → 0.254). The XML parser swap (#202) has no per-document drop on score, PDF text, PDF tables, ODL, annex tables, formats, roundtrip, generation replay or the release gate, and the wasm rebuilds byte-identical from source. No drops on in-house OCR and ODL-OCR; KoOCR-Bench 0.90439 unchanged.
+
+- Rejected: the smeared-edge rule on horizontal rules (form table rows reshuffled), two-row union rules (a map figure became a table), trimming box-edge column clusters with re-measured heights (handwriting; KoOCR 0.90439 → 0.90247), trimming thin edge bands (table rows rely on consistently padded boxes, p032 0.982 → 0.907), faint-rule recovery (blur 0.159 → 0.336).
+
+## 4.24.59: OCR dotted cell rules, smudged box borders · 2026-11-10
+
+External KoOCR-Bench v2.0c, 877 public pages: 0.90378 → **0.90439** (tables 0.91212 → 0.91333 — nine pages up such as a marriage-count table .890 → .982 and a statistics table .543 → .857; one page down: a two-row "total" header cell lands in another row, .935 → .876). OCR robust: Yeosu org-chart page scan CER 0.266 → **0.090**, noise 0.194 → 0.082, blur 0.170 → 0.054, scan overall 0.0591 → **0.0557**. The two drops are reference limits — Bucheon budget skew+1 (the text layer glues "균 450,726도" and OCR reads it line by line, 0 → 0.027) and ODL-OCR 131 (order of chart-axis tick fragments, 0.900 → 0.898). No per-document drops on in-house OCR; PDF table, PDF text and ODL text-layer benchmarks unchanged.
+
+- Rejected: cutting beyond every rule rather than only dotted ones (a user_real page CER .407 → .773), treating vertical dotted lines as rules (two kostat pages down), widening rule columns by ±2 px (the beyond-ink test for dotted rules disappears, KoOCR 0.90439 → 0.90348), the PP-OCRv6 medium detector (total 0.89519 — tables and order up, handwriting 0.921 → 0.880).
+
+## 4.24.58: Trailing "*" footnote cells, neighbouring time values, gVisor sandbox · 2026-11-09
+
+In-house OCR table structure 31/65 → **32/65** (the "* 단, …" footnote cell at the end of the topik ID table). External KoOCR-Bench v2.0c, 877 public pages: 0.90370 → **0.90378** (two time-use table pages .802 → .827 and .806 → .824, no page down — keeping a trailing footnote in its table moves one textbook scan page from CER .135 to .139, below the fifth decimal of the total). No per-document drops on in-house OCR, OCR robust and ODL-OCR.
+
+- Rejected: ignoring column edges crossed only by the tail of an OCR box when splitting it per column ("5.6-2.2", 12% of the width) — the split values unsettled table detection and one statistics page collapsed (.911 → .024). Rejecting OCR cluster tables between two facing vertical rules with a blank channel (separate org-chart boxes) — it fixes the robust scan of an org chart, but a page whose truth keeps a box diagram as a table fell from .426 to 0, total 0.90378 → 0.90315.
+
+## 4.24.57: Long aligned equations read line by line, budget breakdown cells, security dependency floors · 2026-11-09
+
+Formula OCR benchmark (20 arXiv papers, 621 pages; report only, run alone): recall 0.9723 → **0.9758**, NED≤.3 recall 0.9425 → **0.9494**, precision 0.9682 → **0.9699**, BLEU-4 0.8997 → **0.9045**; no earlier pair lost or worse. In-house OCR table structure 28/65 → **31/65** (cell F1 0.613 → 0.617). KoOCR-Bench 0.90370 unchanged. No per-document drops on in-house OCR, OCR robust and ODL-OCR.
+
+- Formulas: the recognizer stretches each region to 384×384, so proofs of ten or more lines came out as junk (26 of 106 ground-truth equations over 500 characters were missed). Only regions of five or more lines are read line by line; splitting four-line equations too lost the right-hand condition column, bold symbols and alignment marks on ten pairs. A large under-script band ("K∈𝒯_h", 58% of the line height) is joined to its line because it sits closer than the gap between lines.
+- OCR tables: the README listed table structure as 34/66, but the measured value was 28/65. The 2 Nov change that splits stacked rows under row spans also split budget cells holding an item with its amount and fund-source breakdown, so two budget documents went from 2/2 to 0/2 exact tables; the suite's per-document comparison only looked at CER and missed it (it now checks table exact and cell F1 too). The truth count went from 66 to 65 because the parser stopped emitting one page table that day. topik and web067 remain: their truth (`layoutTables: "keep"`) puts the borderless "※"/"□" note lines under the table into table rows, which OCR has no evidence for.
+- Security: `@xmldom/xmldom` ^0.9.12, `@modelcontextprotocol/sdk` ^1.32.0, `sharp` ^0.35.5, `adm-zip` ^0.6.1 (the lock file already used these versions; installs and output are unchanged).
+
+## 4.24.56: Re-reading pages with many dropped lines at a larger detection size, stacked "○ item | amount" rows · 2026-11-09
+
+External KoOCR-Bench v2.0c, 877 public pages (official scorer unchanged): total 0.90023 → **0.90370** (handwriting .90750 → **.92120**, tables .91054 → **.91196**, order .91284 → .91305). No per-document drops on in-house OCR, OCR robust and ODL-OCR; HWPX, PDF and HWP5-pair score gates PASS.
+
+- Larger detection re-read: two handwritten letters on a watercolour sky background were split into stroke-fragment boxes at detection size 960, dropping 66 and 40 lines as low-confidence. Only pages with 15+ dropped lines that are 15%+ of all lines are re-read at 5/3 the size (1600), including the handwriting-model decision: CER .508 → .150 and .277 → .142. A fixed larger size (1280 or 1600) made 34 of 108 handwritten pages worse (rw11 .0757 → .0929), and image size does not separate gains from losses (920px pages move ±.3), so the dropped-line count is the only trigger.
+- "○ item | amount" stacked rows: two gazette fund source/use pages, CER .266 → .008 and .314 → .148.
+- Rejected: greyscale contrast stretch for faint pencil handwriting (owner20 .082 → .136); mapping the book-bracket private-use characters (F0854, F0855) to 『』 (Hancom PDF text layers emit 《》, so spacing dropped on eight PDF text documents).
+
+## 4.24.55: Handwriting model threshold, cell-rule trimming, decimal pairs, duplicate formula lines, HWP 3.x · 2026-11-09
+
+External KoOCR-Bench v2.0c, 877 public pages (official scorer unchanged): total 0.89885 → **0.90023** (handwriting .90065 → **.90750**, tables .91052 → .91054, order .91308 → .91284). Formula OCR benchmark (20 arXiv papers, 621 pages; report only, run alone): precision 0.9554 → **0.9682**, recall 0.9728 → 0.9723. No per-document drops on the in-house OCR, OCR robust and ODL-OCR benchmarks; HWPX, PDF and HWP5-pair scoring gates pass.
+
+- Handwriting model threshold: many handwritten pages score .85–.90 with the default model and gain +.08–.10 with the handwriting model, which the old threshold (.85, +.10) missed. The `ocrRec: "auto"` threshold (.9, +.06) reaches 0.90006 but breaks nine CSAT math pages (handwriting-model confidence .91–.94; math_p06 CER .65 → .86). A first version accepting only means ≥ .95 reached 0.90023 but switched noisy printed scans (two robustness documents, readings differing by .007–.03) and a 64-character table-of-contents region (rda-planfarm), dropping three in-house documents. Requiring the two readings to differ by 8% and at least 80 characters in the +.08–.10 band keeps 0.90023 with no drops.
+- Cell-rule trimming: five cells of a time-use table fixed ("0:36" read as ":36" next to a double rule, "60.5" as "(.5" past a neighbouring cell's glyph tail). Only +.00002 on the total because that table's row/column structure does not match the truth.
+- Rejected: removing dark-filled header bands from line detection (vertical rules of a weather table 1 → 21, but a heat map .69 → .45, 0.89819); median-height tolerance for handwritten line grouping (+.0001, three table pages down).
+
+## 4.24.54: Side-by-side tables, formula junk filter, OCR grey header bands, value (share) cells · 2026-11-08
+
+External KoOCR-Bench v2.0c, 877 public pages (official scorer unchanged): total 0.89420 → **0.89885** (tables .9018 → **.9105**, order .9116 → **.9131**). Formula OCR benchmark (20 arXiv papers, 621 pages, 2,314 equations; report only, run alone): recall 0.9447 → **0.9728**, recall@NED≤.3 0.9114 → **0.9425**, exact match 0.6033 → **0.6141**, precision 0.9584 → 0.9554, BLEU-4 0.8906 → **0.8974**. No per-document drops on the in-house OCR, OCR robust, ODL, ODL-OCR, Korean PDF text and table benchmarks.
+
+- Side-by-side tables: joining adjacent tables on a page stacked two tables that do not overlap horizontally and overlap vertically by more than half. Table slice pages .41–.68 → .87–1.0, two CSAT Korean pages CER .30 → .11 (0.89420 → 0.89698).
+- Formula junk filter: 81 of 128 missed equations had no "=" in the truth. The rule that treated `aligned` without "=" as junk dropped `\leq`/`\lesssim` derivations, and the repetition rule dropped valid equations repeating one subscript. None of the 2,186 previous pairs was lost or got a worse NED; 2,251 pairs now. Precision dipped because 11 newly found display equations are missing from the truth (all real equations).
+- OCR grey header bands: removing every flat light-grey area from the ink mask fixed two gazette pages but turned figure bevel outlines (CSAT history order .97 → .51), textures inside photo cells (.44 → .10) and dark cell edges next to light shading (.69 → .47) into false rules, total 0.89639, so it was rejected. Only table cell shading is removed now (rules on both sides, rectangular fill, rules running beyond the area or a neighbouring shaded cell): gazette CER .50 → .01 and .149 → .088.
+- Value (share) cells: table rules crossing the top or bottom of a cell box blocked every empty column between glyphs, so there was no pixel gap evidence (.60 → 1.0). The first version of the spaced-header guard merged headers standing over their own columns ("manufacturing services construction", .939 → .884), so it now needs exactly two tokens within 1.2 glyph heights.
+
+## 4.24.53: Formula 512 tokens, multi-line equations, OCR single-row dividers and headings · 2026-11-08
+
+Formula OCR benchmark (20 arXiv papers, 621 pages, 2,314 equations; report only, run alone): recall 0.9313 → **0.9447**, recall at NED ≤ .3 0.8829 → **0.9114**, exact match 0.5977 → **0.6033**, precision 0.9341 → **0.9584**, BLEU-4 0.8906, 6.1 → 6.7 s per page. External KoOCR-Bench v2.0c, 877 public pages (official scorer unchanged): total 0.89408 → **0.89420** (tables .9016 → **.9018**), KDI heading recall 0.924 → **0.930** (outside the total). No per-document drops on the in-house OCR, OCR robust, ODL and ODL-OCR benchmarks.
+
+- Multi-line equations: 119 of the 159 missed equations were multi-line, fragmented or truncated. A fragment that sits right under a display equation and starts with a relation or operator is joined to it as `aligned` (recall .9313 → .9334, precision .934 → .949). Joining lines that start with "−" swallowed a standalone equation, so "−" is not a cue. A detection threshold of .30 lowered precision and was rejected.
+- 512-token decoding: at 256, 143 of 2,307 predictions were cut at the end (recall .9334 → .9447, seven papers up). The first version lost one equation in 2609.17086 because a trailing `\qquad` loop tripped the repetition check; the repeating tail is now cut only after 256 tokens. No paper lost recall or exact match.
+- OCR single-row dividers: three accounting-table pages .91–.98 → 1.0 ("subtotal │ amount │ -"). The first version (no text-on-both-sides condition) took the value-cell dividers of a delegation request form; the extra columns tripped the sparse-prose grid check and the table was unwound (in-house OCR CER 0 → .18). Counting only anchor cells in that check stopped it from unwinding a statistics table welded to a page border (.913 → .132) and ODL-OCR 141 (headings .85 → .21), so it was rejected; dividers between empty cells are not taken.
+
+## 4.24.52: Images in reading order (opt-in), blank images, stacked image bands and OCR prose rows · 2026-11-07
+
+External KoOCR-Bench v2.0c, 877 public pages (official scorer unchanged): total 0.89359 → **0.89408** (tables .9006 → **.9016**); seven pages up, two down. No per-document drops on the in-house OCR, OCR robust, ODL, ODL-OCR, Korean PDF text and table benchmarks.
+
+- OCR prose rows: 156745651_p060_t2 .442 → .605, statistics table 228_421087 .565 → .678 and more. The two pages that dropped are 156760890 (−.003) and one lecture-notes page (CER +.03: the scorer reorders blocks to the truth order, and the cut moves where figure-fragment text lands). The first version also pulled out a trailing "※" test-conditions row (−.015; the truth keeps it in the table), so trailing ※ rows stay. Applied to figure-region OCR it moved paragraphs that carry the table box to the front when fragments are re-laid by position (one OCR robust document CER .06 → .39), so it runs on page OCR only.
+- External contribution #195 (`imagePlacement`, `dropBlankImages`, image-clip tables): a `"flow"` default drops 18 ODL documents (overall .9649 → .9640; the truth has no image lines, so only heading structure loses), so the default stays `"page-end"`. Dropping only some clips of a group left a broken grid (press-release header box, KS standard concept diagram; two PDF text documents dropped), so only stacks of three or more vertical image bands are dropped. The fixed version has no per-document drops on ODL, PDF text and tables.
+
+## 4.24.51: Formula trailing backslash, HWP footnote numbers and a column that goes on below a gap · 2026-11-07
+
+Formula OCR benchmark (20 arXiv papers, 621 pages, 2,314 equations; report only, run alone): recall 0.9248 → **0.9313**, recall at NED ≤ .3 0.8794 → 0.8829, overall NED 0.1167 → 0.1121, exact match unchanged at 0.5977, precision 0.9365 → 0.9341. No paper lost recall; eight gained (2609.14430 .983 → 1, 2609.13343 .971 → .990, 2609.16262 .915 → .936 and more). No per-document drops on the in-house OCR, OCR robust, ODL, ODL-OCR, Korean PDF text and table benchmarks.
+
+- Trailing backslash: a recognition result cut at the length limit could end in a lone backslash, so the wrapping `$$` never closed and the whole equation was Markdown-escaped (17 of 82 matched equations in 2609.15186). Run alongside other benchmarks, page timeouts swing recall widely (.713 on the same paper), so the formula benchmark is measured alone.
+- HWP footnote numbers: of 1,539 footnotes in corpus HWP files, one had a stored number different from the counter (task1725: 83, previously 88). The trailing attribute field of every footnote control is 0, so earlier output always used digits.
+- Column continuing below a gap: a synthetic page now reads L → M → R instead of L → R → M. The first version took a margin strip of single glyphs, one line split by blank underlines and a right-hand heading line for columns, and two PDF text documents and two ODL documents dropped; it now requires three or more lines on both sides and a short-side line at least half as wide as the long side. No corpus page triggers it.
+- Reference repositories: opendataloader-pdf v2.5.17 → v2.5.20, opendataloader-bench unchanged, rhwp devel 888 commits narrowed to 26 candidates and checked against the corpus (3 applied; most others have no matching documents: the 5.0.2.4 strikeout, picture soft edge, numbering levels 8-10).
+
+## 4.24.50: OCR joined column headers, vertical labels and two-column order · 2026-11-07
+
+External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.8928 → **0.8936** (tables .8999 → **.9006**, order .9071 → **.9116**), `ocrRec: "auto"` 0.8940 → **0.8948**. Statistics tables .9076 → **.9099**. In-house OCR, OCR robust, ODL, ODL-OCR and Korean PDF text and table benchmarks: no per-document drops (one PDF text document's order .896 → .922).
+
+- Two-column order: six pages, including Korean exam pages 16 and 36 (order .627 → .970). The right-column unit ran from "홀수형" to the column end, so its top, 1pt above the full-width title, put it in the header band. One history page lost .003 CER (order of text inside a figure).
+- Vertical labels: the provincial fertility page .824 → .952. Joined column headers: the urban population page .807 → .862.
+- Rejected: splitting two-line department cells into rows (13 reference pages split, 8 keep one cell; OCR line grouping aligns baselines so line positions cannot tell them apart — always splitting gives +.0006 but drops 8 pages), the "[35~36]" line joined to the right column's "36." on Korean exam page 17 (gutter splitting and adding table rectangles both had no effect; to revisit).
+
+## 4.24.49: OCR two-row header cells and empty ruled cells · 2026-11-07
+
+External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.8912 → **0.8928** (tables .8968 → **.8999**), `ocrRec: "auto"` 0.8924 → **0.8940**. Gazette CER .0799 → **.0754**, statistics tables .9021 → **.9076**. 28 pages up, 3 down. In-house OCR, OCR robust, ODL, ODL-OCR and Korean PDF text and table benchmarks: no per-document drops.
+
+- Header cells spanning two rows: 16 statistics pages, including the employment-trend header page rejected in 4.24.47 (.748 → .998). The first version split an org-chart connector (in-house OCR web068) and the group header "출생아 수", so the vertical now has to cross two or more row rules and no group-header text may sit on the extended part.
+- Empty ruled cells read again: 14 pages, such as the location cells of gazette land registers. Crops cut exactly at the cell made the detector break edge glyphs, so a 16px white margin is added. The 3 pages down are calendar cells inside a blog screenshot in the Korean exam (−.006 to −.012): the text is recovered but the reference leaves out text inside figures.
+- Rejected or reference limits: stacked gazette "○ item | amount" rows (the reference alternates name and value in line order while the in-house OCR reference keeps the original single cell), splitting two-line department cells into rows (references disagree), user-document pages whose reference leaves out tables.
+
+## 4.24.48: OCR contact columns, welded open tables and chart text · 2026-11-06
+
+External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.8834 → **0.8912** (tables .8814 → **.8968**, text .8593 → .8600), `ocrRec: "auto"` 0.8846 → **0.8924**. Tables slice .7711 → **.8179**, statistics tables .8937 → **.9021**, drug-label CER .0713 → **.0658**. 24 pages up, none down. In-house OCR, OCR robust, ODL, ODL-OCR and Korean PDF text and table benchmarks: no per-document drops.
+
+- Contact columns: 21 of the 22 press-release "담당 부서" contact-table pages gain .10 to .26 (the reference follows the original form's invisible cells "title | name | phone"). The press-release cover pages left as a "reference shape limit" in 4.24.45 belong here too — the cells can be restored from the cell text pattern. The first version (three or more matching cells) missed covers with only two contact rows and pages where OCR put spaces inside e-mail addresses, so counting now starts at the first matching cell and spaces inside e-mail addresses are removed.
+- Welded open tables: the employment-trend education and health/welfare tables .616 → .880.
+- Chart text: a drug-label Kaplan-Meier page CER .787 → .437 (the number-at-risk table below stays, it lies outside the axes).
+- Faint row rules: a drug-label adverse-event table CER .156 → .068. The first version (accept faint verticals running past the frame) split the shaded accounting header "제6(당)기" and dropped 13 pages by .01 — new faint verticals are still added only when they fit the frame.
+- Rejected or reference limits: rendering one-cell tables as text in the measurement converter (total −.0002, reverted), re-reading tight multi-line name-cell boxes band by band (detection boxes overlap the line above, under 0.9), forest plots (only a horizontal axis, outside the two-axis test — chart text is in the ODL reference but not in KoOCR's), splitting stacked "○ item | amount" gazette rows (conflicts with the in-house OCR reference that keeps budget "○ items" in one cell).
+
+## 4.24.47: OCR stacked header characters and digit re-reading · 2026-11-06
+
+External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.8830 → **0.8834** (tables .8806 → **.8814**, order .9069 → .9071), `ocrRec: "auto"` 0.8842 → **0.8846**. Gazette CER .0819 → **.0799**, statistics tables .8931 → **.8937**. 9 pages up, none down. In-house OCR, OCR robust, ODL, ODL-OCR and Korean PDF text and table benchmarks: no per-document drops. ODL default overall 0.96491.
+
+- Header characters stacked top to bottom: the provincial fertility table .782 → .824 (17 of 18 header cells recovered — "제주" misses the 0.9 bar because "제" reads at 0.77). The first version (always one word) joined the form lines "자주식 대 / 기계식 대" into "대대" and dropped one in-house OCR and one robust document — characters are now joined only when the gap between bands is within 0.3 of the glyph height.
+- Digit-count re-reading: three gazette pages. The first version turned an ODL chart tick "0,05" into "5", so a re-read is accepted only when the new number contains the original digits in order and is longer.
+- Two-row tables: a gazette before/after comparison table .301 → .183. The first version (keep only numeric tables) took a Goesan budget OCR page from CER 0 to .25.
+- Rejected: detection long side 960 → 1280 for every page (tables +.0027, text −.008, handwriting −.011, total .8807), a second detection pass at 4/3 scale to add missed lines (.8827, 40 in-house drops, 6.1 → 10.5 s per page), lowering the two-line re-read width bar from 3x to 2x (an org-chart cell "산업안전/보건본부" joined a neighbouring cell, 2 drops), merging cells beside a short rule under a two-row cell (group headers with partly missing rules split, .8830).
+
+## 4.24.46: OCR fake rules from digit strokes and group labels · 2026-11-05
+
+External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.8806 → **0.8830** (tables .876 → **.881**, order .9064 → .9069), `ocrRec: "auto"` 0.8818 → **0.8842**. Gazette CER .0911 → **.0819**, statistics tables .8862 → **.8931**. 11 pages up, 1 down (−.023, an exam page with a chart — question text and chart text that had been one block are now separate, and the chart text the truth omits counts on its own). In-house OCR, OCR robust, ODL, ODL-OCR and Korean PDF text and table benchmarks: no per-document drops.
+
+- Fake rules from digit strokes: the gazette continuing-expenditure page .477 → .032, two other gazette pages .203 → .009 and .155 → .059, two statistics pages +.04 and +.07. The first version (two or more verticals only) hurt one scanned form skewed by +3°, so dotted lines of 60pt or more are accepted with one vertical.
+- Group label in the first column: the first version also split multi-line text inside one cell (election schedule "·시·도지사 … / ·시·도의원 …"), CER .062 → .080 on one in-house OCR document — now only when the other columns are numeric value columns.
+- Two stacked open tables: the per-capita GRDP page .66 → .954. The first version (both rules around the gap thick) broke a scanned form whose rule widths vary with blur (robust scan CER .098 → .401) — narrowed to one "thick frame, thin inner rules, thick frame" set on each side.
+- Rejected: splitting OCR boxes stacked in one column (six pages dropped, including vertically spaced place names), unframing a handwritten-letter cluster table (.508 → .668). The #181 spacer-row rule was not adopted: against the source tables it restored 14 places and merged different tables or boxes in 10.
+
+## 4.24.45: OCR ranking-table name/value columns and statistics sub-rows · 2026-11-05
+
+External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.8779 → **0.8806** (tables .870 → **.876**; text, handwriting and order unchanged), `ocrRec: "auto"` 0.8791 → **0.8818**. Statistics tables .8715 → **.8862**, table set .7682 → .7709. 12 pages up, 1 down (−.004 — rows that had been shifted one cell left now sit under the label column, which jitters the match against the truth's row-spanning cell; the output is better). In-house OCR, OCR robust and ODL-OCR benchmarks: no per-document drops.
+
+- Name/value columns in ranking tables: the two "top 10 nationalities" pages .61 → .91 and .60 → .89. Instead of the blank-gutter vertical line rejected in 4.24.44, the split happens on cell text, so wide OCR boxes no longer make rows come out twice.
+- Line alignment for statistics sub-rows: the regional in-migration page .61 → .94 (six months of 2024 had stayed in one row, with 16 columns from Gwangju to Jeju merged into one cell).
+- Stacked share rows next to a spanning text label: two table-set pages .82 → .93 and .43 → .54.
+- Rejected: splitting same-line "value (share)" cells (one statistics page .60 → 1.0, but it also split n(%) cells in drug-label clinical tables). Left as truth-shape limits: press-release cover pages (the truth keeps only the two contact rows of the header table, split into six columns where no rule exists), three table-set pages that store an org chart, a text box or a whole page as a table, and user-document pages whose truth is another page's text or omits the table.
+
+## 4.24.44: OCR multi-column prose and strip images · 2026-11-05
+
+External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.877 → **0.878**, `ocrRec: "auto"` 0.878 → **0.879**. User-document CER .301 → .285. External opendataloader-bench with `ocr: true`: .96646 → **.96659** (no per-document drops). Default ODL, in-house OCR, OCR robust and Korean PDF text and table benchmarks: no per-document drops.
+
+- **Measurement converter fix** (not the scorer): the tool that turns kordoc output into the scoring format wrote a lone "<" in text blocks as is ("청소율<30mL"), and the official scorer's tag stripping (`<[^>]+>`) swallowed the text up to the next ">". A "<" not closed on the same line is now written as `&lt;` (closed "<보기>" and "<신설>" stay, as the truth loses them the same way). With the fixed converter 4.24.43 measures .8765 → .8771 and auto .8773 → .8783; the before/after above both use the fixed converter. Two drug-label pages whose truth itself has a lone "<" look worse because the truth is trimmed.
+- OCR cluster tables made of long prose line pieces (40%+ of cells) go to column splitting — spread textbook pages and glossary + body columns, CER −.43, −.29, −.21.
+- Rejected: a blank-gutter column between name and value in ranking tables ("중국 64,822" → nationality | arrivals) — one page TEDS .61 → .88, but on another wide OCR boxes spanning several columns tangled with it and rows came out twice. Turning image formula OCR on by default — it stays an option.
+
+## 4.24.43: OCR circled marks and headings · 2026-11-04
+
+External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.872 → **0.877** (text .830 → **.852**, tables and handwriting unchanged), `ocrRec: "auto"` 0.873 → **0.877**. Exam circled-mark retention (mark_keep) .682 → **.947**, KDI heading recall .798 → **.924**, patent CER .029 → **.021** and order .990 → .996. External opendataloader-bench, 200 documents: heading MHS .949 → **.953**, overall .9637 → **.9649** (no per-document drops). In-house OCR, OCR robust and ODL-OCR benchmarks: no per-document drops.
+
+- Circled jamo and Latin letters (㉠–㉤, ⓐ–ⓕ) are not in the recognizer's dictionary — the model read only the inner letter ("a", "C", "ㄴ"), dropped the mark, or read it as ①–⑨ (retention 0 on the Korean exam pages). Ring components at the character position (+.10), re-reading only the ring interior with a stroke-position test for bare jamo (+.13), faint 1px rings and two adjacent circled marks (+.03). A crop with the ring painted over read the jamo ㄱ as "7" and did worse.
+- A few pages where a circled mark was corrected lose .001–.015 on the official order score (only "3" → "③" changed — jitter in the scorer's block matching). The order set as a whole goes .905 → .906.
+- Numbered chapter and section headings (1–1.3× the body, including "제1절미국" with the space after the number lost) and all-caps Latin heading lines (picture-text pages where OCR sizes vary).
+- Patent paragraph numbers "[0230]" are attached to the paragraph on the same line (21 of 85 patent pages put the number in a table's first column or another column).
+
+## 4.24.42: OCR handwriting by default, statistics tables, share columns · 2026-11-04
+
+External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.835 → **0.872** (tables .853 → .871, handwriting .761 → **.901**, text and order unchanged), `ocrRec: "auto"` 0.856 → **0.873**. Statistics tables .839 → .872, table set .745 → .768, gazette CER .094 → .091, handwriting CER owner20 .212 → .116 · rw11 .265 → .083. In-house OCR, OCR robust, ODL, ODL-OCR and PDF table benchmarks: no per-document drops.
+
+- The default setting now switches a page to the handwriting rec when its mean confidence is below .85 and the handwriting rec raises it by more than .10 (KoOCR +.019). Printed scans sit at .82–.90 with gains of .06–.10, outside the threshold. Edit distance between the two recognizers' text did not separate handwritten from printed pages.
+- One-line handwriting strips (3685×183) shrank to a 48px short side at detection and lost their glyphs — the detector input keeps a short side of at least 80px (better than 96, 128 or 160; 72 rounds to 64).
+- Statistics-table body expansion, row bands of inflated boxes, share columns and stacked share rows, glued thousands-grouped integers (low statistics pages +.10 to +.58; three table-set pages .55 → 1.0, .60 → .96, .68 → .88).
+
+## 4.24.40: OCR digit groups and label–value tables · 2026-11-03
+
+External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.830 → **0.835**, `ocrRec: "auto"` 0.851 → **0.856**. Gazette CER .116 → **.094**, statistics tables .831 → **.839**. In-house OCR, OCR robustness, ODL-OCR and PDF table benchmarks: no per-document drops (in-house OCR budget book CER .0040 → .0033, three robustness documents up).
+
+- When a condensed number font makes the recognizer merge repeated digits ("37,369,00"), a box holding only one number with broken thousands groups is re-read on a crop stretched 1.6× or 2.2×.
+- Stacked rows where label and amount columns have different line counts (balance sheets) are expanded along the label lines.
+
+## 4.24.39: OCR page layout (columns, sideways pages) and statistics tables · 2026-11-03
+
+External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.810 → **0.830**, `ocrRec: "auto"` 0.831 → **0.851**. Tables .825 → .844, text .793 → .829, reading order .868 → .903. In-house OCR, OCR robustness, ODL, ODL-OCR and PDF table benchmarks: no per-document drops.
+
+| Group | 4.24.38 | 4.24.39 |
+| --- | --- | --- |
+| Exam CER (lower is better) | .416 | **.302** |
+| Exam reading order | .774 | **.844** |
+| Statistics tables | .808 | **.831** |
+| Tables | .732 | **.745** |
+| Gazette CER | .146 | **.116** |
+| User documents CER | .356 | **.301** |
+
+- Pages scanned sideways (a landscape table printed on its side) are turned upright before reading.
+- Two columns are split by a long middle column rule, or by the column boundary of a cluster rejected as two-column prose.
+- Outer label columns of open statistics tables; row expansion of large numeric tables (text outside the bands goes back to the body).
+- `ocrRec: "auto"` stays opt-in: printed scanned contents and cover pages overlap handwriting pages in confidence, and seven in-house robustness documents dropped.
+
 ## 4.24.38: OCR headings and reading order · 2026-11-02
 
 External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.807 → **0.810**, `ocrRec: "auto"` 0.828 → **0.831**. Reading order .842 → **.868** (exam pages .720 → .774), heading recall (KDI reports, not in the total) 0 → **.798**, KDI CER .024 → .017. In-house OCR, OCR robustness, ODL-OCR and PDF table benchmarks are unchanged per document.
@@ -759,7 +955,16 @@ The nested-table 100% is limited to this text-layer sample; it does not cover PD
 
 [opendataloader-bench](https://github.com/opendataloader-project/opendataloader-bench) scores 200 PDFs (papers, reports, slides, posters, scans) against human-made ground truth for **reading order (NID), table structure (TEDS) and heading hierarchy (MHS)** (1.0 = identical to the ground truth).
 
-### Latest separate verification: 4.22.14 release candidate · 2026-10-19
+### Latest measurement: 4.24.50 · 2026-11-07
+
+| Setting | Overall | Reading order | Tables | Headings |
+| --- | ---: | ---: | ---: | ---: |
+| Default | 0.965 | 0.964 | 0.980 | 0.953 |
+| `ocr: true` | 0.967 | 0.965 | 0.980 | 0.959 |
+
+200 documents each, no missing predictions. Measured with `node bench/suite.mjs run r426 --only=odl,odlocr` (4.24.50 code). The two settings below (`plain`/`htmlTables` and `ocr: false`) have not been re-measured since 4.22.14.
+
+### Separate verification: 4.22.14 release candidate · 2026-10-19
 
 | Setting | Overall | Reading order | Tables | Headings |
 | --- | ---: | ---: | ---: | ---: |
@@ -802,7 +1007,7 @@ Time per page: 200 documents parsed sequentially in one process on an Apple M4 2
 
 ### Published engine comparison: historical results, 2026-09-29
 
-Preserved from the earlier README. These are historical results, not current rankings or a same-hardware performance comparison. See the 4.22.0 release-candidate table above for the latest verified kordoc scores.
+Preserved from the earlier README. These are historical results, not current rankings or a same-hardware performance comparison. See the 4.24.50 table above for the latest kordoc scores.
 
 | Rank | Engine | Overall | Reading order | Tables | Headings | Time / page |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: |

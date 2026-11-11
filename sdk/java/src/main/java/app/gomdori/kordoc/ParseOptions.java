@@ -54,6 +54,8 @@ public final class ParseOptions {
         /** "gfm": 모든 표를 GFM 파이프 표로 — 중첩 표는 부모·자식 트리로 펼치고 관계 표지를 남긴다 */
         public Builder tableFormat(String format) { wire.put("tableFormat", format); return this; }
         public Builder htmlTables(boolean v) { return put("htmlTables", v); }
+        /** HTML 표 셀의 링크·URL 을 <a href> 로 (기본 꺼짐) */
+        public Builder htmlCellLinks(boolean v) { return put("htmlCellLinks", v); }
         /** "visual"(기본) | "keep" */
         public Builder layoutTables(String mode) { wire.put("layoutTables", mode); return this; }
         public Builder classifyTables(boolean v) { return put("classifyTables", v); }
@@ -76,6 +78,13 @@ public final class ParseOptions {
         /** false 면 이미지 바이트 추출을 생략한다 (전송 방식과 별개) */
         public Builder images(boolean v) { return put("images", v); }
         public Builder inlineImages(boolean v) { return put("inlineImages", v); }
+        public Builder qrCodes(boolean v) { return put("qrCodes", v); }
+        /** "flow"(기본, 쪽 위 자리로 글 사이) | "page-end"(쪽 끝, 4.24.50 까지의 출력) — PDF 그림 블록 자리 */
+        public Builder imagePlacement(String placement) { wire.put("imagePlacement", placement); return this; }
+        /** 거의 한 색인 그림(빈 판·단색 띠·옅은 그러데이션)을 뺀다 — 그림 바이트를 낼 때만 */
+        public Builder dropBlankImages(boolean v) { return put("dropBlankImages", v); }
+        /** "png" | "webp" — 지정하면 모든 그림을 그 형식으로(webp 는 무손실). 지정하지 않으면 PDF 는 PNG, 다른 형식은 원본 그대로 */
+        public Builder imageFormat(String format) { wire.put("imageFormat", format); return this; }
         /** true: 필요한 쪽만 OCR, false: 끔 */
         public Builder ocr(boolean v) { return put("ocr", v); }
         /** 전 쪽 강제 OCR */

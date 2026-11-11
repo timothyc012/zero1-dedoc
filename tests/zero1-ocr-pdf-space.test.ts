@@ -9,7 +9,10 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { ocrLinesInPdfSpace } from "../src/index.js"
-import type { OcrPageLines } from "../src/types.js"
+import type { IRBlock, OcrPageLines } from "../src/types.js"
+import { DEFAULT_BUILTIN_OCR, builtinOcrConfig, ocrItemsToBlocks, ocrOnePage, restoreOcrPageOrientation } from "../src/ocr/pdf-ocr.js"
+import { resolveOcrModels } from "../src/ocr/models.js"
+import { imageOcrItemsToBlocks } from "../src/ocr/image-ocr.js"
 
 const page = (o: Partial<OcrPageLines> & Pick<OcrPageLines, "width" | "height" | "scale" | "lines">): OcrPageLines =>
   ({ pageNumber: 1, deskewAngle: 0, ...o })
@@ -74,6 +77,85 @@ describe("ocrLinesInPdfSpace — 그린 방향(회전 적용) → 회전 전 사
     assert.deepEqual(center(r270), [50, 500])
     assert.equal(r270.angle, -90)
   })
+  it("undoes both OCR quarter turns before mapping to PDF space", () => {
+    const lines = [{ text: "line", box: { x: 20, y: 45, w: 20, h: 10 }, confidence: 0.9 }]
+    const ccw = ocrLinesInPdfSpace([page({ width: 101, height: 201, scale: 1, pageRotation: 90, lines })])[0]
+    const cw = ocrLinesInPdfSpace([page({ width: 101, height: 201, scale: 1, pageRotation: 270, lines })])[0]
+    assert.deepEqual(center(ccw), [151, 71])
+    assert.deepEqual(center(cw), [50, 30])
+    assert.equal(ccw.angle, -90)
+    assert.equal(cw.angle, 90)
+  })
+
+  it("undoes quarter turn, deskew and PDF Rotate in reverse order", () => {
+    const [line] = ocrLinesInPdfSpace([page({
+      width: 101, height: 201, scale: 1, pageRotation: 90, deskewAngle: 90,
+      view: [10, 20, 111, 221], rotate: 90,
+      lines: [{ text: "line", box: { x: 20, y: 45, w: 20, h: 10 }, confidence: 0.9 }],
+    })])
+    assert.deepEqual(center(line), [111, 140])
+    assert.equal(line.angle, -90)
+  })
+
+  it("retains detected page rotation in OCR line metadata", async () => {
+    const pageMock = {
+      getOriginalSize: () => ({ originalWidth: 40, originalHeight: 60 }),
+      render: async () => ({ data: new Uint8Array(120 * 180 * 4).fill(255), width: 120, height: 180 }),
+    } as unknown as Parameters<typeof ocrOnePage>[0]
+    let calls = 0
+    const engine = {
+      recognizePage: async (_rgba: Uint8Array, _width: number, _height: number, stats: { pageRotation?: 90 | 270 }) => {
+        if (calls++ === 0) { stats.pageRotation = 90; return [] }
+        return [{ text: "line", x: 20, y: 45, w: 20, h: 10, confidence: 0.99 }]
+      },
+    } as unknown as Parameters<typeof ocrOnePage>[3]
+    const result = await ocrOnePage(pageMock, 1, "builtin", engine, [], false, undefined, undefined, {
+      ...DEFAULT_BUILTIN_OCR, handwriting: undefined, lines: "kept",
+      tuning: { ...DEFAULT_BUILTIN_OCR.tuning, postprocess: false },
+    })
+    assert.equal(calls, 2)
+    assert.equal(result.lines?.pageRotation, 90)
+    assert.deepEqual([result.lines?.width, result.lines?.height], [180, 120])
+    const corrected = ocrItemsToBlocks([{ text: "line", x: 20, y: 45, w: 20, h: 10, confidence: 0.99 }], 1, 60, 40, 3, undefined, false)
+    assert.equal(result.blocks.length, 1)
+    const b = corrected[0].bbox!
+    assert.deepEqual(result.blocks[0].bbox, { ...b, x: b.y, y: 60 - b.x - b.width, width: b.height, height: b.width })
+  })
+
+  it("restores nested block and table geometry without changing order or transforming shared boxes twice", () => {
+    for (const rotation of [90, 270] as const) {
+      const shared = { page: 1, x: 10, y: 20, width: 30, height: 40 }
+      const nested: IRBlock = { type: "paragraph", text: "nested", bbox: shared }
+      const blocks: IRBlock[] = [
+        { type: "table", bbox: shared, children: [nested], footnoteBlocks: [nested],
+          table: { rows: 1, cols: 1, hasHeader: false, regions: [shared], captionBlocks: [nested],
+            cells: [[{ text: "nested", rowSpan: 1, colSpan: 1, blocks: [nested] }]] } },
+        { type: "paragraph", text: "second", bbox: { page: 1, x: 10, y: 20, width: 30, height: 40 } },
+      ]
+      restoreOcrPageOrientation(blocks, rotation, 200, 100)
+      const expected = rotation === 90
+        ? { page: 1, x: 20, y: 160, width: 40, height: 30 }
+        : { page: 1, x: 40, y: 10, width: 40, height: 30 }
+      assert.deepEqual(blocks[0].bbox, expected)
+      assert.deepEqual(nested.bbox, expected)
+      assert.deepEqual(blocks[0].table!.regions![0], expected)
+      assert.deepEqual(blocks[1].bbox, expected)
+      assert.deepEqual(blocks.map(b => b.type), ["table", "paragraph"])
+    }
+  })
+
+  it("returns image OCR blocks in the unrotated image frame for both quarter turns", () => {
+    const items = [{ text: "line", x: 20, y: 45, w: 20, h: 10, confidence: 0.99 }]
+    const ruling = { horizontals: [], verticals: [] }
+    const normal = imageOcrItemsToBlocks(items, 180, 120, 3, ruling, false)
+    const box = normal[0].bbox!
+    const ccw = imageOcrItemsToBlocks(items, 180, 120, 3, ruling, false, 90)
+    const cw = imageOcrItemsToBlocks(items, 180, 120, 3, ruling, false, 270)
+    assert.deepEqual(ccw[0].bbox, { ...box, x: box.y, y: 60 - box.x - box.width, width: box.height, height: box.width })
+    assert.deepEqual(cw[0].bbox, { ...box, x: 40 - box.y - box.height, y: box.x, width: box.height, height: box.width })
+    assert.equal(ccw[0].text, normal[0].text)
+    assert.equal(cw[0].text, normal[0].text)
+  })
 })
 
 describe("(Zero1) 독일어 셋의 손글씨 다시 읽기 모델", () => {
@@ -85,5 +167,12 @@ describe("(Zero1) 독일어 셋의 손글씨 다시 읽기 모델", () => {
     assert.equal(alt.generation, undefined)
     assert.equal(alt.det, DEFAULT_OCR_MODELS.det)
     assert.equal(alt.dict, DEFAULT_OCR_MODELS.dict)
+  })
+
+  it("keeps language profiles for printed OCR and avoids implicit Korean rereads", () => {
+    assert.equal(resolveOcrModels({ ocrLanguage: "de", ocrRec: "printed" }).generation, 6)
+    assert.equal(builtinOcrConfig({ ocrLanguage: "de" }).handwriting, undefined)
+    assert.equal(builtinOcrConfig({ ocrLanguage: "en" }).handwriting, undefined)
+    assert.ok(builtinOcrConfig({ ocrLanguage: "korean" }).handwriting)
   })
 })

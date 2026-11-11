@@ -1,6 +1,6 @@
 {
   "name": "zero1-dedoc",
-  "version": "4.24.38-zero1.1",
+  "version": "4.24.63-zero1.1",
   "description": "Zero1 Dedoc — multilingual text-layer PDF parsing and Korean HWP/HWPX, Office, CLI and MCP tools; a Kordoc fork",
   "type": "module",
   "exports": {
@@ -73,7 +73,9 @@
     "mcp-server"
   ],
   "author": "timothyc012",
-  "contributors": ["chrisryugj"],
+  "contributors": [
+    "chrisryugj"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -83,7 +85,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.31.0",
+    "@modelcontextprotocol/sdk": "^1.32.0",
     "@xmldom/xmldom": "^0.9.10",
     "cfb": "1.2.2",
     "commander": "^13.0.0",
@@ -104,10 +106,11 @@
     "@hyzyla/pdfium": "^2.1.0",
     "onnxruntime-node": "^1.24.0",
     "pdfjs-dist": "^4.10.38",
-    "sharp": "^0.35.5"
+    "sharp": "^0.35.5",
+    "zxing-wasm": "^3.1.6"
   },
   "overrides": {
-    "adm-zip": "^0.6.0",
+    "adm-zip": "^0.6.1",
     "sharp": "^0.35.5",
     "esbuild": "^0.28.1",
     "global-agent": "^4.1.3"

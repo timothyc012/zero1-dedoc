@@ -10,14 +10,15 @@
  * 디코딩은 optional dependency `sharp` — 미설치면 MISSING_DEPENDENCY 안내.
  */
 
+import { rescueEmptyCells } from "./empty-cell-rescue.js"
 import type { IRBlock, OcrPageLines, ParseOptions, ParseWarning } from "../types.js"
 import { KordocError, OPTIONAL_DEP_INSTALL_HINT } from "../utils.js"
-import { getOcrEngine, type OcrPageStats } from "./engine.js"
+import { getOcrEngine, type OcrItem, type OcrPageStats } from "./engine.js"
 import { ensureOcrModelsFor } from "./models.js"
 import { applyImageFormulas } from "./image-formula.js"
-import { detectRulingLines, rulingToPdfLines } from "./ruling-lines.js"
-import { MAX_OCR_PIXELS, builtinOcrConfig, cellEdgeHorizontals, cellEdgeVerticals, ocrItemsToBlocks, pageLines, recognizeOcrPage, reportModelDownload } from "./pdf-ocr.js"
-import { deskewPage } from "./deskew.js"
+import { detectRulingLines, rulingToPdfLines, type RulingLines } from "./ruling-lines.js"
+import { MAX_OCR_PIXELS, builtinOcrConfig, cellEdgeHorizontals, cellEdgeVerticals, ocrItemsToBlocks, pageLines, recognizeOcrPage, reportModelDownload, restoreOcrPageOrientation } from "./pdf-ocr.js"
+import { deskewPage, rotateQuarter } from "./deskew.js"
 
 /** 좌표 환산 기본 스케일 (px/pt) — PDF OCR 렌더(216dpi)와 동일 기준 */
 const IMAGE_SCALE = 3
@@ -64,26 +65,40 @@ export async function parseImageDocument(
     return { blocks: [{ type: "paragraph", text: text.trim(), pageNumber: 1 }], warnings }
   }
 
-  const { data: decoded, width, height, density, shrink } = await decodeToRgba(buffer)
+  const { data: decoded, width: decodedW, height: decodedH, density, shrink } = await decodeToRgba(buffer)
+  let width = decodedW, height = decodedH
   if (shrink < 1) warnings.push({ page: 1, code: "PARTIAL_PARSE", message: "OCR 래스터 픽셀 상한으로 이미지 해상도를 축소했습니다 (작은 글자 인식 결손 가능)" })
   // 픽셀 상한으로 줄인 이미지는 같은 지면을 낮은 해상도로 본 것 — px/pt 도 같은 비율로
   const scale = imageScale(width / shrink, height / shrink, density) * shrink
   // 스캔·사진 기울기 보정 — 인식과 괘선 감지가 같은(바로 선) 래스터를 본다
-  const { rgba: data, angle } = deskewPage(decoded, width, height)
+  const deskewed = deskewPage(decoded, width, height)
+  let data = deskewed.rgba
+  const angle = deskewed.angle
 
   const config = builtinOcrConfig(options)
   await ensureOcrModelsFor(config.models, reportModelDownload)
-  if (config.handwriting) await ensureOcrModelsFor(config.handwriting, reportModelDownload)
+  if (config.handwriting && !config.autoRec?.lazy) await ensureOcrModelsFor(config.handwriting, reportModelDownload)
   const engine = await getOcrEngine(config.models)
   const stats: OcrPageStats = { droppedLowConf: 0, ...(config.lines === "all" ? { dropped: [] } : {}) }
   // 괘선을 먼저 찾아 검출 상자를 표 칸·행 경계에서 가른다 — PDF OCR(ocrOnePage)과 같은 순서. 인식 뒤에 찾으면 이웃 칸 글이 한 상자로
   // 묶여 인식됐다(통계 보도자료 표 "2023 2024p ’23년대비" → "20232024p’23")
-  const ruling = detectRulingLines(data, width, height, scale)
+  let ruling = detectRulingLines(data, width, height, scale)
   let items = await recognizeOcrPage(engine, config, config.tuning, data, width, height, stats,
     [...(ruling.cellDividers ?? []), ...cellEdgeVerticals(ruling)], cellEdgeHorizontals(ruling))
+  // 가로 표를 눕혀 찍은 쪽 — 세운 래스터에서 표를 분석한 뒤 블록 좌표는 원본 이미지 방향으로 되돌린다
+  const pageRotation = stats.pageRotation
+  if (stats.pageRotation) {
+    ({ rgba: data, width, height } = rotateQuarter(data, width, height, stats.pageRotation))
+    delete stats.pageRotation
+    ruling = detectRulingLines(data, width, height, scale)
+    items = await recognizeOcrPage(engine, config, { ...config.tuning, orientPage: false }, data, width, height, stats,
+      [...(ruling.cellDividers ?? []), ...cellEdgeVerticals(ruling)], cellEdgeHorizontals(ruling))
+  }
+  // 쪽 검출이 놓친 빈 칸 글 — 괘선 칸만 잘라 다시 읽는다(empty-cell-rescue)
+  if (config.tuning.postprocess) items = [...items, ...await rescueEmptyCells(engine, config.tuning, data, width, height, ruling, items)]
   // 수식 OCR(선택) — 수식 자리 글상자를 $LaTeX$ 로 (image-formula)
   if (options?.formulaOcr) items = await applyImageFormulas(items, data, width, height, warnings)
-  const lines = config.lines ? pageLines(1, width, height, scale, angle, items, stats.dropped) : undefined
+  const lines = config.lines ? { ...pageLines(1, width, height, scale, angle, items, stats.dropped), ...(pageRotation ? { pageRotation } : {}) } : undefined
   if (stats.droppedLowConf > 0) {
     warnings.push({
       page: 1,
@@ -99,10 +114,18 @@ export async function parseImageDocument(
     return { blocks: [], warnings, lines }
   }
 
-  const pdfW = width / scale
-  const pdfH = height / scale
-  const extraLines = rulingToPdfLines(ruling, scale, pdfH)
-  return { blocks: ocrItemsToBlocks(items, 1, pdfW, pdfH, scale, extraLines, options?.tables !== false), warnings, lines }
+  return { blocks: imageOcrItemsToBlocks(items, width, height, scale, ruling, options?.tables !== false, pageRotation), warnings, lines }
+}
+
+/** Lay out in the recognition raster, then return geometry in the source image frame. */
+export function imageOcrItemsToBlocks(
+  items: OcrItem[], width: number, height: number, scale: number, ruling: RulingLines,
+  detectTables: boolean, pageRotation?: 90 | 270,
+): IRBlock[] {
+  const pdfW = width / scale, pdfH = height / scale
+  const blocks = ocrItemsToBlocks(items, 1, pdfW, pdfH, scale, rulingToPdfLines(ruling, scale, pdfH), detectTables)
+  if (pageRotation) restoreOcrPageOrientation(blocks, pageRotation, pdfW, pdfH)
+  return blocks
 }
 
 /**

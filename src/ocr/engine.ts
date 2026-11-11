@@ -39,9 +39,10 @@ import {
 } from "./models.js"
 import { readOnnxCharacterDict } from "./onnx-character-dict.js"
 import type { GermanOcrEngine } from "./engine-v6.js"
-import { arrowGlyph, edgeTrim, leadingBullet, tallInkCount, grayCrop, inkBounds, inkStats, leaderRuns, leadingTriangle, leadingRing, splitRowBands } from "./line-split.js"
+import { arrowGlyph, edgeTrim, leadingBullet, tallInkCount, grayCrop, inkBounds, inkStats, leaderRuns, leadingTriangle, leadingRing, splitRowBands, stackedGlyphBands } from "./line-split.js"
 import type { InkStats } from "./line-split.js"
-import { restoreGlyphs, trimInklessEnds } from "./glyph-restore.js"
+import { restoreGlyphs, ringAsks, ringGlyph, trimInklessEnds } from "./glyph-restore.js"
+import type { RingRead } from "./glyph-restore.js"
 import { dropNestedFragments, isDotFragment, joinLeaderItems, restoreBulletItems, restoreSymbols } from "./postprocess.js"
 import { bandBoxes, splitBoxAtCellRules, splitBoxAtRowRules, lineCrop, type Box, REC_HEIGHT } from "./crop.js"
 import { disableOrtTelemetry } from "./runtime-env.js"
@@ -63,6 +64,8 @@ export interface OcrPageStats {
   truncatedBoxes?: number
   /** 주면 저신뢰로 버린 줄을 여기에 모은다 (ocrLines "all") — 없으면 세기만 */
   dropped?: OcrItem[]
+  /** 가로 표를 눕혀 찍은 쪽으로 보여 인식하지 않고 돌릴 각만 적었다(orientPage) — 호출측이 래스터를 돌려(rotateQuarter) 다시 부른다 */
+  pageRotation?: 90 | 270
 }
 
 /**
@@ -94,6 +97,11 @@ export interface OcrTuning {
   tightBoxes: boolean
   /** 목차 리더 점 무리를 빼고 앞뒤를 따로 인식 (line-split.ts leaderRuns) */
   splitLeaders: boolean
+  /** 눕혀 찍은 쪽 판정 — 검출 상자 대부분이 세로로 길면 돌릴 각을 stats.pageRotation 에 적고 인식을 건너뛴다 */
+  orientPage: boolean
+  /** 저신뢰로 버린 줄이 많은 쪽을 큰 검출로 다시 읽기 (pdf-ocr recognizeOcrPage). 그림 영역만 읽을 때는 끈다 — 차트 글 영역은
+   *  눈금·범례 조각을 늘 많이 버려 다시 읽기가 걸렸고 "single" 이 "sing le" 로 갈렸다(ODL 027) */
+  redetect: boolean
 }
 
 export const DEFAULT_OCR_TUNING: Readonly<OcrTuning> = Object.freeze({
@@ -109,25 +117,103 @@ export const DEFAULT_OCR_TUNING: Readonly<OcrTuning> = Object.freeze({
   postprocess: true,
   tightBoxes: true,
   splitLeaders: true,
+  orientPage: true,
+  redetect: true,
 })
 
 const DET_MIN_SIZE = 3
+/** 숫자 자릿수 재인식의 가로 배율 — 앞 배율로 안 바로 서면 다음 배율로 */
+const NUMBER_STRETCH = [1.6, 2.2]
+/** 천 단위 쉼표로 묶인 수 가운데 자릿수가 어긋난 것이 있는가 — 첫 묶음 1~3자리, 쉼표 뒤 3자리 ("1,234" 바름, "37,369,00"·"302543,00"·"102,260,,00" 틀림) */
+export function badThousands(text: string): boolean {
+  for (const m of text.matchAll(/(?<![\d.,])\d+(?:,\d*)*,\d+(?![\d,])/g)) {
+    const [head, ...rest] = m[0].split(",")
+    if (head.length > 3 || rest.some(g => g.length !== 3)) return true
+  }
+  return false
+}
+/** 수 하나만 든 글 — 부호·괄호, 소수("2,51.8" 면적), 금액 단위 꼬리("67,05,00,000원"·"1,234명"·"12%")까지. 단위째 읽힌 기금운용계획 금액 열이 재인식에서 빠졌다(관보) */
+export function singleNumberText(text: string): boolean {
+  return /^[-−(△▲]?\d[\d,]*(?:\.\d+)?\)?\s?(?:[가-힣]{1,2}|%)?$/.test(text.trim())
+}
+/**
+ * 숫자 재인식 결과 반영 — 숫자 밖 글자가 같으면 다시 읽은 글 그대로, 다르면 원래 글의 수만 다시 읽은 수로 바꾼다(수가 하나씩일 때).
+ * 늘려 읽으면 칸 테두리를 "|"·"]" 로 붙여 읽거나 앞 "△" 를 빠뜨려(관보 기금 금액 "△19,454,00,000원" → "19,454,000,000원") 버려졌다
+ */
+/** 수 짝("12.1/18.1", 기온 최저/최고) */
+const NUMBER_PAIR = /^[-−]?\d+(?:\.\d+)?\/[-−]?\d+(?:\.\d+)?$/
+const DECIMAL_PAIR = /^[-−]?\d+\.\d+\/[-−]?\d+\.\d+$/
+/**
+ * 점이 빠진 수 짝의 재인식 결과 반영 — 다시 읽은 글이 양쪽 다 소수이고, 원래 숫자를 차례로 품으며, 숫자가 하나까지만 늘었을 때만
+ * ("121/18.1" → "12.1/18.1", "31/1.8" → "3.1/11.8")
+ */
+export function rereadDecimalPair(original: string, reread: string): string | null {
+  const r = reread.trim()
+  if (!DECIMAL_PAIR.test(r)) return null
+  const a = original.replace(/\D/g, ""), b = r.replace(/\D/g, "")
+  let i = 0
+  for (const ch of b) if (ch === a[i]) i++
+  return i === a.length && b.length - a.length <= 1 ? r : null
+}
+export function rereadNumberText(original: string, reread: string): string | null {
+  const skeleton = (t: string) => t.replace(/[\d,\s]/g, "")
+  if (skeleton(reread) === skeleton(original)) return restoreSymbols(reread.trim())
+  const num = (t: string) => t.match(/\d[\d,]*\d|\d/g) ?? []
+  const before = num(original), after = num(reread)
+  if (before.length !== 1 || after.length !== 1) return null
+  // 붙어 읽힌 같은 숫자를 되살리는 재인식이라 자릿수가 늘고 원래 숫자를 차례로 품어야 한다 — "0,05" 가 "5" 로 바뀌었다(ODL 027 차트 눈금)
+  const a = before[0].replace(/,/g, ""), b = after[0].replace(/,/g, "")
+  let i = 0
+  for (const ch of b) if (ch === a[i]) i++
+  return b.length > a.length && i === a.length ? original.replace(before[0], after[0]) : null
+}
 const DET_MAX_BOXES = 3000
 const REC_MIN_WIDTH = 320
 /** 배치 텐서 폭 합 상한 — 긴 줄 여러 개를 한 텐서로 묶어 메모리가 튀지 않게 */
 const REC_BATCH_MAX_PIXELS = 48 * 16000
 /** 키 큰 박스 판정 (공식 파이프라인의 세로 판정 h/w ≥ 1.5 와 같은 문턱) */
 const TALL_RATIO = 1.5
+/** 세로로 긴 상자에서 띠가 하나만 남았을 때 그 띠만 읽는 높이 비율 상한(나머지는 이웃 줄 조각) */
+const SOLE_BAND_RATIO = 0.7
 /** 밴드로 갈라지지 않는 키 큰 박스 중 이 비율 이상은 90° 회전 글자 후보 */
 const ROTATE_RATIO = 3
+/** 눕힌 쪽 판정 — 검출 상자가 이만큼 이상이고 그 가운데 키 큰(TALL_RATIO) 상자가 이 비율 이상일 때만 본다 */
+const ORIENT_MIN_BOXES = 20
+const ORIENT_TALL_SHARE = 0.6
+/** 방향을 가릴 표본 상자 수 — 키 큰 순 */
+const ORIENT_SAMPLE = 12
+/** 돌려 읽은 표본 평균 신뢰도 하한, 그대로 읽은 것보다 앞서야 할 차 */
+const ORIENT_MIN_CONF = 0.7
+const ORIENT_GAIN = 0.1
 /** 이웃 줄 끝자락을 지운 crop 이 원본 crop 을 이기려면 넘어야 할 신뢰도 차 (recognizePage 주석) */
 const KEEP_MARGIN = 0.06
 /** 두 줄로 갈라 다시 읽은 줄(recognizePage 재시도)을 받을 신뢰도 하한 */
 const RETRY_SCORE = 0.9
+/** 문턱은 넘었지만 두 줄을 덮은 상자 — 쪽 상자 높이 중앙값 대비 높이 배율·이보다 확신이 낮을 때만 갈라 다시 읽는다 */
+const TALL_LINE_RATIO = 1.1
+const TALL_LINE_SCORE = 0.9
+/** 되살릴 한 글자 표시 기호와 그 최소 신뢰도 (같은 열·행에 같은 기호·크기의 확신 상자가 있을 때만 — engine 버림 단계) */
+const MARK_GLYPH = /^[\u25cb\u25cf\u25ce\u00d7\u25b3\u25b2\u25a1\u25a0\u25c7\u25c6]$/
+const LOW_MARK_SCORE = 0.3
+/** 세로로 쌓인 글자 띠를 한 낱말로 붙일 띠 사이 틈 상한 (글자 높이 대비) */
+const STACK_WORD_GAP = 0.3
 /** 리더로 볼 최소 점 수 — 말줄임표 "…"(3점)보다 많이. 목차 쪽번호 박스가 무는 점은 코퍼스 실측 4~9개가 대부분 */
 const LEADER_MIN_DOTS = 4
 /** 리더 앞 조각 crop 을 리더 안쪽으로 더 무는 폭 (박스 높이 배수, recognizePage 주석) */
 const LEADER_CONTEXT = 0.5
+/** det 입력 짧은 변 하한·그때 긴 변 상한 (detInputSize) */
+const DET_MIN_SHORT_SIDE = 80
+const DET_MAX_LONG_SIDE = 4096
+
+/**
+ * det 입력 크기 — 긴 변을 longSide 에 맞추고 32 배수로. 아주 납작한 띠(한 줄 손글씨 3685×183)는 긴 변을 맞추면 짧은 변이 48px 로 줄어
+ * 글자가 검출 크기 밑으로 사라졌다(띠 하나에 상자 여섯) — 짧은 변을 DET_MIN_SHORT_SIDE 아래로 줄이지 않는다(긴 변은 4096 까지)
+ */
+export function detInputSize(width: number, height: number, longSide: number): { dw: number; dh: number } {
+  let ratio = longSide / Math.max(width, height)
+  if (Math.min(width, height) * ratio < DET_MIN_SHORT_SIDE) ratio = Math.min(DET_MIN_SHORT_SIDE / Math.min(width, height), DET_MAX_LONG_SIDE / Math.max(width, height))
+  return { dw: Math.max(32, Math.round((width * ratio) / 32) * 32), dh: Math.max(32, Math.round((height * ratio) / 32) * 32) }
+}
 /** 박스 잉크 비율 하한 (engine recognizePage 주석) */
 const MIN_INK_RATIO = 0.01
 /** 로컬 모델 파일 크기 상한 — PP-OCRv5 server det 가 88MB, 가장 큰 rec 도 수십 MB */
@@ -150,7 +236,7 @@ interface SharpChain {
 /** 인식 대상 한 줄 — rot 는 crop 회전(90=반시계, 270=시계). join: 리더로 가른 박스 번호, dotsBefore: 앞에 리더가 있었는지,
  *  trimDots: crop 이 뒤 리더 점을 물었는지(결과 끝 점을 지운다) */
 /** keep: 인식 crop 에서 남길 박스 로컬 구간 — 밖(이웃 줄 끝자락·상자 테두리)은 배경으로 칠한다 (edgeTrim) */
-interface LineJob { box: Box; rot: 0 | 90 | 270; group: number; footer?: boolean; join?: number; dotsBefore?: boolean; trimDots?: boolean; keep?: { x0: number; x1: number; y0: number; y1: number; bg: number } }
+interface LineJob { box: Box; rot: 0 | 90 | 270; group: number; stretch?: number; footer?: boolean; join?: number; dotsBefore?: boolean; trimDots?: boolean; keep?: { x0: number; x1: number; y0: number; y1: number; bg: number } }
 
 /**
  * 검출기가 놓친 줄 머리 대시 — 목차 하위 항목 "–  영농지원과" 의 짧은 가로 막대는 상자 밖에 홀로 남아 빠졌다(함평 목차). 한글이 두 자
@@ -322,6 +408,20 @@ export function rowHeadBoxes(rgba: Uint8Array, width: number, items: OcrItem[]):
  * 두 줄 상자의 가운데 빈 행 — 높이 30~70% 안에서 잉크가 폭 2% 이하인 행이 이어진 구간 중 가운데에 가장 가까운 것 [시작, 끝). 세로 괘선
  * (높이 85% 이상 잉크인 열)은 세지 않는다. splitRowBands 는 띠 잉크 폭을 글자 크기로 보아(세로쓰기 칸) 가로로 긴 두 줄을 한 띠로 합친다
  */
+/** 두 줄이 맞닿아 빈 행이 없는 상자의 가를 자리 — 가운데 30~70% 띠에서 잉크가 가장 적은 행이 잉크 있는 행 중앙값의 20% 이하일 때 그 행 */
+export function valleyRow(gray: Uint8Array, w: number, h: number, ink: InkStats): [number, number] | null {
+  if (h < 24) return null
+  const isInk = (v: number) => (ink.darkInk ? v <= ink.threshold : v > ink.threshold)
+  const rows: number[] = []
+  for (let y = 0; y < h; y++) { let n = 0; for (let x = 0; x < w; x++) if (isInk(gray[y * w + x])) n++; rows.push(n) }
+  const nz = rows.filter(n => n > 0).sort((p, q) => p - q)
+  if (!nz.length) return null
+  const med = nz[nz.length >> 1]
+  let best = -1
+  for (let y = Math.floor(h * 0.3); y < Math.ceil(h * 0.7); y++) if (best < 0 || rows[y] < rows[best]) best = y
+  return best >= 0 && rows[best] <= med * 0.2 ? [best, best + 1] : null
+}
+
 export function midBlankRow(gray: Uint8Array, w: number, h: number, ink: InkStats): [number, number] | null {
   if (h < 24) return null
   const isInk = (v: number) => (ink.darkInk ? v <= ink.threshold : v > ink.threshold)
@@ -596,6 +696,23 @@ export class OcrEngine {
   ): Promise<OcrItem[]> {
     if (width < DET_MIN_SIZE || height < DET_MIN_SIZE) return []
     const detected = await this.detect(rgba, width, height, tuning, stats)
+    // 가로 표를 90° 눕혀 찍은 쪽(통계 간행물 가로 표) — 글줄 상자 대부분이 세로로 길다. 키 큰 상자 몇 개를 그대로·90°·270° 로 읽어
+    // 돌린 쪽이 확실히 더 잘 읽히면 그 각을 적고 돌아간다. 상자 하나씩 돌려 읽으면(ROTATE_RATIO) 글은 나와도 표 행·열이 뒤바뀐다
+    if (tuning.orientPage && stats && detected.length >= ORIENT_MIN_BOXES) {
+      const tall = detected.filter(b => b.h >= b.w * TALL_RATIO)
+      if (tall.length >= detected.length * ORIENT_TALL_SHARE) {
+        const sample = [...tall].sort((a, b) => b.h - a.h).slice(0, ORIENT_SAMPLE)
+        const rots = [0, 90, 270] as const
+        const probe = await this.recognizeJobs(rgba, width, sample.flatMap((box, group) => rots.map(rot => ({ box, rot, group }))), tuning.recBatch)
+        const mean = (k: number) => sample.reduce((sum, _, i) => sum + (probe[i * rots.length + k]?.confidence ?? 0), 0) / sample.length
+        const [m0, m90, m270] = rots.map((_, k) => mean(k))
+        const best = Math.max(m90, m270)
+        if (best >= ORIENT_MIN_CONF && best >= m0 + ORIENT_GAIN) {
+          stats.pageRotation = m90 >= m270 ? 90 : 270
+          return []
+        }
+      }
+    }
     const rows = rowRules.length ? detected.flatMap(b => splitBoxAtRowRules(b, rowRules)) : detected
     const boxes = cellRules.length ? rows.flatMap(b => splitBoxAtCellRules(b, cellRules)) : rows
     const footer = tuning.postprocess ? footerInkBox(rgba, width, height, boxes) : null
@@ -617,6 +734,22 @@ export class OcrEngine {
         const bands = splitRowBands(gray, b.w, b.h, ink, 0.45)
         if (bands.length >= 2) {
           for (const sub of bandBoxes(b, bands, height)) jobs.push({ box: sub, rot: 0, group: group++ })
+          continue
+        }
+        // 글자 하나가 위아래 이웃 줄 글자 조각을 문 상자 — 띠 나누기가 끝의 조각을 버려 띠 하나만 남으면 그 띠만 읽는다. 기울기 보정한
+        // 자간 넓은 목차에서 "보" 상자(높이 106)가 윗줄 "산" 아래끝·아랫줄 "농" 위끝을 물어 "본" 으로 읽혔다. 글자 꼴(폭이 높이의 절반
+        // 이상, 높이 12px·상자의 25% 이상)이고 띠 밖에 버린 조각 잉크가 있을 때만 — 가는 세로 조각·점 무리를 읽으면 "4" 같은
+        // 잡음이 됐고(손글씨 줄), 진한 원 속 흰 장 번호 "6" 처럼 채운 도형(잉크 35% 이상)은 띠가 바탕을 가리켜 종전대로 읽어야 남았다(정보화 계획 목차)
+        const bh = bands.length === 1 ? bands[0].y1 - bands[0].y0 : 0
+        const outside = (y0: number, y1: number) => {
+          const isInk = (v: number) => (ink.darkInk ? v <= ink.threshold : v > ink.threshold)
+          for (let y = 0; y < b.h; y++) if (y < y0 || y >= y1) for (let x = 0; x < b.w; x++) if (isInk(gray[y * b.w + x])) return true
+          return false
+        }
+        const sole = bh && bh < b.h * SOLE_BAND_RATIO && bh >= Math.max(12, b.h * 0.25) && bands[0].x1 - bands[0].x0 >= bh * 0.5 && ink.inkRatio < 0.35 && outside(bands[0].y0, bands[0].y1)
+          ? bandBoxes(b, bands, height)[0] : undefined
+        if (sole) {
+          jobs.push({ box: sole, rot: 0, group: group++ })
           continue
         }
         if (b.h >= b.w * ROTATE_RATIO) {
@@ -683,13 +816,27 @@ export class OcrEngine {
     })
 
     let items: OcrItem[] = []
+    /** 아이템을 읽은 검출 상자 (그대로 읽은 줄만) — 숫자 자릿수 재인식(아래)이 같은 상자를 다시 읽는다 */
+    const boxOf = new Map<OcrItem, Box>()
     /** 신뢰도에 걸려 버린 상자 — 줄 띠가 둘 이상이면 띠마다 다시 읽는다(아래) */
     const retry: Box[] = []
+    /** 신뢰도 문턱 아래로 버린 한 글자 표시 기호(○·× 등) — 같은 쪽에서 같은 기호를 같은 크기로 확신한 상자가 있으면 되살린다 */
+    const lowMarks: OcrItem[] = []
+    // 원문자 고리 속 글자만 따로 다시 읽는다(glyph-restore ringAsks) — 사전 밖 ㉠·ⓐ 를 모델이 빠뜨리거나 ①~⑨ 로 바꿔 읽은 자리
+    const ringReads = new Map<LineJob, RingRead[]>()
+    if (tuning.postprocess) {
+      const asks = [...best.values()].flatMap(r => r.job.rot === 0 ? ringAsks(rgba, width, r.job.box, r.text, r.steps, r.stepPx).map(a => ({ ...a, job: r.job })) : [])
+      const res = asks.length ? await this.recognizeJobs(rgba, width, asks.map((a, k) => ({ box: a.box, rot: 0 as const, group: k })), tuning.recBatch) : []
+      asks.forEach((a, k) => {
+        const glyph = res[k] ? ringGlyph(res[k]!.text, a.jamo, res[k]!.confidence) : null
+        if (glyph) ringReads.set(a.job, [...ringReads.get(a.job) ?? [], { x0: a.x0, x1: a.x1, glyph }])
+      })
+    }
     for (const r of best.values()) {
       const { job, confidence, stepPx } = r
       const { text: read, steps } = tuning.postprocess && job.rot === 0 ? trimInklessEnds(rgba, width, job.box, r.text, r.steps, stepPx) : r
       const note: { ringLead?: boolean } = {}
-      const raw = tuning.postprocess && job.rot === 0 ? restoreGlyphs(rgba, width, job.box, read, steps, stepPx, note) : read
+      const raw = tuning.postprocess && job.rot === 0 ? restoreGlyphs(rgba, width, job.box, read, steps, stepPx, note, ringReads.get(job)) : read
       let text = tuning.postprocess ? restoreSymbols(raw.trim(), note.ringLead) : raw
       if (!text.trim()) continue
       // 빗금 하나만 든 칸을 "(/:"·"(/" 로 지어 읽었다(여수 인원표 "현원/정원" 칸) — 키 큰 잉크 덩어리가 하나뿐이면 "/"
@@ -744,6 +891,9 @@ export class OcrEngine {
       // 모양으로 정한 ◎ 하나만 든 상자(목차 ◎ 열)는 인식 신뢰도와 상관없이 받는다 — 기울기 보정 뒤 "◎" 를 0.27~0.43 으로 읽어 열 절반이 빠졌다
       if (confidence < tuning.textScore && !(ringByShape && text.trim() === "\u25ce")) {
         if (tuning.postprocess && job.rot === 0 && job.join === undefined && !job.footer) retry.push(job.box)
+        if (tuning.postprocess && job.rot === 0 && job.join === undefined && !job.footer && MARK_GLYPH.test(text.trim()) && confidence >= LOW_MARK_SCORE) {
+          lowMarks.push({ text: text.trim(), ...this.itemBox(rgba, width, job.box, tuning), confidence })
+        }
         if (stats) {
           stats.droppedLowConf++
           stats.dropped?.push({ text, ...this.itemBox(rgba, width, job.box, tuning), confidence })
@@ -757,17 +907,92 @@ export class OcrEngine {
       }
       const item = { text, ...this.itemBox(rgba, width, job.box, tuning), confidence }
       if (job.rot === 0) rememberOcrTextGaps(item, findOcrTextGaps(rgba, width, job.box, read, text, steps, stepPx))
+      if (job.rot === 0 && job.keep === undefined) boxOf.set(item, job.box)
       items.push(item)
+    }
+    // 천 단위 쉼표 뒤 자릿수가 3 이 아닌 수("37,369,00"·"2,618,631,00,000") — 자간 좁은 숫자 글꼴에서 같은 숫자 연속을 CTC 가 한 자로
+    // 합쳤다(관보 계속비). 그 상자만 가로로 늘려 다시 읽어, 자릿수가 바로 서고 숫자 밖 글은 같으면 바꾼다
+    for (const stretch of tuning.postprocess ? NUMBER_STRETCH : []) {
+      // 수 하나만 든 상자만 — 여러 값이 붙은 상자("7,3022,6071,364…")를 다시 읽으면 틈 정보가 바뀌어 칸 가르기가 흔들렸다(통계표)
+      const fix = items.filter(it => boxOf.has(it) && singleNumberText(it.text) && badThousands(it.text))
+      if (!fix.length) break
+      const res = await this.recognizeJobs(rgba, width, fix.map((it, k) => ({ box: boxOf.get(it)!, rot: 0 as const, group: k, stretch })), tuning.recBatch)
+      fix.forEach((it, k) => {
+        const r = res[k]
+        // 다시 읽어도 수 하나여야 — 공백 없이 붙은 여러 값("6,8052,2951…")이 띄어 읽히면 그 줄만 모양이 달라져 행 펼치기가 깨졌다
+        if (!r || /\s/.test(r.text.trim()) || badThousands(r.text) || r.confidence < it.confidence - 0.05) return
+        const merged = rereadNumberText(it.text, r.text)
+        if (merged === null) return
+        it.text = merged
+        rememberOcrTextGaps(it, findOcrTextGaps(rgba, width, boxOf.get(it)!, r.text, it.text, r.steps, r.stepPx))
+      })
+    }
+    // 소수 짝("12.1/18.1", 기온 최저/최고) — 좁은 숫자 글꼴에서 점이 앞뒤 숫자에 붙어 빠졌다("121/18.1"·"124/188", 날씨 표). 쪽의 수 짝
+    // 다섯 이상에 60% 넘게 양쪽이 소수일 때만 점이 빠진 짝을 늘려 다시 읽는다(rereadDecimalPair)
+    const pairs = tuning.postprocess ? items.filter(it => boxOf.has(it) && NUMBER_PAIR.test(it.text.trim())) : []
+    let undotted = pairs.filter(it => !DECIMAL_PAIR.test(it.text.trim()))
+    if (pairs.length >= 5 && pairs.length - undotted.length >= pairs.length * 0.6) {
+      for (const stretch of NUMBER_STRETCH) {
+        if (!undotted.length) break
+        const res = await this.recognizeJobs(rgba, width, undotted.map((it, k) => ({ box: boxOf.get(it)!, rot: 0 as const, group: k, stretch })), tuning.recBatch)
+        undotted = undotted.filter((it, k) => {
+          const r = res[k]
+          const fixed = r && r.confidence >= it.confidence - 0.05 ? rereadDecimalPair(it.text, r.text) : null
+          if (fixed === null) return true
+          it.text = fixed
+          return false
+        })
+      }
+    }
+    // 두 줄을 한 상자로 잡았지만 문턱은 넘긴 줄 — 줄 간격 좁은 여러 줄 칸에서 윗줄 상자가 아랫줄까지 덮어(높이 60px, 쪽 상자 높이 중앙값 51 의
+    // 1.1배 넘게) "서울특별시 은평구, 대전광역시 …" 를 "서울시은평구대전광역시…" 0.60 으로 읽었다(복지사업 우수기관 표). 가운데 빈 행에서
+    // 두 줄로 갈라 다시 읽고, 두 줄 모두 원래보다 0.1 넘게 확신하고 0.85 이상일 때만 바꾼다(한글 두 자 넘게 읽힌 줄만 — 영문 손글씨 그림은 갈라도 쓰레기였다)
+    if (tuning.postprocess) {
+      const hs = [...boxOf.values()].map(b => b.h).sort((x, y) => x - y)
+      const medH = hs.length ? hs[hs.length >> 1] : 0
+      const tall = items.filter(it => {
+        const b = boxOf.get(it)
+        return b && medH && b.h >= medH * TALL_LINE_RATIO && it.confidence < TALL_LINE_SCORE && b.w >= b.h * 3 && (it.text.match(/[가-힣]/g) ?? []).length >= 2
+      })
+      const halves: Array<{ it: OcrItem; top: Box; bottom: Box }> = []
+      for (const it of tall) {
+        const b = boxOf.get(it)!
+        const gray = grayCrop(rgba, width, b)
+        const cut = midBlankRow(gray, b.w, b.h, inkStats(gray)) ?? valleyRow(gray, b.w, b.h, inkStats(gray))
+        if (cut) halves.push({ it, top: { ...b, h: cut[0] }, bottom: { ...b, y: b.y + cut[1], h: b.h - cut[1] } })
+      }
+      const res = halves.length ? await this.recognizeJobs(rgba, width, halves.flatMap((hv, k) => [{ box: hv.top, rot: 0 as const, group: 2 * k }, { box: hv.bottom, rot: 0 as const, group: 2 * k + 1 }]), tuning.recBatch) : []
+      halves.forEach((hv, k) => {
+        const a = res[2 * k], c = res[2 * k + 1]
+        const need = Math.max(hv.it.confidence + 0.1, 0.85)
+        // 확신 못 한 조각은 그 자리를 다른 아이템이 반 넘게 덮을 때만 버린다 — 앞뒤 줄 글자 끝자락을 또 읽은 조각이다
+        const covered = (bx: Box) => items.some(o => o !== hv.it && Math.max(0, Math.min(bx.x + bx.w, o.x + o.w) - Math.max(bx.x, o.x)) * Math.max(0, Math.min(bx.y + bx.h, o.y + o.h) - Math.max(bx.y, o.y)) * 2 > bx.w * bx.h)
+        const parts: OcrItem[] = []
+        for (const [r, box] of [[a, hv.top], [c, hv.bottom]] as const) {
+          if (r && r.confidence >= need && r.text.trim()) parts.push({ text: restoreSymbols(restoreGlyphs(rgba, width, box, r.text, r.steps, r.stepPx).trim()), ...this.itemBox(rgba, width, box, tuning), confidence: r.confidence })
+          else if (!covered(box)) return
+        }
+        if (parts.length) items.splice(items.indexOf(hv.it), 1, ...parts)
+      })
     }
     // 두 줄을 한 상자로 잡아 인식이 무너진 표 칸 — 상자가 넓어 세로로 긴 상자 가르기(splitTall)에 안 걸린다(여수 인원표 "산 단 환 경 /
     // 관 리 과" 가 "살다까" 로 읽혀 버려짐). 버려질 상자만 가운데 빈 행에서 두 줄로 갈라 다시 읽어 신뢰도를 넘는 줄을 받는다
-    if (retry.length) {
+    // 빈 글로 읽힌 상자 — 세로로 쌓인 글자 상자는 한 줄로 읽으면 아무것도 안 나오기도 한다(아래 세로 글자 다시 읽기만)
+    const blank = tuning.postprocess ? jobs.filter(j => j.rot === 0 && j.join === undefined && !j.footer && !j.keep && !best.has(j.group)).map(j => j.box) : []
+    if (retry.length || blank.length) {
       const subs: Box[] = []
-      for (const b of retry) {
+      /** 세로로 쌓인 글자 상자 — 글자 띠마다 한 자씩 다시 읽는다 */
+      const stacks: Array<{ box: Box; parts: Box[]; word: boolean }> = []
+      for (const b of [...retry, ...blank]) {
         const gray = grayCrop(rgba, width, b)
-        const cut = midBlankRow(gray, b.w, b.h, inkStats(gray))
+        const ink = inkStats(gray)
+        const cut = retry.includes(b) ? midBlankRow(gray, b.w, b.h, ink) : null
         // 가로 글줄만 — 좁은 세로쓰기 조직도 칸("중앙노동위원회")의 두 글자 조각("원회")은 순서가 섞여 들어갔다(web068)
-        if (cut && b.w >= 3 * Math.max(cut[0], b.h - cut[1])) subs.push({ ...b, h: cut[0] }, { ...b, y: b.y + cut[1], h: b.h - cut[1] })
+        if (cut && b.w >= 3 * Math.max(cut[0], b.h - cut[1])) { subs.push({ ...b, h: cut[0] }, { ...b, y: b.y + cut[1], h: b.h - cut[1] }); continue }
+        const bands = stackedGlyphBands(gray, b.w, b.h, ink)
+        // 띠 사이 틈이 글자 높이 0.3배 안이면 세로쓰기 낱말("서/울" 틈 4px·글자 21px) — 한 아이템으로. 더 벌어지면 위아래 두 줄 끝 글자
+        // ("자주식 대 / 기계식 대" 틈 8px·글자 22px)라 띠마다 아이템으로 둔다(붙이면 "대대" 가 한 줄에 갔다)
+        if (bands) stacks.push({ box: b, parts: bandBoxes(b, bands, height), word: bands.every((x, i) => i === 0 || x.y0 - bands[i - 1].y1 <= STACK_WORD_GAP * Math.max(x.y1 - x.y0, bands[i - 1].y1 - bands[i - 1].y0)) })
       }
       // 이미 읽힌 아이템과 반 넘게 겹치는 줄은 뺀다 — 검출기가 두 줄 상자와 아랫줄 상자를 함께 내 "봉림동" 이 두 번 들어갔다(창원 계획)
       const overlap = (a: Box, o: OcrItem) => Math.max(0, Math.min(a.x + a.w, o.x + o.w) - Math.max(a.x, o.x)) * Math.max(0, Math.min(a.y + a.h, o.y + o.h) - Math.max(a.y, o.y))
@@ -781,6 +1006,25 @@ export class OcrEngine {
         // 글자·숫자가 두 자 이상이어야 — 장식 띠를 "---" 로 읽었고(경기 학교 매뉴얼 머리), 그림 세로 축 글자 한 자("s")가 끼어 줄 묶음이 바뀌었다(ODL 134)
         if ((text.match(/[\p{L}\p{N}]/gu) ?? []).length >= 2) items.push({ text, ...this.itemBox(rgba, width, box, tuning), confidence: r.confidence })
       })
+      const free = stacks.filter(st => !items.some(o => overlap(st.box, o) * 2 > st.box.w * st.box.h))
+      const parts = free.flatMap(st => st.parts)
+      const partRes = parts.length ? await this.recognizeJobs(rgba, width, parts.map((box, k) => ({ box, rot: 0 as const, group: k })), tuning.recBatch) : []
+      let k = 0
+      for (const st of free) {
+        const rs = partRes.slice(k, k += st.parts.length)
+        // 띠마다 한글 한 자를 확신할 때만 — 쌍점·괄호 같은 기호 상자는 띠가 갈려도 한 자 꼴이 아니다
+        if (rs.length !== st.parts.length || rs.some(r => !r || r.confidence < RETRY_SCORE || !/^[가-힣]$/.test(r.text.trim()))) continue
+        if (st.word) items.push({ text: rs.map(r => r!.text.trim()).join(""), ...this.itemBox(rgba, width, st.box, tuning), confidence: Math.min(...rs.map(r => r!.confidence)) })
+        else st.parts.forEach((box, i) => items.push({ text: rs[i]!.text.trim(), ...this.itemBox(rgba, width, box, tuning), confidence: rs[i]!.confidence }))
+      }
+    }
+    // 표 칸 하나만 든 "○" 를 .44 로 읽어 버려 칸이 비었다(topik 신분증 표 — 같은 열 다른 칸 "○" 는 같은 25px 상자로 .88~.94). 같은 기호를
+    // 문턱 넘게 읽은 상자가 같은 크기(±20%)로 같은 열이나 같은 행에 있고 그 자리에 다른 아이템이 없을 때만 받는다
+    for (const m of lowMarks) {
+      const aligned = (o: OcrItem) => Math.abs(o.x + o.w / 2 - (m.x + m.w / 2)) <= m.w / 2 || Math.abs(o.y + o.h / 2 - (m.y + m.h / 2)) <= m.h / 2
+      const peer = items.some(o => o.text.trim() === m.text && o.confidence >= tuning.textScore && Math.abs(o.w - m.w) <= m.w * 0.2 && Math.abs(o.h - m.h) <= m.h * 0.2 && aligned(o))
+      const taken = items.some(o => Math.min(m.x + m.w, o.x + o.w) > Math.max(m.x, o.x) && Math.min(m.y + m.h, o.y + o.h) > Math.max(m.y, o.y))
+      if (peer && !taken) items.push(m)
     }
     const leaderEnds = new Map<OcrItem, { lead: boolean; trail: boolean }>()
     for (const j of joins) {
@@ -853,9 +1097,7 @@ export class OcrEngine {
     tuning: Readonly<OcrTuning>,
     stats?: OcrPageStats,
   ): Promise<Box[]> {
-    const ratio = tuning.detLongSide / Math.max(width, height)
-    const dw = Math.max(32, Math.round((width * ratio) / 32) * 32)
-    const dh = Math.max(32, Math.round((height * ratio) / 32) * 32)
+    const { dw, dh } = detInputSize(width, height, tuning.detLongSide)
 
     const rgb = await this.sharp(rgba, { raw: { width, height, channels: 4 } })
       .resize(dw, dh, { fit: "fill" })
@@ -908,7 +1150,7 @@ export class OcrEngine {
     jobs: LineJob[],
     batchSize: number,
   ): Promise<Array<{ text: string; confidence: number; steps: number[]; stepPx: number } | null>> {
-    const crops = jobs.map(j => lineCrop(rgba, pageW, j.box, j.rot, j.keep))
+    const crops = jobs.map(j => lineCrop(rgba, pageW, j.box, j.rot, j.keep, j.stretch))
     const order = crops.map((_, i) => i).sort((a, b) => crops[a].w - crops[b].w)
     const results: Array<{ text: string; confidence: number; steps: number[]; stepPx: number } | null> = new Array(jobs.length).fill(null)
     const plane = REC_HEIGHT

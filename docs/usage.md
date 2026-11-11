@@ -33,7 +33,7 @@ npm install kordoc        # CLI 만 쓸 거면 설치 없이 npx kordoc <파일>
 
 PDF·OCR 의존성은 기본으로 설치됩니다(줄이려면 `--omit=optional` — 대신 PDF·OCR 이 빠짐). PDF 인쇄 렌더(`markdownToPdf`)만 `puppeteer-core` 를 따로 설치하세요.
 
-앱(Electron 등)에 라이브러리로만 넣을 때: `import "kordoc"` 가 실제로 불러오는 필수 패키지는 `@xmldom/xmldom`·`jszip`·`markdown-it` 뿐입니다(`cfb` 는 번들에 들어 있음). `@modelcontextprotocol/sdk`(와 그것이 끌고 오는 express·hono 등 92개, 약 11MB)·`commander`·`zod` 는 `kordoc mcp`·CLI 전용이라 앱 설치본에서 빼도 됩니다. 선택 의존(`sharp`·`onnxruntime-node`·`@huggingface/tokenizers`·`@hyzyla/pdfium`·`pdfjs-dist`)은 쓰지 않는 기능(PNG 렌더·OCR·PDF)만큼 뺄 수 있습니다. MCP SDK 를 선택 의존으로 돌리지 않는 이유는 아래 #99 처럼 다른 선택 의존 설치가 실패하면 npm 이 함께 빼 MCP 서버가 통째로 사라지기 때문입니다.
+앱(Electron 등)에 라이브러리로만 넣을 때: `import "kordoc"` 가 실제로 불러오는 필수 패키지는 `jszip`·`markdown-it` 뿐입니다(`cfb` 와 XML 파서 wasm 은 번들에 들어 있음). `@modelcontextprotocol/sdk`(와 그것이 끌고 오는 express·hono 등 92개, 약 11MB)·`commander`·`zod` 는 `kordoc mcp`·CLI 전용이라 앱 설치본에서 빼도 됩니다. 선택 의존(`sharp`·`onnxruntime-node`·`@huggingface/tokenizers`·`@hyzyla/pdfium`·`pdfjs-dist`)은 쓰지 않는 기능(PNG 렌더·OCR·PDF)만큼 뺄 수 있습니다. MCP SDK 를 선택 의존으로 돌리지 않는 이유는 아래 #99 처럼 다른 선택 의존 설치가 실패하면 npm 이 함께 빼 MCP 서버가 통째로 사라지기 때문입니다.
 
 <details>
 <summary>설치 문제 해결</summary>
@@ -72,23 +72,24 @@ if (result.success) {
 }
 ```
 
-- `pages` 는 블록에 쪽 번호가 붙는 포맷(HWP·HWPX·PDF, XLS(X)는 시트 = 한 쪽, PPTX 는 슬라이드 = 한 쪽)에서만 나옵니다. 쪽을 매기지 않는 DOCX 에서는 필드를 생략합니다.
+- `pages` 는 블록에 쪽 번호가 붙는 포맷(HWP·HWPX·PDF, XLS(X)는 시트 = 한 쪽, PPTX 는 슬라이드 = 한 쪽, DOCX 는 Word 가 저장한 조판 쪽)에서만 나옵니다. DOCX 는 조판 쪽 나눔 표지(`w:lastRenderedPageBreak`)로 센 쪽 수가 `docProps/app.xml` 의 `Pages` 와 같을 때만 쪽을 매기고, 표지가 없거나(Word 밖에서 만든 문서) 쪽 수가 다르면 필드를 생략합니다.
 - 쪽 경계 신뢰도는 `metadata.pageMode` — `"layout"`(조판 캐시 기반 실제 쪽) / `"section"`(섹션 근사).
 
 **파싱 옵션** (`parse(buffer, options)` · CLI 플래그)
 
 | 옵션 | CLI | 설명 |
 | --- | --- | --- |
-| `pages` | `-p, --pages` | `"1-3"`·`"1,3,5-7"`·`[1, 5, 10]` — PDF·한컴 저장본은 실제 쪽, 조판 캐시 없으면 섹션 근사 |
+| `pages` | `-p, --pages` | `"1-3"`·`"1,3,5-7"`·`[1, 5, 10]` — PDF·한컴 저장본은 실제 쪽, 조판 캐시 없으면 섹션 근사. DOCX 는 Word 조판 쪽(쪽을 매기지 않은 문서는 거르지 않음) |
 | `ocr` | `--ocr` · `--ocr-force` | 기본: 스캔 쪽 + 큰 그림 속 글(모델 캐시 있을 때) · `true`: + 작은 그림·로고까지(모델 ~18MB 자동 다운로드) · `"force"`: 전 쪽 · `false`: 끔 · 함수: 외부 OCR · HWP·HWPX 삽입 그림은 `true`·`"force"`·함수일 때만 읽음(기본은 원문 글만, DOCX 등 다른 형식 그림은 대상 아님) |
 | `ocrLines` | `--ocr-lines` · `--ocr-lines-all` | 내장 OCR 이 읽은 줄(상자·신뢰도)을 결과 `ocrLines` 로(PDF·이미지). `"all"` 은 저신뢰로 버린 줄도 `dropped: true` 로 — 아래 [OCR 줄·모델 선택](#ocr-줄모델-선택) |
 | `ocrDet` · `ocrDetLongSide` | `--ocr-det` · `--ocr-det-long-side` | 글줄 검출 모델 `"mobile"`(기본)·`"server"`(~88MB, 첫 사용 시 다운로드)·`"medium"`(PP-OCRv6, ~62MB, 첫 사용 시 다운로드 — 기울임·흐림·스캔 입력용)·로컬 파일 `{path, sha256}`, 검출 입력 긴 변(32~4096, 기본 960) |
-| `ocrRec` · `ocrRecDict` | `--ocr-rec` · `--ocr-rec-dict` (+ `--ocr-*-sha256`) | 글자 인식 모델 `"handwriting"`(수기 서류용 한국어 손글씨 rec, ~15MB, 첫 사용 시 다운로드)·`"auto"`(기본 rec 로 읽고 확신도 낮은 손글씨 쪽만 손글씨 rec 로 다시 읽음)·로컬 파일 `{path, sha256}`(미세조정 rec 등), 사전은 로컬 파일. SHA-256 이 다르면 로드하지 않음 |
+| `ocrRec` · `ocrRecDict` | `--ocr-rec` · `--ocr-rec-dict` (+ `--ocr-*-sha256`) | 글자 인식 모델 — 기본은 기본 rec 로 읽고 뚜렷한 손글씨 쪽만 손글씨 rec 로 다시 읽음. `"printed"`(기본 rec 만)·`"handwriting"`(수기 서류용 한국어 손글씨 rec, ~15MB, 첫 사용 시 다운로드)·`"auto"`(기본보다 너그러운 문턱으로 손글씨 쪽을 다시 읽음)·로컬 파일 `{path, sha256}`(미세조정 rec 등), 사전은 로컬 파일. SHA-256 이 다르면 로드하지 않음 |
 | `formulaOcr` | `--formula-ocr` | PDF·이미지 수식 OCR(MFD+MFR, 모델 ~155MB) — 감지한 수식을 `$…$`·`$$…$$` 로(이미지는 그 자리 OCR 글을 수식으로 바꾼다) |
 | `scriptTags` | `--script-tags` · `--no-script-tags` | 위·아래첨자를 `<sup>`·`<sub>` 로("10⁴ m²" 가 "104 m2" 로 펴지지 않게). 기본: HWPX·HWP·DOCX 켬, PDF 끔(논문·수식 PDF 는 `true` 권장) |
 | `images` | `--no-images` | `false` 면 이미지 바이트를 싣지 않음(그림 자리 표시는 남김, PDF 는 PNG 인코딩 생략) |
 | `plain` | `--plain` | 그림 자리 표시·링크 URL·밑줄·굵게 없이 글 위주 Markdown(제목·목록·표 구조 유지, `blocks` 는 그대로). 첨자 `<sup>`·`<sub>` 는 `10^4`·`H_2O` 로 |
 | `htmlTables` | `--html-tables` | 모든 표를 HTML 로, 태그마다 한 줄씩 들여써서(첫 행 `<th>`) |
+| `htmlCellLinks` | `--html-cell-links` | HTML 표 셀의 `[텍스트](URL)`·URL 을 `<a href>` 로(뷰어에서 클릭). 기본 꺼짐 — LLM·RAG 에는 주소를 두 번 싣는 표기 |
 | `tableFormat` | `--table-format gfm` | `"gfm"`: 모든 표를 HTML 없이 GFM 파이프 표로(세로 병합 칸은 덮인 행마다 같은 값, 가로 병합 칸은 시작 칸에만 값). 셀 안 표는 부모 표 뒤 독립 표로 꺼내고 관계를 `<!-- <table id="t2" parent_id="t1" /> -->` 표지로 남김(RAG 색인용, `htmlTables` 와 함께 못 씀) |
 | `password` | `--password` | 열기 암호 문서(HWPX·HWP3·HWP5, 한컴 DRM 은 해당 없음) |
 | `tables` | `--no-tables` | `false` 면 PDF 표 감지 끔(테두리 상자가 표로 잡혀 순서가 뒤집히는 2단 시험지 등) |
@@ -100,6 +101,10 @@ if (result.success) {
 | `memos` | `--memos` | 메모(한글 메모 넣기)를 문서 끝 "메모" 절로 — 메모 목록은 옵션 없이도 결과 `memos`(메모 글·붙은 글·문단·작성자·시각·블록 순번, HWPX·HWP5) |
 | `dedupeRunningHeaders` | `--dedupe-headers` | HWP5 레이아웃 표의 쪽마다 반복된 러닝 헤더 제거(붙임별 재번호도 지울 수 있어 opt-in) |
 | `inlineImages` | `--inline-images` | 이미지를 base64 data URI 로 인라인(BMP→PNG, HWP5) |
+| `imageFormat` | `--image-format webp` | 그림 형식. 지정하지 않으면 지금처럼 PDF 는 PNG, 다른 형식은 원본 그림 그대로. 지정하면 모든 그림이 그 형식(파일명·MIME·바이트가 같은 형식, 형식은 바이트로 판정): `"png"` 는 PNG, `"webp"` 는 무손실 WebP(`exact`, PDF 그림 200개 실측 25.5 → 14.8MB·인코딩 CPU 3.25 → 8.6초). EXIF 회전·ICC·CMYK·움직이는 GIF·SVG 는 보이는 그림으로 맞춘다. 바꿀 수 없는 그림(WMF·EMF, 못 읽는 BMP·손상, WebP 16,383px 초과)은 원본 형식으로 내고 경고. 문서 2,782개 실측: png 4,099 → 775MB, webp 4,099 → 504MB. optional dependency `sharp` 필요 |
+| `imagePlacement` | `--image-placement flow` | PDF 그림 블록 자리. 기본 `"page-end"`(쪽 끝, `bbox` 없음). `"flow"`: 쪽 위 자리로 글 블록 사이에 — 같은 단(가로로 겹치는 블록)에서 그림 위쪽 변 이상 높이에서 시작하는 마지막 블록 뒤, 없으면 그 단의 첫 블록 앞. 그림 블록에 `bbox` 를 붙인다. 같은 그림의 반복은 처음 자리에만 |
+| `dropBlankImages` | `--drop-blank-images` | 거의 한 색인 그림(흰 바탕 합성 뒤 채널마다 최댓값−최솟값 24 이하: 빈 판·단색 띠·옅은 그러데이션)을 그림 블록·`images`·글 속 참조에서 뺀다(기본 false, 그림 바이트를 낼 때만). 모든 형식 — PDF 는 디코딩한 화소, 다른 형식은 원본을 풀어 본다(BMP 내장 디코더, 그 밖 optional dependency `sharp`, WMF·EMF 는 남김) |
+| `qrCodes` | `--qr-codes` | 그림 속 QR 코드 값을 그림 블록 `qr` 과 Markdown 그림 자리 다음 줄에(http(s) URL 은 자동 링크 `<URL>`, 모든 형식, `images: false` 여도 읽음). optional dependency `zxing-wasm` 필요 |
 | `classifyTables` | — | 표를 의미표/레이아웃/불확실로 분류해 `IRTable.classification` 에 |
 | `onProgress` | — | 진행률 콜백 `(current, total)` |
 
@@ -249,6 +254,7 @@ await parse(buffer, {                   // 외부 OCR (Claude Vision, Tesseract 
 })
 ```
 
+- 외부 OCR 완전 예제: [`examples/minicpm-ocr`](../examples/minicpm-ocr) — 자체 호스팅 MiniCPM-OCR(vLLM·SGLang·llama.cpp·Ollama)을 `OcrProvider` 로 연결합니다. 네트워크 호출은 예제 코드가 맡고 kordoc 본체는 통신하지 않습니다. 처리 시간·쪽 단위 CER 실측 스크립트도 들어 있습니다.
 - API 키 없이 로컬 CPU 로 읽습니다(PP-OCRv5 korean ONNX — 완성형 한글 11,172자 전량).
 - 텍스트층이 없거나 깨진 쪽만 OCR 하고, 스캔본의 표 구조도 복원합니다.
 - 모델 관리: `kordoc models --status` (폐쇄망은 `--export`/`--import`).
@@ -265,20 +271,23 @@ for (const page of r.success ? r.ocrLines ?? [] : []) {
 }
 await parse(buffer, { ocrRec: { path: "/models/my-rec.onnx", sha256: "…" } })   // 미세조정한 rec (같은 사전)
 await parse("수기 신청서.pdf", { ocr: true, ocrRec: "handwriting" })              // 손글씨 인식 모델
-await parse("스캔 묶음.pdf", { ocr: true, ocrRec: "auto" })                       // 손글씨 쪽만 손글씨 모델로
+await parse("스캔 묶음.pdf", { ocr: true, ocrRec: "auto" })                       // 손글씨 쪽을 너그러운 문턱으로
+await parse("인쇄 스캔.pdf", { ocr: true, ocrRec: "printed" })                    // 손글씨 모델을 받지도 쓰지도 않음
 ```
 
-- `ocrLines` 의 상자는 OCR 래스터 픽셀(왼쪽 위 원점)입니다. 쪽마다 `width`·`height`·`scale`(px/pt, PDF 기본 3 = 216dpi)·`deskewAngle` 이 붙고,
-  블록 `bbox`(PDF pt, 아래 원점)로는 `x / scale`, `쪽 높이 − (y + h) / scale` 로 옮깁니다. 이미지 입력은 EXIF 방향대로 세운 이미지 픽셀입니다(24MP 를 넘어 줄였으면 줄인 크기).
-  기울기를 보정한 쪽(`deskewAngle` ≠ 0)은 돌린 래스터 기준입니다 — 입력 좌표로는 θ = `deskewAngle`(도), (cx, cy) = ((`width`−1)/2, (`height`−1)/2) 로
-  `x₀ = cx + (x−cx)·cosθ − (y−cy)·sinθ`, `y₀ = cy + (x−cx)·sinθ + (y−cy)·cosθ` 입니다(상자 네 꼭짓점에 적용).
+- `ocrLines` 의 상자는 OCR 래스터 픽셀(왼쪽 위 원점)입니다. 쪽마다 `width`·`height`·`scale`(px/pt, PDF 기본 3 = 216dpi)·`deskewAngle` 이 붙습니다.
+  방향 보정 시 `pageRotation`(반시계 90 또는 270도)도 붙으며, 크기와 상자는 보정 후 래스터 기준입니다.
+  회전이 없는 PDF는 블록 `bbox`로 `x / scale`, `쪽 높이 − (y + h) / scale`로 옮깁니다.
+  기울기·방향 보정 또는 PDF 회전이 있으면 `ocrLinesInPdfSpace(result.ocrLines)`로 원래 PDF 좌표로 변환합니다.
+  이미지 입력은 EXIF 방향을 적용한 이미지 기준입니다(24MP 를 넘어 줄였으면 줄인 크기).
 - 줄은 블록을 만드는 데 쓴 것입니다. 텍스트층이 있는 쪽의 그림 영역만 읽은 쪽은 `regionsOnly: true` 이고 영역 안 줄만 담깁니다(그림 글 병합 판정 전). 이 경로는 원본 PDF 영역과 좌표를 맞추기 위해 쪽 전체를 회전하지 않으며 `deskewAngle`은 0입니다.
   사용자 OcrProvider·HWP 삽입 그림 OCR 은 줄 좌표가 없어 해당하지 않습니다. 옵션을 끄면 결과는 이전과 같습니다.
 - 로컬 모델 파일은 절대 경로 + SHA-256 이 필수이며, 엔진이 바이트를 읽어 대조한 뒤 그 바이트로 엽니다. rec 출력 클래스 수가 사전 + 2 가 아니면 거부합니다.
   내장 모델(`"server"`·`"handwriting"` 포함)은 `~/.cache/kordoc/models/ppocr/` 에 받고, `KORDOC_OFFLINE` 이면 받지 않습니다. 자동 OCR(`ocr` 미지정)은 고른 모델 파일이 있을 때만 돕니다.
 - `ocrRec: "handwriting"` 은 PP-OCRv5 korean rec 를 손글씨·공문서 데이터로 추가 학습한 공개 모델([korean-handwriting-rec](https://github.com/VerifiedIdiot/korean-handwriting-rec), Apache-2.0)입니다.
   사전은 내장 한국어 사전을 그대로 씁니다. 수기 신청서·조사표처럼 손글씨가 많은 문서용이며, 장평이 좁은 숫자·빗금(쪽 표기 `1/2` 등)은 기본 모델보다 잘못 읽는 경우가 있어 기본값은 바꾸지 않았습니다.
-  `ocrRec: "auto"` 는 쪽마다 기본 모델로 읽고, 글자 확신도 평균이 0.9 미만인 쪽만 손글씨 모델로 다시 읽어 평균이 0.06 이상 오를 때 그 쪽을 바꿉니다(인쇄 쪽은 기본 모델 그대로, 손글씨 쪽은 인식을 두 번 하므로 그만큼 느립니다).
+  기본 설정(4.24.42~)은 쪽마다 기본 모델로 읽고, 글자 확신도 평균이 0.9 미만인 쪽만 손글씨 모델로 다시 읽어 평균이 0.10 넘게 오르거나, 0.08 넘게 오르면서 손글씨 모델 평균이 0.95 이상이고 두 결과 글이 8% 넘게 다르며 글자가 80자 이상일 때 그 쪽을 바꿉니다(4.24.55~, 종전 0.85·0.10). 손글씨 모델은 그런 쪽을 처음 만났을 때 받고(OCR 을 지정하지 않은 PDF 자동 OCR 은 캐시에 있을 때만 씀), 받지 못하면 기본 모델 결과를 그대로 둡니다. `ocrRec: "printed"` 는 기본 모델만 씁니다.
+  `ocrRec: "auto"` 는 문턱이 너그럽습니다 — 확신도 평균 0.9 미만인 쪽을 다시 읽어 0.06 이상 오르면 바꾸고, 손글씨 모델을 미리 받습니다(손글씨 쪽은 인식을 두 번 하므로 그만큼 느립니다).
   고른 모델을 받지 못하거나 열지 못하면 기본 모델로 바꾸지 않고 실패(PDF 는 `OCR_FAILED` 경고)로 알립니다.
 - MCP `parse_document` 는 프리셋 이름만 받습니다 — `ocr_rec: "handwriting" | "auto"`·`ocr_det: "mobile" | "server" | "medium"`·`ocr_det_long_side`(32~4096). 로컬 모델 파일은 CLI·라이브러리에서 지정합니다.
 - 모델 선택마다 엔진 세션을 하나씩 캐시합니다(상주 워커에서 여러 조합을 쓰면 그만큼 메모리를 씁니다).

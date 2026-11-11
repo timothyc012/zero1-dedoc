@@ -23,10 +23,18 @@ import type { LineSegment } from "../pdf/line-types.js"
  * 걸려 두 픽셀로 번지면 픽셀마다 192~207 이라 190 에선 놓쳤다(ice-geomjeong 시험일정표 "구분│일자" 세로선, ktdb 목록표)
  */
 const INK_LUMA_MAX = 205
+/** 이보다 밝은 잉크(옅은 회색)는 넓게 칠한 면이면 잉크에서 뺀다 — 20% 회색 머리 띠(휘도 204)가 잉크 덩어리가 됐다 */
+const LIGHT_INK_MIN = 161
+/** 옅은 회색 면 판정 창 반지름 (pt) — 창의 절반 넘게 옅은 회색이면 면(안쪽·가장자리), 가는 괘선(1~3px)은 절반에 못 미친다 */
+const FLAT_RADIUS_PT = 1.1
 /** 최소 선 길이 (pt) — 최소 셀 변(≈7mm)과 대형 글리프 획(≤1em) 사이 */
 const MIN_LINE_LENGTH_PT = 20
 /** 두 가로 괘선을 잇는 짧은 세로선의 최소 길이 (pt) — 조직도 상자 사이 연결선(16pt) */
 const BRIDGE_MIN_LENGTH_PT = 6
+/** 한 행만 긋는 칸 구분선의 최소 길이 (pt) — 서식 글 한 줄 행 높이(18pt). 머리 띠 안 짧은 구분선(15pt 안팎)은 아래 세로 괘선이 이어질 때만 받는다 */
+const ROW_DIVIDER_MIN_PT = 17
+/** 한 행 칸 구분선 양옆에 비어 있어야 하는 칸 여백 (pt) */
+const ROW_DIVIDER_MARGIN_PT = 0.8
 /** 연결선이 잇는 상자의 최소 폭 (pt) */
 const BRIDGE_BOX_MIN_PT = 30
 /** 선 두께 상한 (pt) — 진짜 괘선(0.12~0.7mm ≈ 0.3~2pt)과 굵은 글리프 획(2pt+) 분리 */
@@ -52,6 +60,8 @@ const DOT_MAX_PERIOD_PT = 2.2
 const DOT_MIN_COUNT = 8
 /** 점선 후보가 수직 괘선에 닿았다고 보는 거리 (pt) */
 const DOT_TOUCH_PT = 1.5
+/** 세로선 하나에만 닿는 가로 점선을 받을 최소 길이 — 칸 오른쪽에 붙인 숫자 줄 획(관보 계속비 25~36pt)보다 길다 */
+const DOT_ONE_SIDE_MIN_PT = 60
 /**
  * 채움 경계. 텍스트층 경로는 순수 채움 경로(머리 행 음영·색 칸의 사각형)의 변도 선으로 받는다(line-extract.ts
  * flushPath → classifyAndAdd). 잉크 감지(휘도 ≤ 190)는 연한 채움과 흰 바탕의 경계를 못 봐, 머리 행에만 좌우 변이
@@ -76,6 +86,8 @@ const FILL_DIV_DELTA = 20
 /** 조각 난 채움 변을 이은 범위가 괘선 끝에서 떨어져도 되는 거리 (pt) — 칸 모서리 둥글림·첫 칸 글자 */
 const FILL_CHAIN_END_PT = 8
 const FILL_DIV_SIDE = 2
+/** 칠한 칸 사이 흰 틈 — 본문 괘선 y 에서 칠한 칸 윗변·아랫변까지 거리 (pt) */
+const FILL_GAP_PT = 1.5
 
 /** 픽셀 공간(top-left origin) 선분 — 두께는 밴드 픽셀 수 */
 export interface PxSegment {
@@ -113,6 +125,109 @@ export function detectRulingLines(
     const l = (rgba[i] * 77 + rgba[i + 1] * 150 + rgba[i + 2] * 29) >> 8
     luma[p] = l
     if (l <= INK_LUMA_MAX && rgba[i + 3] >= 128) ink[p] = 1
+  }
+  // 옅은 회색으로 칠한 표 칸은 선이 아니다 — 20% 회색 머리 띠(휘도 204)를 잉크로 보면 띠 전체가 한 덩어리라 그 안의 진한 1px 세로선과
+  // 띠에 붙은 표 테두리까지 "굵은 띠"로 버려져 표 머리 칸이 뭉개졌다(관보 배출 정보 서식 두 단 머리). 후보는 창의 절반 넘게 옅은 회색인
+  // 픽셀(면의 안쪽·가장자리) — 두 픽셀로 번진 옅은 괘선(192~207)은 창의 절반을 못 채운다
+  const r = Math.max(2, Math.round(FLAT_RADIUS_PT * scale))
+  const sum = new Int32Array((width + 1) * (height + 1))
+  for (let y = 0; y < height; y++) {
+    let row = 0
+    for (let x = 0; x < width; x++) {
+      const p = y * width + x
+      if (ink[p] && luma[p] >= LIGHT_INK_MIN) row++
+      sum[(y + 1) * (width + 1) + x + 1] = sum[y * (width + 1) + x + 1] + row
+    }
+  }
+  const flat: number[] = []
+  for (let y = 0; y < height; y++) {
+    const y0 = Math.max(0, y - r), y1 = Math.min(height, y + r + 1)
+    for (let x = 0; x < width; x++) {
+      const p = y * width + x
+      if (!ink[p] || luma[p] < LIGHT_INK_MIN) continue
+      const x0 = Math.max(0, x - r), x1 = Math.min(width, x + r + 1)
+      const n = sum[y1 * (width + 1) + x1] - sum[y0 * (width + 1) + x1] - sum[y1 * (width + 1) + x0] + sum[y0 * (width + 1) + x0]
+      if (n * 2 > (y1 - y0) * (x1 - x0)) flat.push(p)
+    }
+  }
+  // 후보를 면(4-이웃)으로 묶어 표 칸 음영만 뺀다: 양옆이 진한 괘선이고 네모를 채우며, 괘선이 면 밖으로 이어지거나(표 격자) 괘선 하나
+  // 너머 다른 칸 음영과 맞닿아야 한다. 아무 면이나 빼면 그림 입체 틀의 윤곽(수능 한국사), 사진 밝은 면 속 무늬(사진 칸 표), 옅은 음영
+  // 칸 옆 진한 음영 칸 가장자리(통계 이출입 표)가 가짜 괘선이 됐다
+  const label = new Int32Array(width * height)
+  for (const p of flat) label[p] = -1
+  const stack: number[] = []
+  let id = 0
+  const cells: { pix: number[]; x0: number; x1: number; y0: number; y1: number; runs: boolean }[] = []
+  for (const seed of flat) {
+    if (label[seed] !== -1) continue
+    id++
+    const pix: number[] = []
+    let y0 = height, y1 = 0
+    label[seed] = id; stack.push(seed)
+    while (stack.length) {
+      const p = stack.pop()!
+      pix.push(p)
+      const y = (p / width) | 0, x = p - y * width
+      if (y < y0) y0 = y
+      if (y > y1) y1 = y
+      if (x > 0 && label[p - 1] === -1) { label[p - 1] = id; stack.push(p - 1) }
+      if (x < width - 1 && label[p + 1] === -1) { label[p + 1] = id; stack.push(p + 1) }
+      if (y > 0 && label[p - width] === -1) { label[p - width] = id; stack.push(p - width) }
+      if (y < height - 1 && label[p + width] === -1) { label[p + width] = id; stack.push(p + width) }
+    }
+    // 행마다 면의 왼끝·오른끝 바로 바깥(r 안)이 진한 잉크인지 — 칸 음영은 양옆이 칸 괘선이다
+    const rows = y1 - y0 + 1
+    const lo = new Int32Array(rows).fill(width), hi = new Int32Array(rows).fill(-1)
+    let x0 = width, x1 = 0
+    for (const p of pix) {
+      const y = (p / width) | 0, x = p - y * width
+      if (x < lo[y - y0]) lo[y - y0] = x
+      if (x > hi[y - y0]) hi[y - y0] = x
+      if (x < x0) x0 = x
+      if (x > x1) x1 = x
+    }
+    const dark = (q: number) => ink[q] !== 0 && luma[q] < LIGHT_INK_MIN
+    let walled = 0
+    for (let i = 0; i < rows; i++) {
+      const base = (y0 + i) * width
+      let l = false, rr = false
+      for (let d = 1; d <= r && lo[i] - d >= 0 && !l; d++) l = dark(base + lo[i] - d)
+      for (let d = 1; d <= r && hi[i] + d < width && !rr; d++) rr = dark(base + hi[i] + d)
+      if (l && rr) walled++
+    }
+    if (walled < rows * 0.8 || pix.length < rows * (x1 - x0 + 1) * 0.7) continue
+    // 칸 괘선이 면 위나 아래로 4r 넘게 이어지는지(표 격자) — 외톨이 상자의 윤곽선은 모서리에서 끝난다
+    const mid = rows >> 1, base = (y0 + mid) * width
+    let runs = false
+    for (const dir of [-1, 1]) {
+      let x = dir < 0 ? lo[mid] : hi[mid]
+      let d = 1
+      while (d <= r && x + dir * d >= 0 && x + dir * d < width && !dark(base + x + dir * d)) d++
+      if (d > r || x + dir * d < 0 || x + dir * d >= width) continue
+      x += dir * d
+      for (const [from, step] of [[y0 - 1, -1], [y1 + 1, 1]]) {
+        let n = 0
+        for (let y = from; y >= 0 && y < height && n <= 4 * r; y += step) {
+          const q = y * width + x
+          if (!(dark(q) || (x > 0 && dark(q - 1)) || (x < width - 1 && dark(q + 1)))) break
+          n++
+        }
+        if (n > 4 * r) runs = true
+      }
+    }
+    cells.push({ pix, x0, x1, y0, y1, runs })
+  }
+  // 괘선이 면에서 끝나면 괘선 하나 너머로 맞닿은 다른 칸 음영이 있어야 한다 — 회색으로 채운 외톨이 상자(홀수형 표지)·입체 틀 옆면은 남긴다
+  const gap = 3 * r
+  const touch = (a: typeof cells[0], b: typeof cells[0]) => {
+    const ov = (p0: number, p1: number, q0: number, q1: number) => Math.min(p1, q1) - Math.max(p0, q0)
+    const side = (p0: number, p1: number, q0: number, q1: number) => (q0 > p1 ? q0 - p1 : p0 - q1)
+    const yo = ov(a.y0, a.y1, b.y0, b.y1), xo = ov(a.x0, a.x1, b.x0, b.x1)
+    const hg = side(a.x0, a.x1, b.x0, b.x1), vg = side(a.y0, a.y1, b.y0, b.y1)
+    return (hg > 0 && hg <= gap && yo >= Math.min(a.y1 - a.y0, b.y1 - b.y0) * 0.5) || (vg > 0 && vg <= gap && xo >= Math.min(a.x1 - a.x0, b.x1 - b.x0) * 0.5)
+  }
+  for (const c of cells) {
+    if (c.runs || cells.some(o => o !== c && touch(c, o))) for (const p of c.pix) ink[p] = 0
   }
 
   const solid: RunReader = (m, base, step, span) => solidRuns(m, base, step, span, minLenPx)
@@ -156,7 +271,12 @@ export function detectRulingLines(
   // 가로 a 가 세로 선(p.x1 = p.x2)과 만나거나 끝이 닿는지 (세로 a 는 축을 바꿔 같은 판정)
   const touchesV = (a: PxSegment) => allV.some(p => p.x1 >= a.x1 - tol && p.x1 <= a.x2 + tol && a.y1 >= p.y1 - tol && a.y1 <= p.y2 + tol)
   const touchesH = (a: PxSegment) => allH.some(p => p.y1 >= a.y1 - tol && p.y1 <= a.y2 + tol && a.x1 >= p.x1 - tol && a.x1 <= p.x2 + tol)
-  horizontals.push(...dotH.filter(touchesV))
+  // 가로 점선은 세로선 둘 이상과 만나야 한다 — 칸 오른쪽에 붙여 쓴 숫자 줄("333,500,000")의 둥근 획 위·아래가 점선 꼴로 잡혀 오른쪽
+  // 세로선 하나에만 닿았다(관보 계속비 값 열마다 짧은 가로선 쌍 → 몇 열에만 행 경계가 생겨 값이 여러 행 걸친 칸에 쌓였다)
+  // 기울어진 스캔에선 긴 점선이 조각나 세로선 하나에만 닿는다 — 숫자 줄 획(한 칸 폭)보다 긴 것(DOT_ONE_SIDE_MIN_PT)은 하나로도 받는다
+  const crossesV = (a: PxSegment) => new Set(allV.filter(p => p.x1 >= a.x1 - tol && p.x1 <= a.x2 + tol && a.y1 >= p.y1 - tol && a.y1 <= p.y2 + tol).map(p => Math.round(p.x1 / tol))).size >= 2
+  const oneSideMin = DOT_ONE_SIDE_MIN_PT * scale
+  horizontals.push(...dotH.filter(a => crossesV(a) || a.x2 - a.x1 >= oneSideMin && touchesV(a)))
   verticals.push(...dotV.filter(touchesH))
   // 채움 경계는 표 괘선에 맞물린 것만 쓴다 — 머리 행 음영의 윗변·아랫변은 표 가로 괘선(세로 괘선과 만나는 것)과 폭(양 끝)이
   // 같고, 좌우 변은 그 가로선 끝점에, 칸 사이 흰 틈은 바로 위아래 본문 세로 괘선과 같은 x 에 선다. 칸 안에 놓인 단색
@@ -192,6 +312,31 @@ export function detectRulingLines(
     const depthPx = Math.round(FILL_MIN_DEPTH_PT * scale)
     if (fill.verticals.some(v => Math.abs(v.x1 - loose) <= tol * 2 && Math.abs(v.y1 - a.y1) <= tol * 2 && v.y2 - v.y1 >= depthPx * 4)) fillH.push({ ...a, x1: p.x1, x2: p.x2 })
   }
+  // 짙게 칠한 머리 열(감색 바탕 흰 글)의 행 경계는 흰 틈이라 잉크 괘선이 없다 — 칠한 칸 둘이 얇은 틈(FILL_GAP 2배 안)을 두고 위아래로 붙고, 두 변이
+  // 같은 폭이며 양 끝이 세로선(잉크 괘선이나 칠한 열의 바깥 변)에 닿으면 틈 가운데를 행 경계로 본다(지역인재 합격자 표: 머리 열
+  // "직군·직렬·직류·계·남자·여자" 가 한 칸에 몰렸다)
+  const fillGap = Math.max(2, Math.round(FILL_GAP_PT * scale))
+  const sideV = [...inkV, ...fill.verticals]
+  const onV = (x: number, y: number) => sideV.some(v => Math.abs(v.x1 - x) <= tol * 2 && v.y1 <= y + tol * 2 && v.y2 >= y - tol * 2)
+  for (const a of fill.horizontals) {
+    const b = fill.horizontals.find(b => b !== a && b.y1 > a.y1 && b.y1 - a.y1 <= fillGap * 2 && Math.abs(b.x1 - a.x1) <= tol && Math.abs(b.x2 - a.x2) <= tol)
+    if (!b || a.x2 - a.x1 < tol * 4) continue
+    const y = (a.y1 + b.y1) / 2
+    if (!onV(a.x1, y) || !onV(a.x2, y) || horizontals.some(h => Math.abs(h.y1 - y) <= tol && h.x1 <= a.x1 + tol && h.x2 >= a.x2 - tol)) continue
+    horizontals.push({ x1: a.x1, y1: y, x2: a.x2, y2: y, thicknessPx: 1 })
+  }
+  // 칠한 칸 변이 본문 행 괘선 끝에 맞닿고(흰 틈 위아래, 괘선 y ± FILL_GAP) 다른 끝이 세로선에 닿아도 그 괘선을 잇는다 — 칠한 칸 옆이 연한 칠이라
+  // 위 짝 변의 끝이 세로선에 안 닿는 행(합격자 표 "남자" 위)
+  for (const p of ruleH) {
+    for (const side of [-1, 1] as const) {
+      const end = side < 0 ? p.x1 : p.x2
+      const a = fill.horizontals.find(a => Math.abs(a.y1 - p.y1) <= fillGap && Math.abs((side < 0 ? a.x2 : a.x1) - end) <= tol * 3 && a.x2 - a.x1 >= tol * 4)
+      if (!a) continue
+      const far = side < 0 ? a.x1 : a.x2
+      if (!onV(far, p.y1) || horizontals.some(h => Math.abs(h.y1 - p.y1) <= tol && h.x1 <= Math.min(far, end) + tol && h.x2 >= Math.max(far, end) - tol)) continue
+      horizontals.push({ ...p, x1: Math.min(far, end), x2: Math.max(far, end) })
+    }
+  }
   horizontals.push(...fillH)
   const edgeH = [...ruleH, ...fillH]
   const depth = Math.round(FILL_MIN_DEPTH_PT * scale)
@@ -214,6 +359,44 @@ export function detectRulingLines(
   for (const v of shortV) {
     if (!endsOn(v.x1, v.y1).length || !endsOn(v.x1, v.y2).length) continue
     if (!verticals.some(p => Math.abs(p.x1 - v.x1) <= tol && p.y1 >= v.y2 - tol && p.y1 <= v.y2 + tol * 3 && p.y2 - p.y1 + 1 >= minLenPx)) continue
+    if (!verticals.some(p => Math.abs(p.x1 - v.x1) <= tol && p.y1 <= v.y1 + tol && p.y2 >= v.y2 - tol)) verticals.push(v)
+  }
+  // 한 행 높이(20pt 미만)만 긋는 칸 구분선 — 서식 "성명 │ (빈칸) │ 주민등록번호 │ (빈칸)" 의 값 칸 세로선이 행 높이 18pt 라 빠져 한 칸에 몰렸다
+  // (대리인선임허가신청서). 위끝·아래끝이 실선 가로 괘선 잉크에 이어 붙고 그 두 가로선이 양옆으로 이어지며, 같은 행을 양옆에서 다 긋는 세로 괘선
+  // 사이에 있을 때만. 행 높이에 꽉 찬 글자 획(미래전략포럼 개요 표 — 점선 행)과 가르려고 선 양옆 칸 여백(ROW_DIVIDER_MARGIN_PT)에 잉크가 없어야 한다 —
+  // 글자 획은 같은 글자의 가로 획이 붙는다
+  const rowMin = Math.round(ROW_DIVIDER_MIN_PT * scale)
+  const margin = Math.max(2, Math.round(ROW_DIVIDER_MARGIN_PT * scale))
+  const spans = (x: number, y1: number, y2: number) => (p: PxSegment) => p.y1 <= y1 + tol && p.y2 >= y2 - tol && p.x1 !== x
+  const clearSide = (v: PxSegment, dir: -1 | 1) => {
+    const half = Math.ceil(v.thicknessPx / 2) + 1
+    let inked = 0, total = 0
+    for (let y = v.y1 + tol; y <= v.y2 - tol; y++) for (let d = half; d < half + margin; d++) {
+      const x = Math.round(v.x1) + dir * d
+      if (x < 0 || x >= width) continue
+      total++
+      inked += ink[y * width + x]
+    }
+    return total > 0 && inked <= total * 0.05
+  }
+  const inkMin = Math.max(4, Math.round(scale * scale * 2))
+  const inkBetween = (x1: number, x2: number, y1: number, y2: number) => {
+    let n = 0
+    for (let y = Math.max(0, y1); y <= Math.min(height - 1, y2); y++) for (let x = Math.max(0, Math.round(x1)); x <= Math.min(width - 1, Math.round(x2)); x++) n += ink[y * width + x]
+    return n >= inkMin
+  }
+  for (const v of shortV) {
+    if (v.y2 - v.y1 + 1 < rowMin || verticals.includes(v)) continue
+    const solidAcross = (h: PxSegment) => !dotH.includes(h) && h.x1 < v.x1 - tol * 2 && h.x2 > v.x1 + tol * 2
+    const top = endsOn(v.x1, v.y1).filter(h => solidAcross(h) && v.y1 <= h.y1 + 1)
+    const bot = endsOn(v.x1, v.y2).filter(h => solidAcross(h) && v.y2 >= h.y1 - 1)
+    if (!top.length || !bot.length || !clearSide(v, -1) || !clearSide(v, 1)) continue
+    const enclose = verticals.filter(spans(v.x1, v.y1, v.y2))
+    const left = enclose.filter(p => p.x1 < v.x1 - tol).reduce<PxSegment | null>((a, p) => !a || p.x1 > a.x1 ? p : a, null)
+    const right = enclose.filter(p => p.x1 > v.x1 + tol).reduce<PxSegment | null>((a, p) => !a || p.x1 < a.x1 ? p : a, null)
+    if (!left || !right) continue
+    // 양쪽 칸에 글이 있어야 한다 — 빈 칸을 가르는 선은 글 배치를 바꾸지 않고 열만 늘려, 서식 표가 성긴 산문 격자로 풀렸다(대리인선임허가신청서)
+    if (!inkBetween(left.x1 + margin * 2, v.x1 - margin * 2, v.y1 + tol, v.y2 - tol) || !inkBetween(v.x1 + margin * 2, right.x1 - margin * 2, v.y1 + tol, v.y2 - tol)) continue
     if (!verticals.some(p => Math.abs(p.x1 - v.x1) <= tol && p.y1 <= v.y1 + tol && p.y2 >= v.y2 - tol)) verticals.push(v)
   }
   // Faint internal rules are evidence only when enclosed by an existing dark
@@ -239,7 +422,11 @@ export function detectRulingLines(
     for (const f of frames) {
       const innerH = hs.filter(h => h.y1 > f.y1 + tol && h.y1 < f.y2 - tol && Math.abs(h.x1 - f.x1) <= tol && Math.abs(h.x2 - f.x2) <= tol)
       const innerV = vs.filter(v => v.x1 > f.x1 + tol && v.x1 < f.x2 - tol && Math.abs(v.y1 - f.y1) <= tol && Math.abs(v.y2 - f.y2) <= tol)
-      if (innerH.length < 3 || innerV.length < 1) continue
+      // 진한 안쪽 세로선이 틀을 다 가로지르는 것도 열 근거다 — 쪽을 넘는 표는 바닥 괘선이 옅어 틀 아래끝이 안쪽 가로선이고 세로선은
+      // 그 아래로 이어진다(약품 이상사례 표: 왼쪽 이름 칸 행 구분선이 밝기 211 로 옅어 이름 다섯이 한 칸에 몰렸다). 옅은 세로선은 틀에 맞는 것만 더한다 —
+      // 음영 머리 띠의 옅은 자국이 걸친 머리 칸("제6(당)기")을 갈랐다(회계표)
+      const darkV = inkV.some(v => v.x1 > f.x1 + tol && v.x1 < f.x2 - tol && v.y1 <= f.y1 + tol && v.y2 >= f.y2 - tol)
+      if (innerH.length < 3 || (innerV.length < 1 && !darkV)) continue
       for (const h of innerH) if (!horizontals.some(p => Math.abs(p.y1 - h.y1) <= tol && p.x1 <= h.x1 + tol && p.x2 >= h.x2 - tol)) horizontals.push(h)
       for (const v of innerV) if (!verticals.some(p => Math.abs(p.x1 - v.x1) <= tol && p.y1 <= v.y1 + tol && p.y2 >= v.y2 - tol)) { verticals.push(v); cellDividers.push(v) }
     }

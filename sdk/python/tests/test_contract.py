@@ -28,11 +28,11 @@ def test_requests_match_fixture() -> None:
 
 
 def test_option_names_cover_worker_allowlist() -> None:
-    # docs/parse-worker-protocol.md 허용 목록과 같은 23개
+    # docs/parse-worker-protocol.md 허용 목록과 같은 28개
     assert sorted(OPTION_NAMES.values()) == sorted([
-        "tableFormat", "htmlTables", "layoutTables", "classifyTables", "tables", "plain", "scriptTags",
+        "tableFormat", "htmlTables", "htmlCellLinks", "layoutTables", "classifyTables", "tables", "plain", "scriptTags",
         "removeHeaderFooter", "dedupeRunningHeaders", "keepTrailingEmptyCols", "keepEmptyParagraphs",
-        "includeFieldPlaceholders", "pages", "images", "inlineImages", "ocr", "formulaOcr", "password",
+        "includeFieldPlaceholders", "pages", "images", "inlineImages", "qrCodes", "imageFormat", "imagePlacement", "dropBlankImages", "ocr", "formulaOcr", "password",
         "ocrLines", "ocrDet", "ocrDetLongSide", "ocrRec", "ocrRecDict"])
 
 
@@ -90,3 +90,5 @@ def test_decode_ocr_lines_typed() -> None:
     future = {"pageNumber": 1, "width": 10, "height": 10, "scale": 3, "deskewAngle": 0, "newPageKey": 1,
               "lines": [{"text": "가", "box": {"x": 1, "y": 2, "w": 3, "h": 4, "angle": 0}, "confidence": 0.9, "newLineKey": True}]}
     assert ParseResult({"success": True, "ocrLines": [future]}).ocr_lines[0].lines[0].box == OcrBox(1, 2, 3, 4)
+    future["pageRotation"] = 90
+    assert ParseResult({"success": True, "ocrLines": [future]}).ocr_lines[0].page_rotation == 90

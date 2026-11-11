@@ -46,13 +46,13 @@ class ContractTest {
 
     @Test
     void allAllowlistOptionsHaveBuilders() {
-        ObjectNode all = ParseOptions.builder().tableFormat("gfm").htmlTables(false).layoutTables("keep").classifyTables(true)
+        ObjectNode all = ParseOptions.builder().tableFormat("gfm").htmlTables(false).htmlCellLinks(true).layoutTables("keep").classifyTables(true)
                 .tables(false).plain(true).scriptTags(false).removeHeaderFooter(false).dedupeRunningHeaders(true)
                 .keepTrailingEmptyCols(true).keepEmptyParagraphs(true).includeFieldPlaceholders(true).pages("1-2")
-                .images(false).inlineImages(true).ocr(true).formulaOcr(false).password("pw")
+                .images(false).inlineImages(true).qrCodes(true).imageFormat("webp").imagePlacement("flow").dropBlankImages(true).ocr(true).formulaOcr(false).password("pw")
                 .ocrLines(true).ocrDet("server").ocrDetLongSide(1920).ocrRec(new OcrModelFile(Path.of("/m/rec.onnx"), "a".repeat(64)))
                 .ocrRecDict(new OcrModelFile(Path.of("/m/rec.yml"), "a".repeat(64))).build().wireOptions();
-        assertEquals(23, all.size());
+        assertEquals(28, all.size());
     }
 
     @Test
@@ -90,6 +90,9 @@ class ContractTest {
         assertTrue(region.regionsOnly());
         assertEquals(0.42, region.deskewAngle());
         assertEquals(new OcrPageLines.Box(200.5, 1000, 300, 40.5), region.lines().get(0).box());
+        ObjectNode rotated = ((ObjectNode) fixture().get("responses").get(5).get("result").get("ocrLines").get(0)).deepCopy();
+        rotated.put("pageRotation", 270);
+        assertEquals(270, OcrPageLines.fromJson(rotated).pageRotation());
         ObjectNode empty = Json.MAPPER.createObjectNode().put("success", true);
         empty.putArray("ocrLines");
         assertEquals(List.of(), new ParseResult(empty, null).ocrLines().orElseThrow());
