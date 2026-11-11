@@ -36,6 +36,13 @@ const REC_MIN_WIDTH = 320
 const REC_BATCH_MAX_PIXELS = 48 * 16000
 /** v6 검출 설정 — 독일어 코퍼스 실측 (포크 8e458815) */
 const V6_DET = { detLongSide: 1760, detBoxThresh: 0.5, detUnclip: 1.4 } as const
+/** 눕혀 찍은 쪽 판정 — engine.ts 와 같은 문턱. 검출 상자 대부분이 세로로 길면 몇 개를 돌려 읽어 본다 */
+const TALL_RATIO = 1.5
+const ORIENT_MIN_BOXES = 20
+const ORIENT_TALL_SHARE = 0.6
+const ORIENT_SAMPLE = 12
+const ORIENT_MIN_CONF = 0.7
+const ORIENT_GAIN = 0.1
 
 type SharpFactory = (
   input: Uint8Array | Buffer,
@@ -111,6 +118,24 @@ export class GermanOcrEngine {
     if (width < DET_MIN_SIZE || height < DET_MIN_SIZE) return []
     const t = { ...tuning, ...V6_DET }
     const detected = await this.detect(rgba, width, height, t, stats, signal)
+    // 가로 표를 90° 눕혀 찍은 쪽 — 독일어 통계·양식 문서도 눕힐 수 있다. upstream 엔진(engine.ts)과 같은 판정:
+    // 키 큰 상자 몇 개를 그대로·90°·270° 로 읽어 보고, 돌린 쪽이 확실히 잘 읽히면 그 각만 적고 돌아간다.
+    // 호출측(pdf-ocr·image-ocr)이 래스터를 돌려(rotateQuarter) 다시 부르고 블록 좌표는 원본으로 되돌린다.
+    if (tuning.orientPage && stats && detected.length >= ORIENT_MIN_BOXES) {
+      const tall = detected.filter(b => b.h >= b.w * TALL_RATIO)
+      if (tall.length >= detected.length * ORIENT_TALL_SHARE) {
+        const sample = [...tall].sort((a, b) => b.h - a.h).slice(0, ORIENT_SAMPLE)
+        const rots = [0, 90, 270] as const
+        const probe = await this.recognizeBoxes(rgba, width, sample.flatMap(box => rots.map(rot => ({ box, rot }))), t.recBatch, signal)
+        const mean = (k: number) => sample.reduce((sum, _, i) => sum + (probe[i * rots.length + k]?.confidence ?? 0), 0) / sample.length
+        const [m0, m90, m270] = rots.map((_, k) => mean(k))
+        const best = Math.max(m90, m270)
+        if (best >= ORIENT_MIN_CONF && best >= m0 + ORIENT_GAIN) {
+          stats.pageRotation = m90 >= m270 ? 90 : 270
+          return []
+        }
+      }
+    }
     const boxes = cellRules.length ? detected.flatMap(b => splitBoxAtCellRules(b, cellRules)) : detected
     const reads = await this.recognizeBoxes(rgba, width, boxes, t.recBatch, signal)
     const items: OcrItem[] = []
@@ -154,13 +179,14 @@ export class GermanOcrEngine {
     }))
   }
 
-  /** 상자마다 펴서 읽는다 — 폭 오름차순으로 묶어 배치(기본 1). DirectML 은 같은 폭끼리만 묶는다(ZERO1_OCR_REC_BATCH) */
+  /** 상자마다 펴서 읽는다 — 폭 오름차순으로 묶어 배치(기본 1). DirectML 은 같은 폭끼리만 묶는다(ZERO1_OCR_REC_BATCH).
+   *  작업은 {box, rot} — orientPage 판정은 같은 상자를 0·90·270 으로 넘긴다 */
   private async recognizeBoxes(
-    rgba: Uint8Array, pageW: number, boxes: Box[], batchSize: number, signal?: AbortSignal,
+    rgba: Uint8Array, pageW: number, jobs: Array<Box | { box: Box; rot: 0 | 90 | 270 }>, batchSize: number, signal?: AbortSignal,
   ): Promise<Array<{ text: string; confidence: number } | null>> {
-    const crops = boxes.map(b => lineCrop(rgba, pageW, b, 0))
+    const crops = jobs.map(j => "rot" in j ? lineCrop(rgba, pageW, j.box, j.rot) : lineCrop(rgba, pageW, j, 0))
     const order = crops.map((_, i) => i).sort((a, b) => crops[a].w - crops[b].w)
-    const results: Array<{ text: string; confidence: number } | null> = new Array(boxes.length).fill(null)
+    const results: Array<{ text: string; confidence: number } | null> = new Array(jobs.length).fill(null)
     for (let s = 0; s < order.length;) {
       signal?.throwIfAborted()
       // 앞 실행에서 CPU 로 바뀌었을 수 있다 — GPU 는 한 줄씩 채운 폭을 지키고, CPU 에선 묶지 않는다
