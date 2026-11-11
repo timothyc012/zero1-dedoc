@@ -3,6 +3,7 @@ import {createHash} from 'node:crypto'
 import {PDFiumLibrary} from '@hyzyla/pdfium'
 import {parse} from '../src/index.js'
 import {getOcrEngine} from '../src/ocr/engine.js'
+import {resolveOcrModels} from '../src/ocr/models.js'
 import {deskewPage} from '../src/ocr/deskew.js'
 import {blockTexts} from './ocr-lib.mjs'
 import {getOcrModelStatus} from '../src/ocr/models.js'
@@ -12,7 +13,7 @@ const split=option('--split')??'development',limit=Number(option('--limit')??20)
 const manifest=JSON.parse(await readFile(option('--manifest')??'bench/german-pdf-competition-manifest.json','utf8'))
 const modelStatus=await getOcrModelStatus('de')
 if(!modelStatus.every(model=>model.verified))throw new Error('German models must be prepared and SHA verified')
-const pdfium=await PDFiumLibrary.init(),engine=await getOcrEngine('de'),documents=[]
+const pdfium=await PDFiumLibrary.init(),engine=await getOcrEngine(resolveOcrModels({ocrLanguage:'de'})),documents=[]
 let captured=[]
 const recognize=engine.recognizePage.bind(engine)
 engine.recognizePage=async(...args)=>{const items=await recognize(...args);captured.push(...items);return items}
