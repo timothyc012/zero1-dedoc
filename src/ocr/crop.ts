@@ -150,6 +150,21 @@ function sliceBox(box: Box, left: number, right: number): Box {
     interpolate(bottomLeft, bottomRight, left)]
   return { ...box, x: left, w: right - left, quad }
 }
+/** Vertical counterpart of sliceBox — a box clipped at a horizontal boundary
+ * must also clip its oriented crop, so its two slanted sides are cut at y. */
+export function sliceBoxY(box: Box, top: number, bottom: number): Box {
+  if (!box.quad) return { ...box, y: top, h: bottom - top }
+  const [topLeft, topRight, bottomRight, bottomLeft] = box.quad
+  const interpolate = (a: Point, b: Point, y: number): Point => {
+    const fraction = Math.max(0, Math.min(1, (y - a.y) / Math.max(1e-6, b.y - a.y)))
+    return { x: a.x + fraction * (b.x - a.x), y: a.y + fraction * (b.y - a.y) }
+  }
+  const quad: [Point, Point, Point, Point] = [interpolate(topLeft, bottomLeft, top),
+    interpolate(topRight, bottomRight, top), interpolate(topRight, bottomRight, bottom),
+    interpolate(topLeft, bottomLeft, bottom)]
+  return { ...box, y: top, h: bottom - top, quad }
+}
+
 
 /** Split a detected box stacked over two table rows at the ruled row boundary between them. */
 export function splitBoxAtRowRules(b: Box, rules: Array<{ x1: number; x2: number; y1: number; thicknessPx: number }>): Box[] {
@@ -162,9 +177,9 @@ export function splitBoxAtRowRules(b: Box, rules: Array<{ x1: number; x2: number
   for (const r of cuts) {
     const edge = Math.floor(r.y1 - r.thicknessPx / 2 - 1)
     if (edge - top < min) continue
-    out.push({ ...b, y: top, h: edge - top })
+    out.push(sliceBoxY(b, top, edge))
     top = Math.ceil(r.y1 + r.thicknessPx / 2 + 1)
   }
-  if (b.y + b.h - top >= min) out.push({ ...b, y: top, h: b.y + b.h - top })
+  if (b.y + b.h - top >= min) out.push(sliceBoxY(b, top, b.y + b.h))
   return out.length ? out : [b]
 }

@@ -19,14 +19,15 @@
 import { readFile } from "fs/promises"
 import { availableParallelism } from "node:os"
 import { OPTIONAL_DEP_INSTALL_HINT } from "../utils.js"
-import { lineCrop, splitBoxAtCellRules, REC_HEIGHT, type Box } from "./crop.js"
-import { ctcDecode, DEFAULT_OCR_TUNING, type OcrItem, type OcrPageStats, type OcrTuning } from "./engine.js"
+import { lineCrop, sliceBoxY, splitBoxAtCellRules, splitBoxAtRowRules, REC_HEIGHT, type Box } from "./crop.js"
+import { ctcDecode, DEFAULT_OCR_TUNING, midBlankRow, valleyRow, type OcrItem, type OcrPageStats, type OcrTuning } from "./engine.js"
 import { createOcrSessions, ocrDevice, ocrGpuDeviceId, ocrSameWidthRecBatch, type OcrSession } from "./execution.js"
 import { ocrCpuThreads } from "./cpu-threads.js"
 import { ocrSourcePath, type OcrModelSelection } from "./models.js"
 import { readOnnxCharacterDict } from "./onnx-character-dict.js"
 import { orientedComponentBoxes } from "./oriented-box.js"
 import { ctcPrefixBeamDecode } from "./prefix-beam.js"
+import { grayCrop, inkStats } from "./line-split.js"
 import { disableOrtTelemetry } from "./runtime-env.js"
 
 const DET_MIN_SIZE = 3
@@ -43,6 +44,10 @@ const ORIENT_TALL_SHARE = 0.6
 const ORIENT_SAMPLE = 12
 const ORIENT_MIN_CONF = 0.7
 const ORIENT_GAIN = 0.1
+
+/** 두 줄을 덮은 상자 갈라 다시 읽기 — engine.ts TALL_LINE_RATIO·TALL_LINE_SCORE 와 같은 값 */
+const SPLIT_LINE_RATIO = 1.1
+const SPLIT_LINE_SCORE = 0.9
 
 type SharpFactory = (
   input: Uint8Array | Buffer,
@@ -102,7 +107,7 @@ export class GermanOcrEngine {
 
   /**
    * 쪽 RGBA → 글줄 (입력 픽셀 좌표, 위→아래·왼→오른). engine.ts OcrEngine.recognizePage 와 같은 꼴 — 행 괘선(rowRules)은
-   * 기울어진 상자를 가르지 못해 쓰지 않는다. signal 은 단계 사이 협력 취소(돌고 있는 sharp·ONNX 호출은 끝까지 기다린다)
+   * 기울어진 상자도 그 변을 따라 가른다(sliceBoxY). signal 은 단계 사이 협력 취소(돌고 있는 sharp·ONNX 호출은 끝까지 기다린다)
    */
   async recognizePage(
     rgba: Uint8Array,
@@ -111,7 +116,7 @@ export class GermanOcrEngine {
     stats?: OcrPageStats,
     tuning: Readonly<OcrTuning> = DEFAULT_OCR_TUNING,
     cellRules: CellRule[] = [],
-    _rowRules: unknown[] = [],
+    rowRules: Array<{ x1: number; x2: number; y1: number; thicknessPx: number }> = [],
     signal?: AbortSignal,
   ): Promise<OcrItem[]> {
     signal?.throwIfAborted()
@@ -136,15 +141,54 @@ export class GermanOcrEngine {
         }
       }
     }
-    const boxes = cellRules.length ? detected.flatMap(b => splitBoxAtCellRules(b, cellRules)) : detected
+    const rows = rowRules.length ? detected.flatMap(b => splitBoxAtRowRules(b, rowRules)) : detected
+    const boxes = cellRules.length ? rows.flatMap(b => splitBoxAtCellRules(b, cellRules)) : rows
     const reads = await this.recognizeBoxes(rgba, width, boxes, t.recBatch, signal)
     const items: OcrItem[] = []
+    const boxOf = new Map<OcrItem, Box>()
     boxes.forEach((b, i) => {
       const r = reads[i]
       if (!r || !r.text.trim()) return
       if (r.confidence < t.textScore) { if (stats) stats.droppedLowConf++; return }
-      items.push({ text: r.text, x: b.x, y: b.y, w: b.w, h: b.h, confidence: r.confidence })
+      const it = { text: r.text, x: b.x, y: b.y, w: b.w, h: b.h, confidence: r.confidence }
+      items.push(it); boxOf.set(it, b)
     })
+    // 두 줄을 한 상자로 잡았지만 문턱은 넘긴 줄 — engine.ts 와 같은 판정: 쪽 상자 높이 중앙값의 1.1배 넘고
+    // 확신 0.9 안 되는 가로 상자만, 가운데 빈 행(골짜기)에서 갈라 다시 읽어 두 조각 모두 확실할 때만 바꾼다.
+    // 한글 2자 요구는 라틴 후보로 넓혔다 — 독일어 두 줄 셀(관할청·지역인재 표)도 같은 식으로 합쳐 읽힌다.
+    if (tuning.postprocess) {
+      const hs = [...boxOf.values()].map(b => b.h).sort((x, y) => x - y)
+      const medH = hs.length ? hs[hs.length >> 1] : 0
+      const tall = items.filter(it => {
+        const b = boxOf.get(it)
+        return b && medH && b.h >= medH * SPLIT_LINE_RATIO && it.confidence < SPLIT_LINE_SCORE
+          && b.w >= b.h * 3 && (it.text.match(/[\p{L}]/gu) ?? []).length >= 2
+      })
+      const halves: Array<{ it: OcrItem; top: Box; bottom: Box }> = []
+      for (const it of tall) {
+        const b = boxOf.get(it)!
+        const gray = grayCrop(rgba, width, b)
+        const cut = midBlankRow(gray, b.w, b.h, inkStats(gray)) ?? valleyRow(gray, b.w, b.h, inkStats(gray))
+        if (cut) halves.push({ it, top: sliceBoxY(b, b.y, b.y + cut[0]), bottom: sliceBoxY(b, b.y + cut[1], b.y + b.h) })
+      }
+      const res = halves.length ? await this.recognizeBoxes(rgba, width, halves.flatMap(hv => [hv.top, hv.bottom]), t.recBatch, signal) : []
+      halves.forEach((hv, k) => {
+        const a = res[2 * k], c = res[2 * k + 1]
+        const need = Math.max(hv.it.confidence + 0.1, 0.85)
+        // 확신 못 한 조각은 그 자리를 다른 아이템이 반 넘게 덮을 때만 버린다 — 앞뒤 줄 글자 끝자락을 또 읽은 조각이다
+        const covered = (bx: Box) => items.some(o => o !== hv.it
+          && Math.max(0, Math.min(bx.x + bx.w, o.x + o.w) - Math.max(bx.x, o.x))
+            * Math.max(0, Math.min(bx.y + bx.h, o.y + o.h) - Math.max(bx.y, o.y)) * 2 > bx.w * bx.h)
+        const parts: OcrItem[] = []
+        for (const [r, box] of [[a, hv.top], [c, hv.bottom]] as const) {
+          if (r && r.confidence >= need && r.text.trim()) {
+            const part = { text: r.text.trim(), x: box.x, y: box.y, w: box.w, h: box.h, confidence: r.confidence }
+            parts.push(part); boxOf.set(part, box)
+          } else if (!covered(box)) return
+        }
+        if (parts.length) items.splice(items.indexOf(hv.it), 1, ...parts)
+      })
+    }
     items.sort((a, b) => (a.y - b.y) || (a.x - b.x))
     return items
   }
