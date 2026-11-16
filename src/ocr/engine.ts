@@ -14,6 +14,7 @@
  * Korean/English DB boxes retain the upstream axis-aligned approximation.
  * German uses minimum-area oriented rectangles and affine crop rectification;
  * its detector uses PP-OCRv6 mean/std 0.5 and the embedded model alphabet.
+ * Its weights with |w| < 1e-30 are zeroed at load (onnx-tiny-weights.ts).
  *
  * 공식 파이프라인 밖의 보강 (근거는 bench/ocr-accuracy.mjs 코퍼스 실측, 각 모듈 주석):
  *  - 키 큰 박스(세로로 쌓인 글자)는 행 밴드로 갈라 밴드마다 인식 (line-split.ts)
@@ -43,6 +44,7 @@ import { isDotFragment, joinLeaderItems, restoreBulletItems, restoreSymbols } fr
 import { bandBoxes, splitBoxAtCellRules, lineCrop, type Box, REC_HEIGHT } from "./crop.js"
 import { cropRgba, mergeDetectionTiles, mergeOcrPasses, ocrTuningForImage, planDetectionTiles } from "./detection-tiles.js"
 import { readOnnxCharacterDict } from "./onnx-character-dict.js"
+import { flushTinyOnnxWeights } from "./onnx-tiny-weights.js"
 import { orientedComponentBoxes } from "./oriented-box.js"
 
 /** OCR 인식 결과 한 줄 — 좌표는 입력 이미지 픽셀 (top-left origin, y down) */
@@ -189,10 +191,18 @@ export class OcrEngine {
       logSeverityLevel: 3, // paddle2onnx 변환 잔여물 W 로그 폭주 억제
       ...(threads !== undefined ? { intraOpNumThreads: threads, interOpNumThreads: 1 } : {}),
     }
+    // v6 loads from bytes with tiny weights zeroed — x86 computed their subnormal products in microcode (onnx-tiny-weights.ts)
+    const flushed = async (filename: string): Promise<Buffer | undefined> => {
+      if (profile.generation !== 6) return undefined
+      const bytes = await readFile(join(dir, filename))
+      flushTinyOnnxWeights(bytes)
+      return bytes
+    }
+    const [detBytes, recBytes] = await Promise.all([flushed(profile.det.filename), flushed(profile.rec.filename)])
     const [det, rec, dictBytes] = await Promise.all([
-      ortMod.InferenceSession.create(join(dir, profile.det.filename), sessionOpts),
-      ortMod.InferenceSession.create(join(dir, profile.rec.filename), sessionOpts),
-      readFile(join(dir, profile.dict?.filename ?? profile.rec.filename)),
+      detBytes ? ortMod.InferenceSession.create(detBytes, sessionOpts) : ortMod.InferenceSession.create(join(dir, profile.det.filename), sessionOpts),
+      recBytes ? ortMod.InferenceSession.create(recBytes, sessionOpts) : ortMod.InferenceSession.create(join(dir, profile.rec.filename), sessionOpts),
+      profile.dict ? readFile(join(dir, profile.dict.filename)) : recBytes ?? readFile(join(dir, profile.rec.filename)),
     ])
     const dict = profile.dict ? parseCharacterDict(dictBytes.toString("utf-8")) : readOnnxCharacterDict(dictBytes)
     if (dict.length === 0) throw new Error("OCR 사전 파싱 실패 — 모델 캐시를 삭제 후 재다운로드하세요")
