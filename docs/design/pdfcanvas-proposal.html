@@ -1,0 +1,647 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDFCanvas 시안</title>
+<!--
+  PDFCanvas 대안 시안 A / B / C
+
+  가정
+  - macOS 데스크톱 앱, 창 폭 1280~1600px 기준.
+  - 원본 목업의 문서 내용과 파란 강조색(#2F6BEA 근사)을 그대로 씀. 새 브랜드를 만들지 않음.
+  - 주석은 두 종류뿐: "인용" = 원문 형광펜 + (선택) 생각 메모 / "메모" = 원문 없이 쓰는 자유 메모.
+  - A·B는 읽기 화면의 두 대안, C는 연결(캔버스) 화면. 툴바의 [읽기 | 캔버스]가 둘 사이를 오감.
+  - 왼쪽 사이드바는 [문서 | 목차 | 쪽] 전환 (A 기본 쪽, B 기본 목차). 문서 탭은 원문별 텍스트/OCR 상태를 보여 줌.
+  - 썸네일, 3쪽 이후 내용, 문서 탭의 '예시' 두 줄은 자리 표시.
+
+  세 시안 공통 서명: 형광펜 오른쪽 여백의 색 괄호 + 주석까지 이어지는 연결선.
+-->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#1d1d1f; --ink-2:#4a4a4f; --ink-3:#86868b; --ink-4:#b0b0b5;
+  --line:#e6e6e9; --line-2:#d5d5da;
+  --chrome:#f5f5f6; --chrome-2:#ebebed; --desk:#e3e3e7; --paper:#fff;
+  --accent:#2f6bea; --accent-ink:#2458c8;
+  --hl-yellow:oklch(0.94 0.11 98);  --dot-yellow:oklch(0.8 0.15 85);
+  --hl-green:oklch(0.93 0.075 152); --dot-green:oklch(0.68 0.13 152);
+  --hl-rose:oklch(0.925 0.055 15);  --dot-rose:oklch(0.66 0.15 15);
+  --hl-blue:oklch(0.925 0.05 250);  --dot-blue:oklch(0.6 0.15 256);
+  --ui:"Pretendard Variable",Pretendard,-apple-system,"Apple SD Gothic Neo",sans-serif;
+  --serif:"Noto Serif KR","AppleMyungjo",serif;
+}
+.c-yellow{--hl-c:var(--hl-yellow);--dot-c:var(--dot-yellow)}
+.c-green{--hl-c:var(--hl-green);--dot-c:var(--dot-green)}
+.c-rose{--hl-c:var(--hl-rose);--dot-c:var(--dot-rose)}
+.c-blue{--hl-c:var(--hl-blue);--dot-c:var(--dot-blue)}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:#cdced4;font-family:var(--ui);color:var(--ink);-webkit-font-smoothing:antialiased;word-break:keep-all;position:relative;min-width:1180px;min-height:720px;overflow:auto}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+svg{display:block}
+
+/* ── window ─────────────────────────────────────── */
+.win{position:absolute;inset:18px 18px 76px 18px;background:var(--chrome);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 0 0 .5px rgba(0,0,0,.2),0 24px 70px rgba(20,20,40,.28)}
+.tb{height:52px;flex:none;display:flex;align-items:center;gap:10px;padding:0 12px 0 16px;border-bottom:1px solid var(--line);position:relative}
+.lights{display:flex;gap:8px;margin-right:8px}
+.lights i{width:12px;height:12px;border-radius:50%;background:#ff5f57;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.14)}
+.lights i:nth-child(2){background:#febc2e}.lights i:nth-child(3){background:#28c840}
+.ib{width:30px;height:28px;border-radius:6px;display:grid;place-items:center;color:var(--ink-2)}
+.ib:hover,.tbtn:hover{background:var(--chrome-2)}
+.ttl{display:flex;flex-direction:column;line-height:1.25;margin-left:2px}
+.ttl b{font-size:13px;font-weight:600}
+.ttl span{font-size:11px;color:var(--ink-3);display:flex;align-items:center;gap:4px}
+.seg{position:absolute;left:50%;transform:translateX(-50%);display:flex;background:var(--chrome-2);border-radius:8px;padding:2px}
+.seg button{height:26px;padding:0 16px;border-radius:6px;font-size:12.5px;color:var(--ink-2);font-weight:500}
+.seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08),0 0 0 .5px rgba(0,0,0,.06)}
+.tb-r{margin-left:auto;display:flex;align-items:center;gap:4px;position:relative}
+.tbtn{height:28px;padding:0 9px;border-radius:6px;font-size:12.5px;display:flex;align-items:center;gap:4px;color:var(--ink-2)}
+.primary{margin-left:6px;height:28px;padding:0 10px 0 12px;border-radius:7px;background:var(--accent);color:#fff;font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:6px}
+.menu{position:absolute;top:34px;right:92px;background:#fff;border-radius:8px;padding:4px;min-width:150px;box-shadow:0 0 0 .5px rgba(0,0,0,.12),0 10px 30px rgba(0,0,0,.14);display:none;z-index:40}
+.menu.on{display:block}
+.menu button{display:flex;justify-content:space-between;width:100%;padding:6px 10px;border-radius:5px;font-size:12.5px}
+.menu button:hover{background:var(--chrome-2)}
+.menu kbd{font:inherit;color:var(--ink-4)}
+
+/* ── body grid per direction ────────────────────── */
+.body{flex:1;min-height:0;display:grid;grid-template-rows:minmax(0,1fr);position:relative}
+.win[data-dir=A] .body{grid-template-columns:204px minmax(0,1fr) 336px}
+.win[data-dir=B] .body{grid-template-columns:216px minmax(0,1fr)}
+.win[data-dir=C] .body{grid-template-columns:minmax(440px,1fr) minmax(0,1.15fr)}
+.win:not([data-dir=A]) #annPanel{display:none}
+.win:not([data-dir=B]) #margin,.win:not([data-dir=B]) #marginLinks{display:none}
+.win:not([data-dir=C]) #canvas{display:none}
+.win[data-dir=C] #left{display:none}
+.side{border-right:1px solid var(--line);overflow:auto}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--dot-c,var(--ink-4));flex:none}
+
+/* ── left sidebar: 문서 / 목차 / 쪽 ── */
+#left{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+#leftTabs{display:flex;margin:12px 12px 8px;padding:2px;border-radius:7px;background:var(--chrome-2);flex:none}
+#leftTabs button{flex:1;height:24px;border-radius:5px;font-size:12px;color:var(--ink-2)}
+#leftTabs button.on{background:#fff;color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.08),0 0 0 .5px rgba(0,0,0,.06)}
+#leftBody{flex:1;min-height:0;overflow:auto}
+.lt-docs{padding:4px 8px 16px}
+.dl-h{font-size:11px;font-weight:600;color:var(--ink-3);padding:6px 8px 8px}
+.dl{display:flex;gap:10px;padding:8px;border-radius:8px;align-items:flex-start}
+.dl.on{background:#fff;box-shadow:0 0 0 .5px rgba(0,0,0,.08)}
+.dl.ex{opacity:.8}
+.dl-ic{width:24px;height:30px;border-radius:3px;background:#fff;box-shadow:0 0 0 .5px rgba(0,0,0,.18);flex:none;display:flex;flex-direction:column;gap:2.5px;padding:6px 4px}
+.dl-ic i{height:2px;background:#d8d8dd;border-radius:1px}
+.dl-ic.scan{background:#f1f1f3}.dl-ic.scan i{background:#c9c9cf}
+.dl-t{min-width:0;flex:1}
+.dl-t b{display:block;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dl-t span{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--ink-3);margin-top:2px;flex-wrap:wrap}
+.st{display:inline-flex;align-items:center;gap:4px}
+.st::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--st,var(--ink-4))}
+.st.wait{--st:var(--dot-yellow)}.st.check{--st:var(--dot-rose)}.st.ok{--st:var(--dot-green)}
+.dl-act{margin-top:6px;font-size:11.5px;color:var(--accent-ink);font-weight:600}
+.dl-add{display:block;width:100%;text-align:left;padding:8px;font-size:12px;color:var(--ink-3);border-radius:8px}
+.dl-add:hover{background:var(--chrome-2)}
+.dl-note{font-size:10.5px;color:var(--ink-4);padding:10px 8px 0;line-height:1.5}
+
+/* ── thumbs ── */
+.lt-pages{padding:4px 0 24px}
+.th{display:flex;flex-direction:column;align-items:center;gap:6px;padding:7px 0;cursor:pointer}
+.th-pg{width:100px;aspect-ratio:1/1.414;background:#fff;border-radius:2px;box-shadow:0 0 0 .5px rgba(0,0,0,.14);padding:11px 10px;display:flex;flex-direction:column;gap:3.5px;overflow:hidden}
+.th.on .th-pg{box-shadow:0 0 0 2px var(--accent)}
+.th-pg i{display:block;height:2.5px;border-radius:1px;background:#e2e2e6;flex:none}
+.th-pg i.t{height:6px;width:62%;background:#b9b9bf;margin-bottom:3px}
+.th-pg i.s{height:3.5px;width:38%;background:#c9c9ce;margin-top:3px}
+.th-pg i.h{background:var(--hl-c)}
+.th-pg i.gap{height:5px;background:none}
+.th-pg .bars{display:flex;align-items:flex-end;gap:3px;height:34px;margin:4px 0}
+.th-pg .bars b{flex:1;background:#c6d4f6;border-radius:1px}
+.th-pg .grid{height:40px;margin-top:4px;background:repeating-linear-gradient(#fff 0 6px,#e2e2e6 6px 7px),#fff;box-shadow:inset 0 0 0 1px #e2e2e6}
+.th-meta{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.th.on .th-meta{color:var(--accent);font-weight:600}
+.dots{display:flex;gap:3px}.dots i{width:5px;height:5px;border-radius:50%;background:var(--dot-c)}
+
+/* ── outline ── */
+.lt-toc{padding:6px 10px 16px}
+.ol-doc{font-size:13px;font-weight:700;padding:2px 8px 4px}
+.ol-sub{font-size:11px;color:var(--ink-3);padding:0 8px 14px}
+.ol a{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;font-size:12.5px;color:var(--ink-2);cursor:pointer;text-decoration:none}
+.ol a:hover{background:var(--chrome-2)}
+.ol a.on{background:var(--chrome-2);color:var(--ink);font-weight:600}
+.ol a.sub{padding-left:20px}.ol a.muted{color:var(--ink-4)}
+.ol a .pg{margin-left:auto;font-size:11px;color:var(--ink-4);font-variant-numeric:tabular-nums}
+.ol-sep{height:1px;background:var(--line);margin:14px 8px}
+.ol-stat{font-size:11.5px;color:var(--ink-3);padding:0 8px;line-height:1.8}
+
+/* ── document ── */
+.docpane{position:relative;min-width:0;background:var(--desk);display:flex;flex-direction:column}
+#docScroll{flex:1;min-height:0;overflow:auto;position:relative}
+#docStage{position:relative;padding:28px 0 96px;display:flex;flex-direction:column;align-items:center;gap:22px;min-height:100%}
+.win[data-dir=B] #docStage{align-items:flex-start;padding-right:300px}
+.page{width:720px;background:var(--paper);padding:52px 64px 60px;position:relative;box-shadow:0 0 0 .5px rgba(0,0,0,.08),0 2px 10px rgba(0,0,0,.06);flex:none}
+.run{display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-3);padding-bottom:10px;border-bottom:1px solid var(--line);margin-bottom:40px}
+.doc-head{display:flex;justify-content:space-between;align-items:flex-end;gap:24px}
+.doc-h1{font-family:var(--serif);font-weight:700;font-size:40px;letter-spacing:-.01em;margin:0;line-height:1.15}
+.doc-sub{font-family:var(--serif);font-size:17px;color:var(--ink-2);margin:12px 0 0}
+.doc-meta{font-size:11px;color:var(--ink-3);text-align:right;line-height:1.7;white-space:nowrap}
+.rule{width:40px;height:2px;background:var(--accent);margin:22px 0 34px}
+.doc-h2{font-size:21px;font-weight:700;margin:0 0 14px;display:flex;gap:14px;align-items:baseline}
+.doc-h2 em,.doc-h3 em{font-style:normal;color:var(--accent);font-family:var(--serif);font-weight:500}
+.doc-h2 em{font-size:26px}
+.doc-h3{font-size:16px;font-weight:700;margin:30px 0 12px;display:flex;gap:10px;align-items:baseline}
+.page p{font-size:14.5px;line-height:1.85;color:#2b2b2e;margin:0 0 16px;text-wrap:pretty}
+.cap{font-size:13px;font-weight:600;margin:26px 0 8px}.cap b{color:var(--accent)}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:#f6f6f8;font-weight:500;color:var(--ink-2);padding:7px 8px;border-top:1px solid var(--line-2);border-bottom:1px solid var(--line-2)}
+td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:center;color:var(--ink-2)}
+td:first-child{text-align:left}
+th.us,td.us{background:#f3f6fd;color:var(--accent-ink)}
+.ph i{display:block;height:9px;border-radius:2px;background:#ececef;margin:0 0 14px}
+.ph .fig{height:180px;border-radius:4px;background:#f4f4f6;display:grid;place-items:center;font-size:12px;color:var(--ink-4);margin:22px 0}
+mark.hl{background:var(--hl-c);color:inherit;border-radius:2px;padding:1px 1px;-webkit-box-decoration-break:clone;box-decoration-break:clone;cursor:pointer;transition:box-shadow .15s}
+mark.hl.is-linked,mark.hl.is-sel{box-shadow:0 0 0 1.5px var(--dot-c)}
+mark.hl.flash{animation:flash 1.2s ease-out}
+@keyframes flash{0%{box-shadow:0 0 0 7px color-mix(in oklch,var(--dot-c) 50%,transparent)}100%{box-shadow:0 0 0 0 transparent}}
+.pill{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);display:flex;align-items:center;padding:3px;border-radius:10px;background:rgba(255,255,255,.9);backdrop-filter:blur(14px);box-shadow:0 0 0 .5px rgba(0,0,0,.1),0 4px 16px rgba(0,0,0,.1);font-size:12.5px;font-variant-numeric:tabular-nums;z-index:5}
+.pill button{height:28px;min-width:28px;border-radius:7px;display:grid;place-items:center;color:var(--ink-2)}
+.pill button:hover{background:var(--chrome-2)}
+.pill .num{padding:0 8px}.pill .z{min-width:44px;text-align:center;color:var(--ink-2)}
+.pill .sep{width:1px;height:16px;background:var(--line-2);margin:0 4px}
+
+/* ── annotation panel (A) ── */
+#annPanel{border-left:1px solid var(--line);background:#fbfbfc;display:flex;flex-direction:column;min-height:0}
+.ap-h{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 8px}
+.ap-h h2{font-size:14px;margin:0}
+.ap-h button{font-size:12px;color:var(--ink-2);padding:3px 8px;border-radius:6px}
+.ap-h button:hover{background:var(--chrome-2)}
+#apTabs{display:flex;gap:2px;padding:0 12px 10px;border-bottom:1px solid var(--line)}
+#apTabs button{font-size:12px;padding:4px 9px;border-radius:6px;color:var(--ink-3)}
+#apTabs button.on{background:var(--chrome-2);color:var(--ink);font-weight:600}
+#apTabs .n{color:var(--ink-4);margin-left:4px;font-weight:500;font-variant-numeric:tabular-nums}
+#annList{list-style:none;margin:0;padding:0;overflow:auto;flex:1;position:relative}
+.ann{padding:14px 16px 16px;border-bottom:1px solid var(--line);cursor:pointer}
+.ann:hover,.ann.is-linked{background:#f3f3f5}
+.ann.is-sel{background:#fff;cursor:default}
+.ann-top{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink-3);margin-bottom:8px}
+.ann-tag{font-weight:600;color:var(--ink-2)}
+.ann-page{margin-left:auto;font-variant-numeric:tabular-nums}
+.ann-quote{margin:0;font-size:13.5px;line-height:1.75;color:var(--ink);text-wrap:pretty}
+.ann-quote span{background:var(--hl-c);-webkit-box-decoration-break:clone;box-decoration-break:clone;padding:1px 2px;border-radius:2px}
+.ann-note{font-size:13px;line-height:1.7;color:var(--ink-2);margin:10px 0 0;text-wrap:pretty;outline:none}
+.ann.memo .ann-note{margin-top:0;color:var(--ink)}
+.ann-add{margin-top:8px;font-size:12px;color:var(--ink-4)}
+.ann:hover .ann-add{color:var(--ink-2)}
+.editor{margin-top:10px;border:1px solid var(--line-2);border-radius:8px;background:#fff}
+.ed-bar{display:flex;align-items:center;gap:1px;padding:3px;border-bottom:1px solid var(--line)}
+.ed-bar button{min-width:26px;height:24px;border-radius:5px;font-size:12px;color:var(--ink-2)}
+.ed-bar button:hover{background:var(--chrome-2)}
+.ed-bar .grow{flex:1}.ed-bar .txt{padding:0 8px;color:var(--accent-ink)}
+.ed-body{padding:10px 12px;font-size:13px;line-height:1.7;min-height:66px;outline:none}
+[data-ph]:empty::before{content:attr(data-ph);color:var(--ink-4)}
+.ap-foot{padding:12px 16px 14px;font-size:11.5px;color:var(--ink-3);border-top:1px solid var(--line);line-height:1.6}
+
+/* ── margin notes (B) ── */
+#margin{position:absolute;top:0;width:262px}
+.mn{position:absolute;left:0;width:262px;font-size:12.5px;line-height:1.65;color:var(--ink-2);padding:8px 10px;border-radius:8px;cursor:pointer;transition:background .15s}
+.mn:hover,.mn.is-linked{background:rgba(255,255,255,.6)}
+.mn.is-sel{background:#fff;cursor:default;box-shadow:0 0 0 .5px rgba(0,0,0,.08),0 2px 8px rgba(0,0,0,.06)}
+.mn-top{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-3);margin-bottom:3px}
+.mn-top b{color:var(--ink-2);font-weight:600}
+.mn-body{outline:none;text-wrap:pretty}
+#marginLinks{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+#marginLinks path{fill:none}
+#marginLinks .br{stroke-width:2;stroke-linecap:round}
+#marginLinks .cn{stroke-width:1;opacity:.55}
+#marginLinks g.is-linked .cn,#marginLinks g.on .cn{opacity:1;stroke-width:1.4}
+
+/* ── canvas (C) ── */
+#canvas{position:relative;overflow:hidden;border-left:1px solid var(--line-2);background-color:#fafafa;background-image:radial-gradient(circle,#d3d3d8 1px,transparent 1.3px);background-size:20px 20px}
+.cv-h{position:absolute;top:12px;left:14px;right:14px;display:flex;align-items:center;z-index:3;pointer-events:none}
+.cv-h>*{pointer-events:auto}
+.cv-title{font-size:13px;font-weight:700;background:rgba(250,250,250,.92);padding:4px 8px;border-radius:6px}
+.cv-title span{color:var(--ink-3);font-weight:500;margin-left:6px}
+.cv-tools{margin-left:auto;display:flex;gap:2px;background:#fff;border-radius:8px;padding:2px;box-shadow:0 0 0 .5px rgba(0,0,0,.1),0 2px 6px rgba(0,0,0,.06)}
+.cv-tools button{height:26px;padding:0 10px;font-size:12px;border-radius:6px;color:var(--ink-2)}
+.cv-tools button:hover{background:var(--chrome-2)}
+#world{position:absolute;inset:0}
+#edges{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;pointer-events:none}
+#edges path{fill:none;stroke:#b4b4bb;stroke-width:1.25}
+.elabel{position:absolute;transform:translate(-50%,-50%);font-size:11px;color:var(--ink-2);background:#fafafa;padding:1px 7px;border-radius:10px;box-shadow:0 0 0 .5px var(--line-2);white-space:nowrap}
+.card{position:absolute;width:232px;background:#fff;border-radius:10px;padding:12px 14px 10px;cursor:grab;user-select:none;touch-action:none;box-shadow:0 0 0 .5px rgba(0,0,0,.13),0 2px 6px rgba(0,0,0,.05);transition:box-shadow .15s}
+.card.dragging{cursor:grabbing;box-shadow:0 0 0 .5px rgba(0,0,0,.13),0 14px 30px rgba(0,0,0,.14);z-index:2}
+.card.is-linked,.card.is-sel{box-shadow:0 0 0 1.5px var(--dot-c,var(--ink-3)),0 6px 20px rgba(0,0,0,.08)}
+.card.memo{background:#fffdf5;width:220px}
+.card .ann-quote{font-size:13px}
+.card .ann-note{font-size:12.5px;user-select:text}
+.card-src{margin-top:10px;padding-top:8px;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--ink-3)}
+.card-src button{color:var(--accent-ink);font-size:11px;font-weight:600}
+.cv-hint{position:absolute;left:14px;bottom:12px;font-size:11.5px;color:var(--ink-3)}
+
+/* ── overlays ── */
+#linkLayer{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:20;overflow:hidden}
+#linkLayer path{fill:none}
+#pop{position:fixed;z-index:50;display:none;align-items:center;gap:1px;background:#fff;border-radius:10px;padding:4px;transform:translate(-50%,calc(-100% - 10px));box-shadow:0 0 0 .5px rgba(0,0,0,.12),0 8px 24px rgba(0,0,0,.15)}
+#pop.on{display:flex}
+#pop .sw{width:28px;height:28px;border-radius:6px;display:grid;place-items:center}
+#pop .sw i{width:14px;height:14px;border-radius:50%;background:var(--hl-c);box-shadow:inset 0 0 0 1.5px var(--dot-c)}
+#pop button:hover{background:var(--chrome-2)}
+#pop .sep{width:1px;height:18px;background:var(--line-2);margin:0 4px}
+#pop .pb{height:28px;padding:0 9px;font-size:12.5px;border-radius:6px;color:var(--ink-2)}
+.switch{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);display:flex;align-items:center;gap:14px;background:#1d1d1f;color:#fff;border-radius:12px;padding:6px 6px 6px 14px;box-shadow:0 8px 24px rgba(0,0,0,.22);white-space:nowrap}
+.switch .lbl{font-size:11px;color:#98989d}
+.switch .opts{display:flex;gap:2px}
+.switch button{height:30px;padding:0 12px;border-radius:8px;font-size:12.5px;color:#d1d1d6}
+.switch button:hover{color:#fff}
+.switch button.on{background:#fff;color:#1d1d1f;font-weight:600}
+.switch .thesis{font-size:12px;color:#c7c7cc;padding-right:10px}
+</style>
+</head>
+<body>
+
+<div class="win" id="win" data-dir="A">
+  <header class="tb">
+    <div class="lights"><i></i><i></i><i></i></div>
+    <button class="ib" title="사이드바"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="2.5" width="13" height="11" rx="2"/><path d="M6 2.5v11"/></svg></button>
+    <div class="ttl"><b>문서 분석 보고서.pdf</b><span><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M2 5.2l2 2 4-4.4"/></svg>로컬 문서 · 변경사항 저장됨</span></div>
+    <div class="seg"><button data-mode="read">읽기</button><button data-mode="canvas">캔버스</button></div>
+    <div class="tb-r">
+      <button class="ib" title="문서에서 찾기 ⌘F"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="7" cy="7" r="4.6"/><path d="M10.4 10.4L14 14" stroke-linecap="round"/></svg></button>
+      <button class="ib" title="공유"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M5 6H3.5v8h9V6H11M8 1.5v8M5.5 4L8 1.5 10.5 4" stroke-linejoin="round"/></svg></button>
+      <button class="tbtn" id="toolBtn">도구<svg width="10" height="10" viewBox="0 0 10 10"><path d="M2.5 4l2.5 2.5L7.5 4" stroke="currentColor" stroke-width="1.3" fill="none"/></svg></button>
+      <div class="menu" id="toolMenu"><button>텍스트 편집<kbd>⌘E</kbd></button><button>OCR 텍스트 인식</button><button>화면 캡처<kbd>⇧⌘5</kbd></button></div>
+      <button class="primary">내보내기<svg width="10" height="10" viewBox="0 0 10 10"><path d="M2.5 4l2.5 2.5L7.5 4" stroke="currentColor" stroke-width="1.4" fill="none"/></svg></button>
+    </div>
+  </header>
+
+  <div class="body" id="appBody">
+    <aside class="side" id="left"><div id="leftTabs"></div><div id="leftBody"></div></aside>
+
+    <main class="docpane">
+      <div id="docScroll">
+        <div id="docStage">
+          <article class="page" id="page2" data-page="2">
+            <div class="run"><span>연구 분석 자료</span><span>문서 분석 보고서</span></div>
+            <div class="doc-head">
+              <div><h1 class="doc-h1">문서 분석 보고서</h1><p class="doc-sub" style="margin-bottom:0">핵심 내용을 읽고, 기록하고, 연결합니다</p></div>
+              <div class="doc-meta">2024년 10월 28일<br>연구 분석 자료</div>
+            </div>
+            <div class="rule"></div>
+            <section data-sec="s1">
+              <h2 class="doc-h2" id="h-s1"><em>01</em>연구 배경</h2>
+              <p><mark class="hl c-yellow" data-ann="a1">최근 디지털 문서의 양이 폭발적으로 증가하면서, 단순한 열람을 넘어 내용을 깊이 있게 이해하고 체계적으로 정리하는 도구에 대한 필요성이 커지고 있다.</mark> 특히 연구, 학습, 업무 환경에서 PDF는 여전히 핵심적인 지식 전달 매체로 사용되고 있으며, 효율적인 분석과 재활용을 위한 기능적 지원이 요구된다.</p>
+              <p>PDF 문서는 고정된 레이아웃과 높은 호환성 덕분에 다양한 분야에서 널리 사용되지만, <mark class="hl c-green" data-ann="a2">내용을 능동적으로 탐색하고 연결하는 데에는 여전히 한계가 있다.</mark> 이에 본 연구는 PDF 기반의 지식 탐색과 정리를 보다 효과적으로 수행할 수 있는 방법을 모색하고자 한다.</p>
+            </section>
+            <section data-sec="s11">
+              <h3 class="doc-h3" id="h-s11"><em>1.1</em>기존 도구의 한계</h3>
+              <p>기존의 PDF 뷰어 및 편집 도구는 대부분 단순한 주석 기능이나 기본적인 편집 기능에 그치고 있어, 방대한 문서에서 핵심 정보를 추출하고 이를 체계적으로 연결하는 데에는 한계가 있다. 특히 <mark class="hl c-rose" data-ann="a3">여러 문서를 비교하거나, 인용을 관리하고, 연구 노트를 통합적으로 운영하는 기능은 충분히 지원되지 않고 있다.</mark></p>
+              <div class="cap" id="tbl1"><b>표 1.</b> 주요 PDF 도구의 기능 비교</div>
+              <table>
+                <tr><th>기능</th><th>일반 PDF 뷰어</th><th>PDF 편집기</th><th class="us">PDFCanvas (제안)</th></tr>
+                <tr><td>주석 및 하이라이트</td><td>○</td><td>○</td><td class="us">○</td></tr>
+                <tr><td>텍스트 편집</td><td>×</td><td>○</td><td class="us">○</td></tr>
+                <tr><td>OCR (텍스트 인식)</td><td>△</td><td>○</td><td class="us">○</td></tr>
+                <tr><td>문서 간 인용 연결</td><td>×</td><td>△</td><td class="us">○</td></tr>
+                <tr><td>연구 노트 통합 관리</td><td>×</td><td>×</td><td class="us">○</td></tr>
+              </table>
+            </section>
+          </article>
+          <article class="page ph" id="page3" data-page="3">
+            <div class="run"><span>연구 분석 자료</span><span>문서 분석 보고서</span></div>
+            <h2 class="doc-h2" id="h-s2"><em>02</em>연구 목표</h2>
+            <i style="width:100%"></i><i style="width:96%"></i><i style="width:88%"></i><i style="width:60%"></i>
+            <div class="fig">그림 1 · 자리 표시</div>
+            <i style="width:100%"></i><i style="width:92%"></i><i style="width:74%"></i>
+          </article>
+          <svg id="marginLinks"></svg>
+          <div id="margin"></div>
+        </div>
+      </div>
+      <div class="pill">
+        <button data-nav="-1" title="이전 쪽"><svg width="12" height="12" viewBox="0 0 12 12"><path d="M7.5 2.5L4 6l3.5 3.5" stroke="currentColor" stroke-width="1.4" fill="none"/></svg></button>
+        <span class="num" id="pgNum">2 / 12</span>
+        <button data-nav="1" title="다음 쪽"><svg width="12" height="12" viewBox="0 0 12 12"><path d="M4.5 2.5L8 6 4.5 9.5" stroke="currentColor" stroke-width="1.4" fill="none"/></svg></button>
+        <span class="sep"></span>
+        <button data-zoom="-1" title="축소">−</button><span class="z" id="zoomVal">100%</span><button data-zoom="1" title="확대">+</button>
+      </div>
+    </main>
+
+    <aside id="annPanel">
+      <div class="ap-h"><h2>주석</h2><button data-act="new-memo">+ 메모</button></div>
+      <div id="apTabs"></div>
+      <ul id="annList"></ul>
+      <div class="ap-foot">문장을 드래그해 선택하면 형광펜을 긋거나 메모를 달 수 있어요.</div>
+    </aside>
+
+    <section id="canvas">
+      <div class="cv-h"><div class="cv-title">연구 배경 정리<span>캔버스</span></div><div class="cv-tools"><button data-act="new-memo">+ 메모</button><button data-act="reset">정렬</button></div></div>
+      <div id="world"></div>
+      <div class="cv-hint">카드를 끌어 배치 · 카드에 마우스를 올리면 원문과 이어집니다</div>
+    </section>
+
+    <svg id="linkLayer"></svg>
+  </div>
+</div>
+
+<div id="pop">
+  <button class="sw c-yellow" data-hl="yellow" title="노랑"><i></i></button>
+  <button class="sw c-green" data-hl="green" title="초록"><i></i></button>
+  <button class="sw c-rose" data-hl="rose" title="분홍"><i></i></button>
+  <button class="sw c-blue" data-hl="blue" title="파랑"><i></i></button>
+  <span class="sep"></span>
+  <button class="pb" data-hl="yellow" data-note="1">메모 달기</button>
+  <button class="pb" data-act="copy">복사</button>
+</div>
+
+<nav class="switch">
+  <span class="lbl">제안 시안</span>
+  <div class="opts"><button data-dir="A">A · 정돈된 3단</button><button data-dir="B">B · 여백 주석</button><button data-dir="C">C · 캔버스 분할</button></div>
+  <span class="thesis" id="thesis"></span>
+</nav>
+
+<script>
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const store={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const THESIS={
+  A:'구조는 그대로, 메모 체계·형광펜↔주석 연결·강조색만 정리',
+  B:'주석이 원문 옆 여백에 붙는다. 오른쪽 패널 없이 원문이 넓어진다',
+  C:'‘연결’을 탭에서 꺼내 화면 절반으로. 카드를 잇고 원문으로 되돌아간다',
+};
+const DEFAULT_POS={a1:{x:24,y:56},a2:{x:292,y:56},m1:{x:150,y:404},a3:{x:410,y:250}};
+const S={
+  dir:store.get('pdfcanvas.dir','A'), read:'A', sel:null, hover:null, filter:'all', userZoom:1, page:2, left:{A:'pages',B:'toc'},
+  anns:[
+    {id:'a1',kind:'quote',color:'yellow',tag:'핵심 근거',page:2,note:'디지털 문서의 증가가 PDF 분석 도구의 필요성을 높이는 주요 배경으로, 본 연구의 문제의식을 잘 설명하는 부분이다. 이후 연구 목표와도 직접적으로 연결된다.'},
+    {id:'a2',kind:'quote',color:'green',tag:'문제 정의',page:2,note:''},
+    {id:'a3',kind:'quote',color:'rose',tag:'기존 한계',page:2,note:'표 1의 ‘문서 간 인용 연결’ 행과 함께 볼 것.'},
+    {id:'m1',kind:'memo',page:2,note:'PDF는 여전히 핵심적인 지식 전달 매체이며, 이를 단순히 읽는 것을 넘어 능동적으로 분석하고 연결할 수 있는 도구가 필요하다.'},
+  ],
+  pos:JSON.parse(JSON.stringify(DEFAULT_POS)),
+  links:[['a1','m1','근거'],['a2','m1','근거'],['a3','a2','구체화']],
+};
+if(!'ABC'.includes(S.dir)) S.dir='A';
+if(S.dir!=='C') S.read=S.dir;
+let seq=5, zoomNow=1;
+
+const markEl=id=>$(`#page2 mark[data-ann="${id}"]`);
+const quoteOf=id=>{const m=markEl(id);return m?m.textContent:''};
+const annOf=id=>S.anns.find(a=>a.id===id);
+function ordered(){
+  const o=$$('#page2 mark.hl').map(m=>m.dataset.ann);
+  const q=S.anns.filter(a=>a.kind==='quote').sort((x,y)=>o.indexOf(x.id)-o.indexOf(y.id));
+  return [...q,...S.anns.filter(a=>a.kind==='memo')];
+}
+
+/* ── left sidebar: 문서 / 목차 / 쪽 (A 기본 쪽, B 기본 목차) ── */
+function renderLeft(){
+  const tab=S.left[S.dir]||'pages';
+  $('#leftTabs').innerHTML=[['docs','문서'],['toc','목차'],['pages','쪽']].map(([k,l])=>`<button data-left="${k}" class="${tab===k?'on':''}">${l}</button>`).join('');
+  $('#leftBody').innerHTML=tab==='docs'?docsHTML():tab==='toc'?outlineHTML():thumbsHTML();
+}
+function docsHTML(){
+  const nq=S.anns.filter(a=>a.kind==='quote').length, ic=cls=>`<div class="dl-ic ${cls}"><i></i><i></i><i style="width:70%"></i><i></i></div>`;
+  return `<div class="lt-docs"><div class="dl-h">이 프로젝트의 원문</div>
+    <div class="dl on">${ic('')}<div class="dl-t"><b>문서 분석 보고서.pdf</b><span>12쪽 · 인용 ${nq}<span class="st ok">텍스트 있음</span></span></div></div>
+    <div class="dl ex">${ic('scan')}<div class="dl-t"><b>예시 · 스캔 문서</b><span>8쪽 <span class="st wait">스캔 · OCR 대기</span></span><div class="dl-act">텍스트 인식하기</div></div></div>
+    <div class="dl ex">${ic('scan')}<div class="dl-t"><b>예시 · OCR 끝난 문서</b><span>5쪽 <span class="st check">확인할 줄 3</span></span></div></div>
+    <button class="dl-add">+ 원문 추가</button>
+    <div class="dl-note">‘예시’ 두 줄은 상태 표시를 보여 주는 자리 표시입니다.</div></div>`;
+}
+function thumbsHTML(){
+  const cols=S.anns.filter(a=>a.kind==='quote').map(a=>a.color);
+  const L=(n,w)=>Array.from({length:n},(_,i)=>`<i style="width:${w?w[i%w.length]:100}%"></i>`).join('');
+  const body={
+    1:`<i class="t"></i><i style="width:48%"></i><i class="gap"></i>${L(9,[100,96,90,100,72])}`,
+    2:`<i class="t" style="width:44%"></i><i class="gap"></i><i class="s"></i><i class="h c-yellow"></i><i class="h c-yellow" style="width:70%"></i>${L(2,[100,58])}<i></i><i class="h c-green" style="width:64%"></i>${L(1,[80])}<i class="s"></i>${L(2,[100,100])}<i class="h c-rose" style="width:86%"></i><div class="grid"></div>`,
+    3:`<i class="s"></i>${L(3,[100,92,70])}<div class="bars"><b style="height:30%"></b><b style="height:45%"></b><b style="height:40%"></b><b style="height:62%"></b><b style="height:78%"></b><b style="height:100%"></b></div>${L(4,[100,86])}`,
+    4:`<i class="s"></i>${L(2,[100,74])}<div class="grid"></div><div class="grid"></div>`,
+  };
+  return `<div class="lt-pages">${[1,2,3,4].map(n=>`<div class="th ${S.page===n?'on':''}" data-page="${n}"><div class="th-pg">${body[n]}</div><div class="th-meta">${n}${n===2?`<span class="dots">${cols.map(c=>`<i class="c-${c}"></i>`).join('')}</span>`:''}</div></div>`).join('')}</div>`;
+}
+function editorHTML(a){
+  return `<div class="editor"><div class="ed-bar"><button data-cmd="bold" title="굵게"><b>B</b></button><button data-cmd="italic" title="기울임"><i>I</i></button><button data-cmd="underline" title="밑줄"><u>U</u></button><button data-cmd="insertUnorderedList" title="목록">•</button><span class="grow"></span>${a.kind==='quote'?'<button class="txt" data-act="to-canvas">캔버스에 올리기</button>':''}</div><div class="ed-body" contenteditable="true" data-ph="${a.kind==='quote'?'이 문장에 대한 생각을 적어 보세요':'자유롭게 적어 보세요'}" data-edit="${a.id}">${esc(a.note)}</div></div>`;
+}
+function itemA(a){
+  const sel=S.sel===a.id;
+  const top=a.kind==='memo'
+    ?`<div class="ann-top"><span class="ann-tag">메모</span><span class="ann-page">p.${a.page}</span></div>`
+    :`<div class="ann-top"><span class="dot"></span><span class="ann-tag">${esc(a.tag||'인용')}</span><span class="ann-page">p.${a.page}</span></div><blockquote class="ann-quote"><span>${esc(quoteOf(a.id))}</span></blockquote>`;
+  const body=sel?editorHTML(a):a.note?`<p class="ann-note">${esc(a.note)}</p>`:`<div class="ann-add">+ 생각 적기</div>`;
+  return `<li class="ann ${a.kind} ${a.kind==='quote'?'c-'+a.color:''} ${sel?'is-sel':''}" data-ann="${a.id}">${top}${body}</li>`;
+}
+function renderA(){
+  const nq=S.anns.filter(a=>a.kind==='quote').length;
+  $('#apTabs').innerHTML=[['all','전체',S.anns.length],['quote','인용',nq],['memo','메모',S.anns.length-nq]]
+    .map(([k,l,n])=>`<button data-filter="${k}" class="${S.filter===k?'on':''}">${l}<span class="n">${n}</span></button>`).join('');
+  $('#annList').innerHTML=ordered().filter(a=>S.filter==='all'||a.kind===S.filter).map(itemA).join('');
+}
+
+/* ── B: margin notes (목차 HTML 은 왼쪽 사이드바 공용) ── */
+function outlineHTML(){
+  const dotsFor=sec=>S.anns.filter(a=>a.kind==='quote'&&markEl(a.id)?.closest('[data-sec]')?.dataset.sec===sec).map(a=>`<i class="c-${a.color}"></i>`).join('');
+  const rows=[['h-s1','01 연구 배경','s1',2,''],['h-s11','1.1 기존 도구의 한계','s11',2,'sub'],['tbl1','표 1. 도구 기능 비교','',2,'sub'],['h-s2','02 연구 목표','',3,'muted']];
+  const nq=S.anns.filter(a=>a.kind==='quote').length;
+  return `<div class="lt-toc"><div class="ol-doc">문서 분석 보고서</div><div class="ol-sub">내장 목차가 없어 문서 구조에서 추출</div>
+    <nav class="ol">${rows.map(([t,l,sec,pg,cls])=>`<a class="${cls}" data-goto="${t}"><span>${l}</span><span class="dots">${sec?dotsFor(sec):''}</span><span class="pg">${pg}</span></a>`).join('')}</nav>
+    <div class="ol-sep"></div><div class="ol-stat">인용 ${nq} · 메모 ${S.anns.length-nq}</div></div>`;
+}
+function noteB(a){
+  const sel=S.sel===a.id;
+  const top=a.kind==='memo'?`<div class="mn-top"><b>문서 메모</b></div>`:`<div class="mn-top"><span class="dot"></span><b>${esc(a.tag||'인용')}</b></div>`;
+  return `<div class="mn ${a.kind==='quote'?'c-'+a.color:''} ${sel?'is-sel':''}" data-ann="${a.id}">${top}<div class="mn-body" ${sel?'contenteditable="true"':''} data-ph="+ 생각 적기" data-edit="${a.id}">${esc(a.note)}</div></div>`;
+}
+let bItems=[];
+function renderB(){
+  const head=$('#page2 .doc-head');
+  bItems=ordered().map(a=>({a}));
+  $('#margin').innerHTML=bItems.map(({a})=>noteB(a)).join('');
+  layoutB(head);
+}
+function layoutB(){
+  const stage=$('#docStage'),sr=stage.getBoundingClientRect(),pr=$('#page2').getBoundingClientRect(),z=zoomNow;
+  const left=pr.right-sr.left+40, mg=$('#margin'); mg.style.left=left+'px';
+  bItems.forEach(it=>{
+    if(it.a.kind==='memo'){const h=$('#page2 .doc-head').getBoundingClientRect();it.top=h.top-sr.top;it.bot=it.top;return}
+    const rs=[...markEl(it.a.id).getClientRects()];it.top=rs[0].top-sr.top;it.bot=rs[rs.length-1].bottom-sr.top;
+  });
+  const els=[...mg.children], order=bItems.map((it,i)=>i).sort((x,y)=>bItems[x].top-bItems[y].top);
+  let prev=-1e9;
+  order.forEach(i=>{const it=bItems[i],el=els[i],y=Math.max(it.top-8,prev+12);el.style.top=y+'px';it.y=y;prev=y+el.offsetHeight});
+  const bx0=pr.right-sr.left-30*z, edge=pr.right-sr.left, lanes=[];
+  const qs=bItems.filter(it=>it.a.kind==='quote').sort((x,y)=>x.top-y.top);
+  qs.forEach(it=>{let k=lanes.findIndex(b=>b<it.top-2);if(k<0)k=lanes.push(0)-1;lanes[k]=it.bot;it.lane=k});
+  $('#marginLinks').innerHTML=qs.map(it=>{
+    const c=`var(--dot-${it.a.color})`, ym=it.top+10*z, ty=it.y+17, bx=bx0+it.lane*8*z;
+    return `<g data-ann="${it.a.id}" class="${S.sel===it.a.id?'on':''}"><path class="br" style="stroke:${c}" d="M${bx},${it.top+3} V${it.bot-3}"/><path class="cn" style="stroke:${c}" d="M${bx+4},${ym} H${edge+8} C${edge+22},${ym} ${left-22},${ty} ${left-6},${ty} H${left+2}"/></g>`;
+  }).join('');
+}
+
+/* ── C: canvas ── */
+function cardC(a){
+  const p=S.pos[a.id], sel=S.sel===a.id;
+  const head=a.kind==='memo'?`<div class="ann-top"><span class="ann-tag">메모</span></div>`
+    :`<div class="ann-top"><span class="dot"></span><span class="ann-tag">${esc(a.tag||'인용')}</span></div><blockquote class="ann-quote"><span>${esc(quoteOf(a.id))}</span></blockquote>`;
+  const note=sel?`<div class="ann-note" contenteditable="true" data-ph="생각 적기" data-edit="${a.id}">${esc(a.note)}</div>`:a.note?`<p class="ann-note">${esc(a.note)}</p>`:'';
+  const src=a.kind==='quote'?`<div class="card-src"><span>문서 분석 보고서 · p.${a.page}</span><button data-src="${a.id}">원문 보기</button></div>`:'';
+  return `<div class="card ${a.kind} ${a.kind==='quote'?'c-'+a.color:''} ${sel?'is-sel':''}" data-ann="${a.id}" style="left:${p.x}px;top:${p.y}px">${head}${note}${src}</div>`;
+}
+function renderC(){
+  $('#world').innerHTML=`<svg id="edges"><defs><marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0.8 L7,4 L0,7.2" fill="none" stroke="#b4b4bb" stroke-width="1.2"/></marker></defs><g id="edgePaths"></g></svg>${S.anns.map(cardC).join('')}<div id="elabels"></div>`;
+  drawEdges();
+}
+function anchors(el){const x=el.offsetLeft,y=el.offsetTop,w=el.offsetWidth,h=el.offsetHeight;return[{x:x+w/2,y,nx:0,ny:-1},{x:x+w,y:y+h/2,nx:1,ny:0},{x:x+w/2,y:y+h,nx:0,ny:1},{x,y:y+h/2,nx:-1,ny:0}]}
+function drawEdges(){
+  let d='',l='';
+  S.links.forEach(([f,t,label])=>{
+    const A=$(`#world [data-ann="${f}"]`),B=$(`#world [data-ann="${t}"]`); if(!A||!B) return;
+    let best=null; anchors(A).forEach(p=>anchors(B).forEach(q=>{const dist=Math.hypot(q.x-p.x,q.y-p.y);if(!best||dist<best[2])best=[p,q,dist]}));
+    const [p,q,dist]=best,k=Math.max(24,Math.min(90,dist/2.4));
+    const c1={x:p.x+p.nx*k,y:p.y+p.ny*k},c2={x:q.x+q.nx*k,y:q.y+q.ny*k};
+    d+=`<path marker-end="url(#ah)" d="M${p.x},${p.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${q.x},${q.y}"/>`;
+    l+=`<span class="elabel" style="left:${(p.x+3*c1.x+3*c2.x+q.x)/8}px;top:${(p.y+3*c1.y+3*c2.y+q.y)/8}px">${label}</span>`;
+  });
+  $('#edgePaths').innerHTML=d; $('#elabels').innerHTML=l;
+}
+
+/* ── shared: hover/selection link line ── */
+function drawLink(){
+  const svg=$('#linkLayer'), id=S.hover||S.sel, a=id&&annOf(id);
+  if(!a||a.kind!=='quote'||S.dir==='B'){svg.innerHTML='';return}
+  const m=markEl(id), t=$(S.dir==='A'?`#annList [data-ann="${id}"]`:`#world [data-ann="${id}"]`);
+  if(!m||!t){svg.innerHTML='';return}
+  const b=$('#appBody').getBoundingClientRect(), d=$('#docScroll').getBoundingClientRect(), p=$('#page2').getBoundingClientRect();
+  const box=$(S.dir==='A'?'#annList':'#canvas').getBoundingClientRect(), tr=t.getBoundingClientRect();
+  const rs=[...m.getClientRects()], top=Math.max(rs[0].top,d.top), bot=Math.min(rs[rs.length-1].bottom,d.bottom);
+  if(bot<=top||tr.bottom<box.top||tr.top>box.bottom){svg.innerHTML='';return}
+  const c=`var(--dot-${a.color})`, bx=p.right-b.left-28*zoomNow, y1=(top+bot)/2-b.top;
+  const x2=tr.left-b.left, y2=Math.min(Math.max(tr.top+20,box.top+8),box.bottom-8)-b.top, dx=Math.max(30,(x2-bx)*.5);
+  svg.innerHTML=`<path style="stroke:${c}" stroke-width="2" stroke-linecap="round" d="M${bx},${top-b.top+2} V${bot-b.top-2}"/>
+    <path style="stroke:${c}" stroke-width="1.3" stroke-dasharray="3 3" d="M${bx+4},${y1} C${bx+dx},${y1} ${x2-dx},${y2} ${x2-3},${y2}"/>
+    <circle cx="${x2-3}" cy="${y2}" r="3" style="fill:${c}"/>`;
+}
+function setHover(id){
+  if(id===S.hover) return; S.hover=id;
+  $$('.is-linked').forEach(x=>x.classList.remove('is-linked'));
+  if(id) $$(`[data-ann="${id}"]`).forEach(x=>x.classList.add('is-linked'));
+  drawLink();
+}
+
+/* ── layout / render ── */
+function fit(){
+  const sc=$('#docScroll'), avail=sc.clientWidth, need=S.dir==='B'?720+300+64:720+56;
+  zoomNow=Math.max(.5,Math.min(1.6,Math.min(1,avail/need)*S.userZoom));
+  $$('.page').forEach(p=>p.style.zoom=zoomNow);
+  $('#zoomVal').textContent=Math.round(zoomNow*100)+'%';
+  $('#docStage').style.paddingLeft=S.dir==='B'?Math.max(28,(avail-(720*zoomNow+300))/2)+'px':'';
+}
+function render(){
+  $('#win').dataset.dir=S.dir; store.set('pdfcanvas.dir',S.dir);
+  $$('.switch [data-dir]').forEach(b=>b.classList.toggle('on',b.dataset.dir===S.dir));
+  $('#thesis').textContent=THESIS[S.dir];
+  $$('.seg [data-mode]').forEach(b=>b.classList.toggle('on',(b.dataset.mode==='canvas')===(S.dir==='C')));
+  $$('mark.hl').forEach(m=>m.classList.toggle('is-sel',m.dataset.ann===S.sel));
+  fit();
+  if(S.dir!=='C') renderLeft();
+  if(S.dir==='A') renderA();
+  if(S.dir==='B') renderB();
+  if(S.dir==='C') renderC();
+  S.hover=null; drawLink();
+}
+function setDir(d){if(d===S.dir)return; S.dir=d; if(d!=='C') S.read=d; render(); if(S.sel) revealMark(S.sel,false)}
+function revealMark(id,flash=true){
+  const m=markEl(id); if(!m) return;
+  const sc=$('#docScroll'),r=m.getBoundingClientRect(),s=sc.getBoundingClientRect();
+  if(r.top<s.top+40||r.bottom>s.bottom-80) sc.scrollTo({top:sc.scrollTop+r.top-s.top-s.height*.3,behavior:'smooth'});
+  if(flash){m.classList.remove('flash');void m.offsetWidth;m.classList.add('flash')}
+}
+function focusEnd(el){el.focus();const r=document.createRange();r.selectNodeContents(el);r.collapse(false);const s=getSelection();s.removeAllRanges();s.addRange(r)}
+function select(id,{reveal=true,focus=false}={}){
+  S.sel=id; render();
+  if(reveal) revealMark(id);
+  if(S.dir==='A'){const el=$(`#annList [data-ann="${id}"]`),list=$('#annList');
+    if(el&&(el.offsetTop<list.scrollTop||el.offsetTop+el.offsetHeight>list.scrollTop+list.clientHeight)) list.scrollTo({top:el.offsetTop-12,behavior:'smooth'})}
+  const ed=$(`[data-edit="${id}"][contenteditable]`); if(focus&&ed) focusEnd(ed);
+}
+function addMemo(){
+  const id='m'+(seq++), n=S.anns.length;
+  S.anns.push({id,kind:'memo',page:S.page,note:''}); S.pos[id]={x:60+(n%3)*40,y:520+(n%2)*30};
+  select(id,{reveal:false,focus:true});
+}
+
+/* ── selection popover (single text node, outside existing marks) ── */
+let pending=null;
+function hidePop(){$('#pop').classList.remove('on');pending=null}
+function checkSel(){
+  const s=getSelection(); if(!s.rangeCount||s.isCollapsed) return hidePop();
+  const r=s.getRangeAt(0), n=r.startContainer;
+  if(n!==r.endContainer||n.nodeType!==3||!n.parentElement.closest('#page2 p')||n.parentElement.closest('mark')||r.toString().trim().length<2) return hidePop();
+  pending=r.cloneRange(); const b=r.getBoundingClientRect(), pop=$('#pop');
+  pop.style.left=(b.left+b.width/2)+'px'; pop.style.top=b.top+'px'; pop.classList.add('on');
+}
+function applyHl(color,withNote){
+  if(!pending) return;
+  const id='a'+(seq++), m=document.createElement('mark'), n=S.anns.filter(a=>a.id.startsWith('a')).length;
+  m.className='hl c-'+color; m.dataset.ann=id; pending.surroundContents(m);
+  S.anns.push({id,kind:'quote',color,tag:'',page:2,note:''}); S.pos[id]={x:24+((n-3)%3)*252,y:580+Math.floor((n-3)/3)*36};
+  getSelection().removeAllRanges(); hidePop();
+  if(withNote) select(id,{reveal:false,focus:true}); else {render(); m.classList.add('flash')}
+}
+
+/* ── events ── */
+document.addEventListener('mouseover',e=>{const t=e.target.closest('[data-ann]');setHover(t?t.dataset.ann:null)});
+document.addEventListener('mouseup',e=>{if(!e.target.closest('#pop')) setTimeout(checkSel,0)});
+document.addEventListener('mousedown',e=>{const c=e.target.closest('[data-cmd]');if(c){e.preventDefault();document.execCommand(c.dataset.cmd)}});
+document.addEventListener('input',e=>{const id=e.target.dataset.edit;if(!id)return;annOf(id).note=e.target.innerText.trim();if(S.dir==='B')layoutB();if(S.dir==='C')drawEdges()});
+document.addEventListener('click',e=>{
+  const t=e.target, q=s=>t.closest(s);
+  if(!q('#toolBtn')) $('#toolMenu').classList.remove('on');
+  let el;
+  if(q('#toolBtn')) return $('#toolMenu').classList.toggle('on');
+  if(el=q('#pop [data-hl]')) return applyHl(el.dataset.hl,!!el.dataset.note);
+  if(q('#pop [data-act="copy"]')){try{navigator.clipboard.writeText(pending?pending.toString():'')}catch(err){} getSelection().removeAllRanges(); return hidePop()}
+  if(el=q('.switch [data-dir]')) return setDir(el.dataset.dir);
+  if(el=q('.seg [data-mode]')) return setDir(el.dataset.mode==='canvas'?'C':S.read);
+  if(el=q('[data-filter]')){S.filter=el.dataset.filter;return renderA()}
+  if(el=q('[data-left]')){S.left[S.dir]=el.dataset.left;return renderLeft()}
+  if(q('[data-act="new-memo"]')) return addMemo();
+  if(q('[data-act="reset"]')){Object.assign(S.pos,JSON.parse(JSON.stringify(DEFAULT_POS)));return renderC()}
+  if(q('[data-act="to-canvas"]')){setDir('C');return}
+  if(el=q('[data-src]')) return revealMark(el.dataset.src);
+  if(el=q('[data-goto]')){const g=$('#'+el.dataset.goto),sc=$('#docScroll');return sc.scrollTo({top:sc.scrollTop+g.getBoundingClientRect().top-sc.getBoundingClientRect().top-24,behavior:'smooth'})}
+  if(el=q('.th')){const p=$(`.page[data-page="${el.dataset.page}"]`);if(p){const sc=$('#docScroll');sc.scrollTo({top:sc.scrollTop+p.getBoundingClientRect().top-sc.getBoundingClientRect().top-28,behavior:'smooth'})}return}
+  if(el=q('[data-nav]')){const p=$(`.page[data-page="${S.page+ +el.dataset.nav}"]`);if(p){const sc=$('#docScroll');sc.scrollTo({top:sc.scrollTop+p.getBoundingClientRect().top-sc.getBoundingClientRect().top-28,behavior:'smooth'})}return}
+  if(el=q('[data-zoom]')){S.userZoom=Math.max(.6,Math.min(1.5,S.userZoom+ +el.dataset.zoom*.1));fit();if(S.dir==='B')layoutB();return drawLink()}
+  if(q('[contenteditable]')||q('.card')) return;
+  if(el=q('mark.hl')) return select(el.dataset.ann,{reveal:false});
+  if(el=q('.ann,.mn')) return S.sel===el.dataset.ann?null:select(el.dataset.ann);
+});
+document.addEventListener('keydown',e=>{
+  if(e.target.closest('[contenteditable]')){if(e.key==='Escape'){e.target.blur();S.sel=null;render()}return}
+  if({'1':'A','2':'B','3':'C'}[e.key]) setDir({'1':'A','2':'B','3':'C'}[e.key]);
+  if(e.key==='Escape'){S.sel=null;hidePop();render()}
+});
+let drag=null;
+$('#canvas').addEventListener('pointerdown',e=>{
+  const c=e.target.closest('.card'); if(!c||e.target.closest('button,[contenteditable]')) return;
+  const id=c.dataset.ann; drag={id,el:c,sx:e.clientX,sy:e.clientY,ox:S.pos[id].x,oy:S.pos[id].y,moved:false}; c.setPointerCapture(e.pointerId);
+});
+$('#canvas').addEventListener('pointermove',e=>{
+  if(!drag) return; const dx=e.clientX-drag.sx, dy=e.clientY-drag.sy;
+  if(!drag.moved&&Math.abs(dx)+Math.abs(dy)<4) return; drag.moved=true; drag.el.classList.add('dragging');
+  S.pos[drag.id]={x:drag.ox+dx,y:drag.oy+dy}; drag.el.style.left=S.pos[drag.id].x+'px'; drag.el.style.top=S.pos[drag.id].y+'px';
+  drawEdges(); drawLink();
+});
+$('#canvas').addEventListener('pointerup',()=>{if(!drag)return;const{id,moved,el}=drag;drag=null;el.classList.remove('dragging');if(!moved&&S.sel!==id) select(id)});
+let raf=0; const redraw=()=>{cancelAnimationFrame(raf);raf=requestAnimationFrame(()=>{drawLink()})};
+$('#docScroll').addEventListener('scroll',()=>{
+  hidePop(); redraw();
+  const sc=$('#docScroll'), mid=sc.getBoundingClientRect().top+sc.clientHeight*.45, n=$('#page3').getBoundingClientRect().top<mid?3:2;
+  if(n!==S.page){S.page=n;$('#pgNum').textContent=`${n} / 12`;if(S.dir!=='C'&&S.left[S.dir]==='pages')renderLeft()}
+});
+$('#annList').addEventListener('scroll',redraw);
+window.addEventListener('resize',()=>{fit();if(S.dir==='B')layoutB();if(S.dir==='C')drawEdges();drawLink()});
+render();
+document.fonts&&document.fonts.ready.then(render);
+</script>
+</body>
+</html>
