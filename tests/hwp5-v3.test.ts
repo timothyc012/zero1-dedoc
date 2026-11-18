@@ -347,6 +347,29 @@ describe("이미지 추출 (BIN_DATA + SHAPE_COMPONENT_PICTURE)", () => {
     ])
     assert.ok(blocks.some(b => b.type === "paragraph" && b.text === "글상자 내용"))
   })
+
+  it("그림($pic) 캡션은 방향이 아래면 그림 뒤, 위면 그림 앞 (HWPX hp:pic 캡션과 같은 순서)", () => {
+    const pic = Buffer.alloc(80)
+    pic.writeUInt16LE(1, 71)
+    const docInfo = emptyDocInfo()
+    docInfo.binData = [{ kind: "embed", storageId: 10, extension: "jpg" }]
+    const order = (side: number) => {
+      const cap = Buffer.alloc(12)
+      cap.writeUInt32LE(side, 8) // 캡션 속성 낮은 두 비트 = 방향(2 위·3 아래)
+      const { blocks } = parse([
+        rec(TAG_PARA_HEADER, 0, paraHeaderData()),
+        rec(TAG_CTRL_HEADER, 1, Buffer.from(" osg", "ascii")),
+        rec(TAG_LIST_HEADER, 2, cap),
+        rec(TAG_PARA_HEADER, 2, paraHeaderData()),
+        rec(TAG_PARA_TEXT, 3, utf16("그림 1. 캡션")),
+        rec(TAG_SHAPE_COMPONENT, 2, Buffer.from("cip$", "ascii")),
+        rec(TAG_SHAPE_COMPONENT_PICTURE, 3, pic),
+      ], docInfo)
+      return blocks.filter(b => b.type === "image" || b.type === "paragraph").map(b => b.type)
+    }
+    assert.deepEqual(order(3), ["image", "paragraph"])
+    assert.deepEqual(order(2), ["paragraph", "image"])
+  })
 })
 
 // ─── 문단번호/글머리표 ───────────────────────────────
@@ -531,6 +554,26 @@ describe("자동번호 (atno/nwno)", () => {
     ], null, doc)
     assert.equal(blocks[0].text, "표 1")
     assert.equal(blocks[1].text, "표 10")
+  })
+
+  it("atno 에 저장된 번호가 있으면 그 번호를 쓴다 (tac-img-02 \"<그림 5> 싱크홀 맵\" — 세면 앞 캡션만큼 모자랐다)", () => {
+    const atnoData = (num: number): Buffer => {
+      const b = Buffer.alloc(16)
+      b.write("onta", 0, "ascii")
+      b.writeUInt32LE(3, 4) // type 3 = 그림
+      b.writeUInt16LE(num, 8)
+      return b
+    }
+    const { blocks } = parse([
+      rec(TAG_PARA_HEADER, 0, paraHeaderData()),
+      rec(TAG_PARA_TEXT, 1, Buffer.concat([utf16("그림 "), extCtrlChar(18, "onta")])),
+      rec(TAG_CTRL_HEADER, 1, atnoData(5)),
+      rec(TAG_PARA_HEADER, 0, paraHeaderData()),
+      rec(TAG_PARA_TEXT, 1, Buffer.concat([utf16("그림 "), extCtrlChar(18, "onta")])),
+      rec(TAG_CTRL_HEADER, 1, atnoData(6)),
+    ], null, createHwp5DocState())
+    assert.equal(blocks[0].text, "그림 5")
+    assert.equal(blocks[1].text, "그림 6")
   })
 })
 

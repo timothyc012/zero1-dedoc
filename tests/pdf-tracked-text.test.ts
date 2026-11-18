@@ -2,8 +2,8 @@
 
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
-import { restoreTrackedSpacing, markSyntheticSpaces, markTrailingSpaceGlyphs, softHyphenHeads } from "../src/pdf/tracked-text.js"
+import { OPS } from "../src/pdf/ops.js"
+import { restoreTrackedSpacing, markSyntheticSpaces, joinTrackedHangul, markTrailingSpaceGlyphs, softHyphenHeads } from "../src/pdf/tracked-text.js"
 import type { PdfTextItem } from "../src/pdf/text-line.js"
 
 const raw = (str: string, fontName = "F1"): PdfTextItem => ({ str, transform: [11, 0, 0, 11, 100, 40], width: 100, height: 11, fontName })
@@ -21,6 +21,46 @@ describe("restoreTrackedSpacing", () => {
     restoreTrackedSpacing(items, [OPS.setFont, OPS.showText, OPS.setFont, OPS.showText],
       [["F1", 11], [glyphs("홍보지원반")], ["F2", 11], [glyphs("XYZW")]])
     assert.deepEqual(items.map(i => i.str), ["홍 보 지 원 반", "A B C D"])
+  })
+})
+
+describe("띄운 숫자 아이템 — 글리프 흐름에 공백 글리프가 있으면 친 공백", () => {
+  it("공백 글리프가 있는 \"4 2\" 는 자간 정규화로 붙이지 않고, 없는 \"45 0 -7\" 은 종전대로 붙인다", async () => {
+    const { normalizeItems } = await import("../src/pdf/text-line.js")
+    // LibreOffice PDF "A|4 2|페이지" — 라틴·한글 갈래마다 아이템이 갈리고 가운데 아이템이 공백 글리프를 품는다(web065 "A4 2페이지")
+    const real = [raw("4 2")]
+    restoreTrackedSpacing(real, [OPS.setFont, OPS.showText], [["F1", 11], [glyphs("4 2")]])
+    assert.deepEqual(normalizeItems(real).map(i => i.text), ["4 2"])
+    // 자간을 벌린 번호 — pdfjs 가 글자 틈마다 넣은 공백(흐름에 공백 글리프 없음)
+    const tracked = [raw("45 0 -7 3 40 )")]
+    restoreTrackedSpacing(tracked, [OPS.setFont, OPS.showText], [["F1", 11], [glyphs("450-7340)")]])
+    assert.deepEqual(normalizeItems(tracked).map(i => i.text), ["450-7340)"])
+  })
+})
+
+describe("joinTrackedHangul — 자간 넓힌 한글 줄의 pdfjs 가짜 공백", () => {
+  it("공백 글리프 없는 한글 사이 공백만 지운다(\"한 국 정부 가\" → \"한국 정부가\")", () => {
+    // 156782429: "한{970}[-106.9]국{970}[-106.9] {300}" — 0.107em 자간 이동마다 pdfjs 가 공백을 넣는다
+    const items = [raw("한 국 정부 가")]
+    joinTrackedHangul(items, [OPS.setFont, OPS.showText], [["F1", 13], [[{ unicode: "한" }, -106.9, { unicode: "국" }, -106.9, { unicode: " " }, { unicode: "정" }, { unicode: "부" }, { unicode: " " }, { unicode: "가" }]]])
+    assert.deepEqual(items.map(i => i.str), ["한국 정부 가"])
+  })
+  it("친 공백(\"박 재 경\")·라틴 사이·흐름이 어긋난 글꼴은 그대로", () => {
+    const items = [raw("박 재 경"), raw("A B", "F2"), raw("목 적", "F3")]
+    joinTrackedHangul(items, [OPS.setFont, OPS.showText, OPS.setFont, OPS.showText, OPS.setFont, OPS.showText],
+      [["F1", 11], [glyphs("박 재 경")], ["F2", 11], [glyphs("AB")], ["F3", 11], [glyphs("목저")]])
+    assert.deepEqual(items.map(i => i.str), ["박 재 경", "A B", "목 적"])
+  })
+  it("세 글자 넘게 한 글자씩 띄운 아이템은 균등배분 판정에 맡긴다(\"증 감 률\")", () => {
+    const items = [raw("증 감 률"), raw("목 적", "F2")]
+    joinTrackedHangul(items, [OPS.setFont, OPS.showText, OPS.setFont, OPS.showText], [["F1", 11], [glyphs("증감률")], ["F2", 11], [glyphs("목적")]])
+    assert.deepEqual(items.map(i => i.str), ["증 감 률", "목적"])
+  })
+  it("균등배분 칸만큼 벌어진 자리(TJ 0.15em 넘게)·연산 경계는 그대로", () => {
+    const items = [raw("감 률"), raw("한 국", "F2")]
+    joinTrackedHangul(items, [OPS.setFont, OPS.showText, OPS.setFont, OPS.showText, OPS.showText],
+      [["F1", 12], [[{ unicode: "감" }, -590, { unicode: "률" }]], ["F2", 12], [glyphs("한")], [glyphs("국")]])
+    assert.deepEqual(items.map(i => i.str), ["감 률", "한 국"])
   })
 })
 

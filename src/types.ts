@@ -330,6 +330,11 @@ export interface ParseOptions {
   /** 원본 파일 경로 (DRM COM fallback에 필요, 내부 전용) */
   filePath?: string
   /**
+   * DRM 걸린 HWPX·배포용 HWP 를 만나면 Windows 의 한컴오피스 한글을 자동화(COM)로 띄워 글을 읽는다(filePath 가 있을 때, 기본 true).
+   * false 거나 환경 변수 KORDOC_NO_HANCOM=1 이면 한글을 띄우지 않고 DRM·배포용 안내로 끝낸다 (한글 창·프로세스를 띄우면 안 되는 서버·감싼 앱용)
+   */
+  hancomFallback?: boolean
+  /**
    * PDF·이미지 수식 OCR 활성화 (기본 false). 이미지 입력은 같은 모델로 래스터의 수식 영역을 찾아 그 자리 OCR 글상자를
    * `$...$` 로 바꾼다(수식 구조가 있고 덮은 글이 한글 위주가 아닌 영역만 — src/ocr/image-formula.ts).
    *
@@ -338,7 +343,7 @@ export interface ParseOptions {
    * 블록 텍스트에 삽입된다.
    *
    * 필수 optional 의존성: `onnxruntime-node`, `@huggingface/tokenizers`,
-   * `@hyzyla/pdfium`, `sharp`. 미설치 시 parse 에 실패하지 않고 **경고만** 남기고
+   * `sharp`. 미설치 시 parse 에 실패하지 않고 **경고만** 남기고
    * 수식 인식은 skip 한다 (일반 텍스트 추출은 정상 동작).
    *
    * 모델(~155MB) 은 첫 사용 시 HuggingFace 에서 자동 다운로드 되어
@@ -381,9 +386,10 @@ export interface ParseOptions {
    *  모든 형식의 그림(HWP·HWPX·HWP3·DOCX·PPTX·PDF), `images: false` 여도 읽는다. optional dependency `zxing-wasm` 이 필요하다 */
   qrCodes?: boolean
   /**
-   * 그림 형식 (#188). 기본(지정 안 함)은 지금처럼 PDF 그림은 PNG, 다른 형식은 문서에 든 원본 그림 그대로다.
+   * 그림 형식 (#188). 기본(지정 안 함)은 LLM 이 읽는 형식으로 정규화한다 — 주요 LLM API(Claude·OpenAI·Gemini)가 모두 받는
+   * PNG·JPEG·WebP 는 원본 바이트 그대로, 그 밖(BMP·GIF·TIFF·AVIF·HEIC·SVG)은 PNG. PDF 그림은 지금처럼 PNG. 이미지 파일 입력은 페이지마다 그 페이지 이미지.
    * 지정하면 모든 그림이 그 형식이다 — 파일명(`image_NNN.png`·`.webp`)·MIME·바이트가 같은 형식이고, 형식은 확장자가 아니라 바이트로 판정한다.
-   * - `"png"`: PNG. 이미 PNG 인 그림은 바이트 그대로, BMP 는 kordoc 디코더, 그 밖(JPEG·GIF·TIFF·WebP·SVG)은 sharp.
+   * - `"png"`: PNG. 이미 PNG 인 그림은 바이트 그대로, BMP 는 kordoc 디코더, HEIC 는 optional dependency `libheif-js`, 그 밖(JPEG·GIF·TIFF·AVIF·WebP·SVG)은 sharp.
    * - `"webp"`: 무손실 WebP(`exact`). PDF 그림 200개 실측 25.5 → 14.8MB(58%), 인코딩 CPU 3.25 → 8.6초(4개 스레드로 경과 시간 2.58 → 2.1초).
    * 보이는 그림을 맞춘다: EXIF 회전 적용, ICC 프로필·CMYK 는 sRGB, 움직이는 GIF 는 첫 장, SVG 는 그린 그림.
    * 바꿀 수 없는 그림(WMF·EMF, 못 읽는 BMP 변형·손상, WebP 한도 16,383px 초과)은 원본 형식(PDF 는 PNG)으로 내고 경고(`SKIPPED_IMAGE`)한다.
@@ -789,7 +795,7 @@ export interface FormResult {
 // ─── OCR 프로바이더 ─────────────────────────────────
 
 /** 사용자 제공 OCR 함수 — 페이지 이미지를 받아 텍스트 반환.
- *  PDF 경로는 항상 "image/png", 이미지 직접 입력 경로는 원본 mime 그대로 전달. */
+ *  PDF 경로는 항상 "image/png", 이미지 직접 입력 경로는 PNG·JPEG·WebP 면 원본 그대로, 그 밖(TIFF·GIF·AVIF·HEIC·BMP·PCX·DCX)은 해당 페이지를 PNG 로 변환해 전달. */
 export type OcrProvider = (
   pageImage: Uint8Array,
   pageNumber: number,

@@ -3,6 +3,7 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { foldFractionBars } from "../src/pdf/fraction-bars.js"
+import { extractPageBlocksWithLines } from "../src/pdf/page-blocks.js"
 import type { NormItem } from "../src/pdf/text-line.js"
 import type { LineSegment } from "../src/pdf/line-types.js"
 
@@ -22,6 +23,25 @@ describe("foldFractionBars", () => {
     assert.ok(bars.has(bar))
     assert.deepEqual(texts(items), ["배출량", "=", "$\\frac{\\text{할당 오염부하량}}{\\text{기준배출수질}}$", "×10"])
     assert.equal(items.find(i => i.text.startsWith("$"))!.y, 623, "기준선 = 막대 − 0.3em — 수식 앞뒤 글과 한 줄")
+  })
+
+  it("OCR 쪽은 양끝이 세로 괘선에 닿는 표 칸 rule 을 접지 않는다 — raster ruling 은 굵기로 막대와 못 가른다", () => {
+    const vl = (x: number): LineSegment => ({ x1: x, y1: 600, x2: x, y2: 650, lineWidth: 0.48 })
+    const md = (fontName: string, verticals: LineSegment[]) => extractPageBlocksWithLines(eq().map(i => ({ ...i, fontName })), 1, { fnArray: [], argsArray: [] }, 595, 842,
+      { horizontals: [hl(229.2, 321.1, 626.4)], verticals }).map(b => b.text ?? "").join("\n")
+    assert.ok(md("F", []).includes("\\frac"), md("F", []))
+    assert.ok(!md("ocr", [vl(229.2), vl(321.1)]).includes("\\frac"), md("ocr", [vl(229.2), vl(321.1)]))
+    // 칸 괘선에 닿지 않은 OCR 쪽 막대는 진짜 분수다(시험지 수식)
+    assert.ok(md("ocr", []).includes("\\frac"), md("ocr", []))
+  })
+
+  it("칸마다 떨어진 글은 한 식으로 접지 않는다 — 세로 괘선 없는 표의 행 괘선 (OCR 벤치 web051)", () => {
+    // 건축허가신청서 2쪽: 행 괘선 98.3~553 @256.3, 위 줄에 칸마다 체크 상자, 아래 줄에 큰 글자 칸 하나
+    const row = [item("개인하수처리시설의 설치신고", 102, 264, 107, 8), item("[]", 226, 264, 12, 8), item("[]", 377, 258, 14, 8), item("[]", 527, 258, 14, 8),
+      item("신고", 253, 258, 15, 7), item("특정토양오염유발시설 설치의", 253, 246, 127, 14), item("소음·진동배출시설의 허가", 102, 246, 139, 8)]
+    const { items, bars } = foldFractionBars(row, [hl(98.3, 553, 256.3, 0.33)])
+    assert.equal(bars.size, 0)
+    assert.ok(!items.some(i => i.text.includes("\\frac")))
   })
 
   it("분자 위첨자는 제 크기 창 밖이라도 분자로 — ｛…｝²", () => {

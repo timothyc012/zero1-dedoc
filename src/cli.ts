@@ -1,6 +1,7 @@
+#!/usr/bin/env node
 /** kordoc CLI — 모두 파싱해버리겠다 (하위 명령은 cli/ 아래 명령군 모듈) */
 
-import { Command } from "commander"
+import { Command, Option } from "commander"
 import { VERSION, sanitizeError, routeConsoleToStderr } from "./utils.js"
 import { reexecInSandbox } from "./shared/sandbox.js"
 import { convertFiles } from "./cli/convert.js"
@@ -17,9 +18,9 @@ const program = new Command()
 
 program
   .name("zero1-dedoc")
-  .description("Zero1 Dedoc — HWP, HWPX, 다국어 PDF, XLSX, DOCX, PPTX, 이미지(PNG/JPG/WebP) → Markdown (Kordoc 포크)")
+  .description("Zero1 Dedoc — HWP, HWPX, 다국어 PDF, XLSX, DOCX, PPTX, 이미지(PNG/JPG/WebP/TIFF/GIF/BMP/AVIF/HEIC/PCX) → Markdown (Kordoc 포크)")
   .version(VERSION)
-  .argument("<files...>", "변환할 파일 경로 (HWP, HWPX, PDF, XLSX, DOCX, PNG/JPG/WebP — 이미지는 OCR 자동 적용)")
+  .argument("<files...>", "변환할 파일 경로 (HWP, HWPX, PDF, XLSX, DOCX, PNG/JPG/WebP/TIFF/GIF/BMP/AVIF/HEIC/PCX — 이미지는 OCR 자동 적용)")
   .option("-o, --output <path>", "출력 파일 경로 (단일 파일 시)")
   .option("--jobs <count>", "병렬 변환 프로세스 수 (기본 1, 다중 파일은 -d 필요)", "1")
   .option("-d, --out-dir <dir>", "출력 디렉토리 (다중 파일 시)")
@@ -47,7 +48,8 @@ program
   .option("--memos", "메모(한글 메모 넣기)를 문서 끝 '메모' 절로 — 작성자·시각·붙은 글·메모 글 (#180, HWPX·HWP5). --format json 결과에는 memos 목록이 늘 들어간다")
   .option("--inline-images", "이미지를 base64 data URI 로 마크다운에 인라인 (BMP→PNG 압축, HWP5 전용 — 인라인된 경우만 파일 미저장, 그 외 포맷은 저장 유지)")
   .option("--image-refs", "--format json 에서 이미지 바이트를 인라인하지 않고 파일 참조(images/<문서 이름>/<파일명>)만 남김 (#65 — 이미지가 수백 장인 문서의 직렬화 한계 회피, -o/-d 와 함께 사용)")
-  .option("--password <pw>", "암호로 보호된 문서의 열기 암호 (#59, HWPX·HWP3·HWP5. 한컴 DRM 문서는 해당 없음)")
+  // 환경 변수로도 받는다: 명령줄 인자는 변환하는 동안 같은 PC 의 다른 프로그램이 프로세스 목록에서 볼 수 있다
+  .addOption(new Option("--password <pw>", "암호로 보호된 문서의 열기 암호 (#59, HWPX·HWP3·HWP5. 한컴 DRM 문서는 해당 없음). 프로세스 목록에 남기지 않으려면 환경 변수 KORDOC_PASSWORD 로").env("KORDOC_PASSWORD"))
   .option("--html-tables", "모든 표를 HTML 로 — 파이프 표도 HTML 표로, 태그마다 한 줄씩 들여써 냄")
   .option("--html-cell-links", "HTML 표 셀의 [텍스트](URL)·URL 을 <a href> 로 (뷰어에서 클릭, 기본 꺼짐)")
   .option("--table-format <format>", "표 출력 형식: gfm — 모든 표를 HTML 없이 GFM 파이프 표로, 셀 안 표는 부모 뒤 독립 표 + 관계 표지(<!-- <table … /> -->) (RAG 색인용, --html-tables 와 함께 못 씀)")

@@ -200,7 +200,12 @@ export function extractPageBlocksWithLines(
   wrapStrikethroughRuns(items)
 
   // 1.555단계: 선으로 그은 분수 막대 — 막대 위·아래에 붙은 글을 `$\frac{}{}$` 한 아이템으로 접고 막대는 선에서 뺀다 (fraction-bars.ts)
-  const folded = foldFractionBars(items, horizontals, verticals)
+  // OCR 쪽은 양끝이 세로 괘선에 닿는 선(표 칸 rule)을 막대 후보에서 뺀다 — raster ruling 은 cell rule 도 1pt 아래로 나와 굵기로 fraction bar 와
+  // 못 가른다(OCR 벤치 web051: 표 cell 두 줄이 분수로 접힘). 통째로 끄면 시험지 수식의 진짜 분수 막대까지 안 접혔다(수능 수학 lim 분수)
+  const ocrPage = !items.some(i => i.fontName !== "ocr")
+  const onRule = (x: number, y: number) => verticals.some(v => Math.abs(v.x1 - x) <= 3 && Math.min(v.y1, v.y2) <= y + 3 && Math.max(v.y1, v.y2) >= y - 3)
+  const barCandidates = ocrPage ? horizontals.filter(h => !(onRule(h.x1, h.y1) && onRule(h.x2, h.y1))) : horizontals
+  const folded = foldFractionBars(items, barCandidates, verticals)
   if (folded.bars.size) { items = folded.items; horizontals = horizontals.filter(l => !folded.bars.has(l)) }
 
   // 1.56단계: 밑줄 — 합성 테두리를 만들기 전에 원본 선으로 판정.
@@ -340,6 +345,19 @@ export function extractPageBlocksWithLines(
   // Fallback: 기존 휴리스틱 (선이 없는 PDF). 단 안의 그림은 글이 없는 자리라 거터 판정에 점유 사각형으로 넘긴다
   return (ocrItems ? ruledColumnBlocks(items, horizontals, verticals, pageWidth, pageHeight, pageNum, detectTables, lex) : null)
     ?? extractPageBlocksFallback(items, pageNum, true, detectTables, lex, figures())
+}
+
+/**
+ * 쪽 틀 판정용 선 — 틀 안에 따로 잡힌 작은 격자(문항 안 <보기>·조건 상자)의 선은 뺀다. 상자 선이 틀 격자를 잘게 쪼개 큰 본문 칸이
+ * 사라지면 틀이 표로 서서 두 단 본문이 칸마다 섞였다(3-09월 교육 통합 시험지 2쪽 "문10）…문13）" 9×5 표)
+ */
+function outsideInnerBoxes(grid: TableGrid, grids: TableGrid[], horizontals: LineSegment[], verticals: LineSegment[]): [LineSegment[], LineSegment[]] {
+  const g = grid.bbox, area = (b: TableGrid["bbox"]) => (b.x2 - b.x1) * (b.y2 - b.y1)
+  const boxes = grids.map(o => o.bbox).filter(b => b !== g && b.x1 >= g.x1 - 2 && b.x2 <= g.x2 + 2 && b.y1 >= g.y1 - 2 && b.y2 <= g.y2 + 2 && area(b) < area(g) * 0.5)
+  if (!boxes.length) return [horizontals, verticals]
+  const outside = (l: LineSegment) => !boxes.some(b => Math.min(l.x1, l.x2) >= b.x1 - 2 && Math.max(l.x1, l.x2) <= b.x2 + 2 &&
+    Math.min(l.y1, l.y2) >= b.y1 - 2 && Math.max(l.y1, l.y2) <= b.y2 + 2)
+  return [horizontals.filter(outside), verticals.filter(outside)]
 }
 
 /**
@@ -562,7 +580,9 @@ function extractBlocksWithGrids(
     // repeated-row candidate is checked again after text is mapped to cells.
     if (!grid.cells && !holdsNested && numGridCols === 1 && numGridRows >= 2 &&
         (numGridRows < 5 || gridW > pageWidth * 0.7)) continue
-    if (!holdsNested && isPageFrameGrid(grid, extractCells(grid, horizontals, verticals), pageWidth, pageHeight, items)) continue
+    // 상자 선 빼기는 텍스트층 쪽만 — OCR 쪽은 틀을 빼면 표 위 단위 줄("(천원)")이 안쪽 표 머리 칸 글에 붙는다(관보 표 p344, 단위 줄 처리 없음)
+    const frameLines = ocrPage ? [horizontals, verticals] as const : outsideInnerBoxes(grid, sortedGrids, horizontals, verticals)
+    if (!holdsNested && isPageFrameGrid(grid, extractCells(grid, ...frameLines), pageWidth, pageHeight, items)) continue
     // 그리드 영역 내 텍스트 아이템 수집
     const tableItems: NormItem[] = []
     const pad = 3
@@ -932,9 +952,12 @@ function extractBlocksWithGrids(
 
     // 클러스터 기반 테이블 감지 (XY-Cut 전에 실행 — 테이블이 쪼개지지 않도록)
     const clusterItems: ClusterItem[] = remaining.map(i => {
+      // 반올림 전 x·폭(fx·fw)도 옮긴다 — 표가 안 된 아이템은 이 사본 그대로 본문 줄이 된다. 빠지면 공백 글리프 자리의 실제 틈(0.1pt)을
+      // 반올림 좌표(1pt)로 재 "지원(1 인당"·"(5 천원" 같은 거짓 공백이 났다(전통시장 보도자료, mergeLineSimple exactGap)
       const item: ClusterItem = {
         text: i.text, x: i.x, y: i.y, w: i.w, h: i.h,
         fontSize: i.fontSize, fontName: i.fontName, hasSpaceBefore: i.hasSpaceBefore, syntheticSpace: i.syntheticSpace, spaceAfter: i.spaceAfter,
+        fx: i.fx, fw: i.fw,
       }
       copyOcrTextGaps(i, item)
       return item
@@ -963,7 +986,11 @@ function extractBlocksWithGrids(
       const overlapX = (x: BoundingBox) => Math.min(x.x + x.width, b.x + b.width) - Math.max(x.x, b.x)
       return !blocks.some(x => x.bbox && x.bbox.y >= b.y - 2 && x.bbox.y + x.bbox.height <= b.y + b.height + 2 &&
         (x.type === "paragraph" ? (x.text?.match(/\p{L}/gu)?.length ?? 0) >= 10 && overlapX(x.bbox) >= 0.8 * b.width
-          : x.type === "table" && !ocrPage && x.table?.cols === cr.table.cols && overlapX(x.bbox) >= 0.5 * Math.min(x.bbox.width, b.width)))
+          : x.type === "table" && (ocrPage
+            // OCR 쪽: 열 수가 다른 선 격자 표가 후보 폭을 거의 다 덮으며 행 사이에 들어 있으면 한 표가 아니다 — 격자 표 위 제목·조직도 줄과
+            // 아래 쪽 번호가 격자를 건너 한 표로 묶였다(OCR 벤치 changwon 조직도 쪽: 5×7 후보가 22×9 격자를 품음)
+            ? x.table?.cols !== cr.table.cols && overlapX(x.bbox) >= 0.8 * b.width
+            : x.table?.cols === cr.table.cols && overlapX(x.bbox) >= 0.5 * Math.min(x.bbox.width, b.width))))
     })
     if (clusterResults.length > 0) {
       const ciToIdx = new Map<ClusterItem, number>()
@@ -1023,7 +1050,7 @@ function extractBlocksWithGrids(
       const textBlocks: IRBlock[] = []
       for (const side of sides) {
         if (side.length === 0) continue
-        for (const group of xyCutOrder(side, gapThreshold)) {
+        for (const group of xyCutOrder(side, gapThreshold, 0, undefined, 0, lex)) {
           if (group.length === 0) continue
           const groupBlocks = extractPageBlocksFallback(group, pageNum, false, true, lex, [], chartBandGap(group, gapThreshold, charts))
           for (const b of groupBlocks) textBlocks.push(b)
@@ -1036,7 +1063,7 @@ function extractBlocksWithGrids(
       const allY = remaining.map(i => i.y)
       const pageH = safeMax(allY) - safeMin(allY)
       const gapThreshold = Math.max(15, pageH * 0.03)
-      const groups = xyCutOrder(remaining, gapThreshold)
+      const groups = xyCutOrder(remaining, gapThreshold, 0, undefined, 0, lex)
       const textBlocks: IRBlock[] = []
       for (const group of groups) {
         if (group.length === 0) continue
@@ -1493,6 +1520,7 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
     const item: ClusterItem = {
       text: i.text, x: i.x, y: i.y, w: i.w, h: i.h,
       fontSize: i.fontSize, fontName: i.fontName, hasSpaceBefore: i.hasSpaceBefore, syntheticSpace: i.syntheticSpace, spaceAfter: i.spaceAfter,
+      fx: i.fx, fw: i.fw,
     }
     copyOcrTextGaps(i, item)
     return item
@@ -1500,7 +1528,7 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
   // A page with two justified prose columns must be partitioned before
   // cluster-table detection. Otherwise paired footnotes and body lines can
   // become a single false table, and their source coordinates are lost.
-  const textRects = items.map(i => ({ x: i.x, y: i.y, w: i.w, h: i.h > 0 ? i.h : i.fontSize }))
+  const textRects: ColRect[] = items.map(i => ({ x: i.x, y: i.y, w: i.w, h: i.h > 0 ? i.h : i.fontSize, ...(i.fontName === "ocr" && [...i.text.trim()].length === 1 ? { ocrGlyph: true } : {}) }))
   const imagePanels = fullPage ? splitImagePanels(items, figures) : null
   if (imagePanels) return imagePanels.flatMap(group => extractPageBlocksFallback(group, pageNum, false, detectTables, lex))
   // 한 단 위쪽을 그림이 차지하면 글만으로는 거터가 끊겨 보인다 — 그림 사각형을 더해 쪽 전체 거터를 확정한다
@@ -1602,7 +1630,7 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
 
       const orderedGroups = proseCutX !== null
         ? splitTwoColumnProse(items, proseCutX)
-        : xyCutOrder(items, gapThreshold, 0, undefined, minGap)
+        : xyCutOrder(items, gapThreshold, 0, undefined, minGap, lex)
 
       for (const group of orderedGroups) {
         if (group.length === 0) continue

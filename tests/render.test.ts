@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url"
 import { toInt32, solveBoundaries, solveRowHeights } from "../src/render/layout.js"
 import { renderHwpxPages, renderHwpxToSvg } from "../src/render/index.js"
 import { latexToPlain } from "../src/render/equation-text.js"
+import { layoutFractions } from "../src/render/equation-layout.js"
 import { hwpEquationToLatex } from "../src/hwp5/equation.js"
 import { buildPara, escapeXml } from "../src/render/svg-render.js"
 import { markdownToHwpx } from "../src/hwpx/generator.js"
@@ -267,6 +268,9 @@ describe("render: 수식 대체 글", () => {
     assert.equal(t("LEFT [ - {pi } over {6} ,~b RIGHT ]"), "[-π/6, b]")
     assert.equal(t("a_{n}"), "a_n") // 문자 아래 첨자는 글꼴에 없어 _ 로
     assert.equal(t("sqrt {x ^{2} -2}"), "√(x²-2)")
+    // 경우·행렬 환경 — 환경 이름·칸 기호가 새지 않는다(종전 "begincases-2x+a&(x≤a)\\ax-6&(x>a)endcases")
+    assert.equal(t("f LEFT ( x RIGHT ) = cases {-2x+a & (x LEQ a) # ax-6 & (x>a)}"), "f(x)={-2x+a (x≤a); ax-6 (x>a)")
+    assert.equal(t("matrix {a & b # c & d}"), "a b; c d")
   })
   it("수식 개체를 상자 폭에 맞춘 글로 그린다", async () => {
     const zip = await JSZip.loadAsync(await markdownToHwpx("본문입니다."))
@@ -276,6 +280,25 @@ describe("render: 수식 대체 글", () => {
     zip.file(secName, sec)
     const r = await renderHwpxToSvg(new Uint8Array(await zip.generateAsync({ type: "nodebuffer" })), { reflow: true })
     assert.ok(/<text [^>]*textLength="30"[^>]*>x²\+1<\/text>/.test(r.svg), "수식 글 x²+1 이 상자 폭 30pt 로")
+  })
+  it("분수가 든 수식은 분자·가로선·분모로 쌓아 그린다 — 한 줄 \"9/2\" 로 눌러 그리지 않는다", async () => {
+    const zip = await JSZip.loadAsync(await markdownToHwpx("본문입니다."))
+    const secName = Object.keys(zip.files).find(n => /section0\.xml$/.test(n))!
+    let sec = await zip.file(secName)!.async("string")
+    sec = sec.replace("본문입니다.</hp:t>", `본문입니다.</hp:t><hp:equation baseLine="66" baseUnit="1000" textColor="#000000"><hp:sz width="1000" height="2300"/><hp:pos treatAsChar="1"/><hp:outMargin left="56" right="56" top="0" bottom="0"/><hp:script>{9} over {2}</hp:script></hp:equation>`)
+    zip.file(secName, sec)
+    const r = await renderHwpxToSvg(new Uint8Array(await zip.generateAsync({ type: "nodebuffer" })), { reflow: true })
+    const num = /<text x="[\d.]+" y="([\d.]+)"[^>]*>9<\/text>/.exec(r.svg), den = /<text x="[\d.]+" y="([\d.]+)"[^>]*>2<\/text>/.exec(r.svg)
+    assert.ok(num && den && Number(num[1]) < Number(den[1]), "분자 9 가 분모 2 위에")
+    assert.ok(/<line [^>]*stroke-width/.test(r.svg), "가로선")
+    assert.ok(!r.svg.includes(">9/2<"), "한 줄 9/2 아님")
+  })
+  it("분수 배치 — 맨 바깥 \\frac 만 쌓고 앞뒤 글은 한 줄, 행이 든 수식은 null", () => {
+    const l = layoutFractions(hwpEquationToLatex("f(x)= {x} over {2} +1"))!
+    assert.deepEqual(l.ops.filter(o => o.text).map(o => o.text), ["f(x)=", "x", "2", "+1"])
+    assert.equal(l.ops.filter(o => o.rule).length, 1)
+    assert.equal(layoutFractions(hwpEquationToLatex("x ^{2} +1")), null)
+    assert.equal(layoutFractions(hwpEquationToLatex("cases {a # b over 2}")), null)
   })
 })
 

@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /** Zero1 Dedoc MCP server; the document tools remain in mcp/ modules. */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"

@@ -7,7 +7,7 @@
  * https://github.com/opendataloader-project/opendataloader-pdf
  */
 
-import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { OPS } from "./ops.js"
 import type { LineSegment } from "./line-types.js"
 
 // ─── pdfjs-dist v5 DrawOPS ──
@@ -867,6 +867,8 @@ export function closeOpenTableEdges(
 
 /** 흰 채움·흰 획 윤곽 — 흰 바탕에 보이지 않는 변(nonRules 가운데 흰 것) */
 const WHITE_EDGES = new WeakSet<LineSegment>()
+/** 흰 채움으로 그린 보이지 않는 윤곽인가 (선 격자 칸 변 보임 판정, cell-extract) */
+export const isWhiteFillEdge = (l: LineSegment): boolean => !!l.fromFill && WHITE_EDGES.has(l)
 
 /**
  * 근접 평행 선 병합 — 같은 방향의 가까운 선을 하나로 합침.

@@ -24,6 +24,8 @@ import { stripControlChars } from "./quality.js"
 const MARKUP = /<\/?u>|~~/g
 /** 줄마다 감싼 링크 표기 `[글](주소)` (links.ts applyLinkAnnotations) — 판정용 글에선 글만 남긴다 */
 const LINK_MARKUP = /(?<!!)\[([^\]\n]*)\]\([^)\s]+\)/g
+/** 조문 인용 이음 자리 — "제3조(의2)·제1항·제2호"(1군 단위) 뒤에 "제N항·호·목" 이 붙거나(빈 2군) 띄어(2군 " ") 온다 */
+const CITE_LINK = /제\d+(조|항|호)(?:의\d+)?( ?)(?=제\d+(?:항|호|목))/g
 const bump = <K>(m: Map<K, number>, k: K): void => { m.set(k, (m.get(k) ?? 0) + 1) }
 /** 두 글자(UTF-16 단위) → 수 키 — 문자열 키를 만들지 않아 쪽마다 모든 글을 훑는 비용을 줄인다 */
 const pairKey = (a: number, b: number): number => a * 0x10000 + b
@@ -52,8 +54,13 @@ export class WrapLexicon {
   private readonly heads = new Set<string>()
   /** 줄 안 이웃 어절의 앞 어절 한글 꼬리 + 뒤 어절 첫 음절("지식재산 보") — 어절 머리 증거의 거부권 */
   private readonly spacedHeads = new Set<string>()
+  /** 줄 안 조문 인용 이음 — 앞 단위(조·항·호)별 붙여 쓴 "제3조제1항"·띄운 "제3조 제1항" 수. 문서마다, 단위마다 표기가 갈린다
+   *  ("제17조제2항 제8호" — 조·항은 붙이고 항·호는 띄움, 퇴직공직자 취업심사 보도자료) */
+  private readonly cites = new Map<string, { joined: number; spaced: number }>()
   /** 쪽 줄 흐름에서 넓은 줄 사이 기준선 간격(글자 크기별) — 줄 둘뿐인 묶음은 묶음 안에 견줄 간격이 없어 넓은 줄 간격 본문을 문단 경계로 봤다 */
   private readonly pitches: Array<{ fs: number; pitch: number }> = []
+  /** 줄 안 한글 바로 뒤 여는 괄호 — 붙여 쓴 "주택(아파트)" 수와 띄운 "주택 (아파트)" 수 */
+  private readonly parens = { joined: 0, spaced: 0 }
 
   /** 줄 흐름의 이웃한 넓은 두 줄(같은 글자 크기) 사이 간격 하나를 더한다 */
   addPitch(fontSize: number, pitch: number): void {
@@ -69,6 +76,13 @@ export class WrapLexicon {
   /** 줄 글 한 줄을 증거로 더한다 — 탭(큰 갭)으로 나뉜 조각은 다른 칸·단이라 조각 사이는 어절 경계 증거로 쓰지 않는다 */
   addLine(text: string): void {
     for (const seg of text.replace(MARKUP, "").split("\t")) {
+      this.parens.joined += seg.match(/[가-힣]\(/g)?.length ?? 0
+      this.parens.spaced += seg.match(/[가-힣] \(/g)?.length ?? 0
+      for (const m of seg.matchAll(CITE_LINK)) {
+        const c = this.cites.get(m[1]) ?? { joined: 0, spaced: 0 }
+        if (m[2]) c.spaced++; else c.joined++
+        this.cites.set(m[1], c)
+      }
       const toks = seg.split(" ").filter(t => t && !t.includes("]("))
       for (let i = 0; i < toks.length; i++) {
         const t = toks[i], n = t.length
@@ -96,6 +110,20 @@ export class WrapLexicon {
     }
   }
 
+  /** 이 단위(조·항·호) 뒤 조문 인용 꺾임을 붙일까 — 문서 줄 안에서 붙여 쓴 쪽이 많으면 true, 띄운 쪽이 많으면 false, 증거 없으면 null */
+  citationJoins(unit: string): boolean | null {
+    const c = this.cites.get(unit)
+    return !c || c.joined === c.spaced ? null : c.joined > c.spaced
+  }
+
+  /** 한글 뒤 여는 괄호로 꺾인 줄을 붙일까 — 문서 줄 안에서 붙여 쓴 쪽이 셋 넘고 띄운 쪽의 네 배 넘으면 true, 거꾸로면 false, 그 밖 null */
+  parenJoins(): boolean | null {
+    const { joined, spaced } = this.parens
+    if (joined >= 3 && joined >= 4 * spaced) return true
+    if (spaced >= 3 && spaced >= 4 * joined) return false
+    return null
+  }
+
   /** 문서 줄 안에서 홀로 선 어절로 나온 적 있나 */
   isWord(word: string): boolean {
     return (this.words.get(word) ?? 0) > 0
@@ -104,6 +132,11 @@ export class WrapLexicon {
   /** 꺾인 두 조각을 이어 붙인 꼴이 줄 안 한 어절로 나왔고, 두 조각이 줄 안에서 띄어 쓴 이웃 어절로는 나온 적 없나 */
   joinedWord(left: string, right: string): boolean {
     return this.isWord(left + right) && !this.pairs.has(left + " " + right)
+  }
+
+  /** 두 어절을 줄 안에서 띄어 쓴 이웃으로 쓴 적 있나 */
+  spacedPair(left: string, right: string): boolean {
+    return this.pairs.has(left + " " + right)
   }
 
   /** 줄 안 어절이 이 한글로 시작한 적 있나 */
@@ -147,14 +180,15 @@ const CJK = /[\u3000-\u303F\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\
 /** 중·일문 글자 사이 꺾임은 공백 없는 경계다. 한글이 섞인 국한문 어절은 제외한다. */
 const unspacedCjkBoundary = (prev: string, next: string): boolean =>
   CJK.test(prev.trimEnd().slice(-1)) && CJK.test(next.trimStart().charAt(0)) && !/[가-힣ㄱ-ㅎㅏ-ㅣ]/.test(prev + next)
-const CLOSE_TAIL = /[’”」』)\]〉》>]+$/
+// 각주 표시 별표("사업자*⏎에", "구분**⏎되어")도 어절 꼬리다
+const CLOSE_TAIL = /[’”」』)\]〉》>*]+$/
 const TAIL = "[.,)」』’”]*"
 /** 어절 첫머리에 오지 않는 조사·어미 — 다음 줄 첫 어절이 이것뿐이면 앞 어절의 꼬리다 ("다." 는 줄을 넘어온 문장 끝).
  *  겹조사("수준⏎에서도", "신고자⏎에게는", "자문단원들⏎께서", "가입⏎보다도")와 계사 "이다·이며·이나…"(모음 뒤 "구조⏎이나", "자료⏎이다.")도
  *  홀로 서는 낱말이 없다 — 보도자료 100쌍 출력 판정에서 기본 띄움이 틀린 135곳 중 15곳, 원문 띄움 0곳 */
 const PARTICLE = new RegExp(`^(?:다\\.|의|에|에서|에는|에게|에도|에서는|까지|부터|처럼|마다|만|도|들|들이|들의|들은|들을|들에게|서는|서도|라고|라며|은|는|을|를|으로|로|으로서|로서|으로써|로써` +
   `|에서도|에서의|에서만|에서부터|에만|에의|에게는|에게도|께서|께서는|께서도|으로는|로는|으로도|로도|으로부터|로부터|부터는|까지는|까지도|보다도|라도|이라도` +
-  `|까지와|까지의|에서와|으로의|로의|들과|들과의|들로|들도|들에|들에서|들만|이다|이며|이나|이라는|이라고|이라며|인데|이므로|이지만|이면서)${TAIL}$`)
+  `|까지와|까지의|에서와|으로의|로의|들과|들과의|들로|들도|들에|들에서|들만|이다|이며|이나|이라는|이라고|이라며|이라면서|라면서|인데|이므로|이지만|이면서)${TAIL}$`)
 /** 받침 뒤에서만 조사 — "이"(관형사)·"과"(부서명)는 홀로 설 수 있어 앞 음절 받침으로 가린다 */
 const PARTICLE_AFTER_CONS = new RegExp(`^(?:이|과|과의|이고|인|인지|임|임을|임에도|이어야)${TAIL}$`)
 const PARTICLE_AFTER_VOWEL = new RegExp(`^(?:가|와|와의|라는)${TAIL}$`)
@@ -207,7 +241,8 @@ function particleContinues(left: string, rightWord: string): boolean {
   const right = rightWord.replace(/[”’"」』].+$/, "")
   const h = left.replace(CLOSE_TAIL, "")
   const last = h[h.length - 1]
-  if (!last || !/[가-힣A-Za-z0-9]/.test(last)) return false
+  // 한자 낱말 뒤 조사도 붙는다 — 국한문 "대수정규분포(…, 對數正規分布)⏎를 따를"
+  if (!last || !/[가-힣A-Za-z0-9\u4e00-\u9fff]/.test(last)) return false
   if (PARTICLE.test(right)) return true
   if (!/[가-힣]/.test(last)) return false
   // 접미사 -적 이 줄 머리로 넘어온 것 — "자체⏎적으로", "근본⏎적인" ("적은·적게"(적다)는 제외)
@@ -227,12 +262,16 @@ function particleContinues(left: string, rightWord: string): boolean {
 
 /** 줄 머리가 새 항목(글머리표·번호·조항)인가 — 번호 뒤 숫자(9.8%)·"-" 뒤 글자(생산-가공)는 이어진 글.
  *  앞 줄이 한글로 끝나면 "다." 는 줄을 넘어온 문장 끝이다(…하였⏎다. 본문 꺾임 136곳 전부) */
-const ITEM_HEAD = /^(?:[□■◆◇○●◎◦▪▫•※▶▷►❍❏❑✓✔➢➤☞]|[①-⑳]|[-–·∙ㆍ*](?=\s)|\(?\d{1,2}[.)](?!\d)|\(?[가-하][.)]|\([가-하\d]{1,2}\)|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]|제\d+[조항호장절])/
+const ITEM_HEAD = /^(?:[□■◆◇○●◎◦▪▫•※▶▷►❍❏❑✓✔➢➤☞]|[①-⑳]|[-–·∙ㆍ*#](?=\s)|\(?\d{1,2}[.)](?!\d)|\(?[가-하][.)]|\([가-하\d]{1,2}\)|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]|제\d+[조항호장절])/
 export function startsNewItem(prevText: string, nextText: string): boolean {
   const t = nextText.replace(MARKUP, "").trimStart()
   const prev = prevText.replace(MARKUP, "").trimEnd()
-  // 괄호 안 수에서 꺾인 줄("공모전’(4.1⏎6.~5.16.)")의 "6." 은 항목 번호가 아니라 수의 뒷자리다
+  // 괄호 안 수에서 꺾인 줄("공모전’(4.1⏎6.~5.16.)")의 "6." 은 항목 번호가 아니라 수의 뒷자리다.
+  // 조문 인용으로 끝난 줄 뒤 하위 단위("제42조⏎제1항”으로")는 인용이 이어진 것이다
   return ITEM_HEAD.test(t) && !(/^다\./.test(t) && /[가-힣]$/.test(prev)) && !(/\(\d+\.\d*$/.test(prev) && /^\d/.test(t))
+    && !(/제\d+(?:조(?:의\d+)?|항)$/.test(prev) && /^제\d+[항호]/.test(t))
+    // 날짜 뒤 요일 괄호("7월 28일⏎(목)부터")는 항목 번호 "(가)" 꼴이지만 날짜에 붙는 글이다
+    && !(/\d일$/.test(prev) && /^\([월화수목금토일]\)/.test(t))
 }
 
 /**
@@ -243,6 +282,8 @@ export function wrapJoiner(prevText: string, nextText: string, lex?: WrapLexicon
   const prev = prevText.replace(MARKUP, "").trimEnd(), next = nextText.replace(MARKUP, "").trimStart()
   const a = prev[prev.length - 1], b = next[0]
   if (!a || !b || /[,;:!?]/.test(a) || (DATE_DAY_END.test(prev) && b !== "(")) return " "
+  // 날짜 뒤 요일 괄호는 붙여 쓴다 ("7월 28일⏎(목)부터")
+  if (/\d일$/.test(prev) && /^\([월화수목금토일]\)/.test(next)) return ""
   // 중·일문은 띄어쓰기가 없다 — 한글 없는 두 줄의 한자·가나·전각 문장부호끼리 꺾임은 붙인다(kpipa 계약서 중문 "代⏎理中介商")
   if (unspacedCjkBoundary(prev, next)) return ""
   // 앞 줄 끝 어절 — 뒤에서 공백까지 거꾸로 (칸에서 이어 붙인 긴 글에 /\S+$/ 를 돌리면 어절 길이 제곱이 든다)
@@ -257,18 +298,45 @@ export function wrapJoiner(prevText: string, nextText: string, lex?: WrapLexicon
   const yearHead = left.match(/(?:^|[^\d])((?:19|20)\d{0,1})$/), yearTail = right.match(/^(\d{1,2})년/)
   if (yearHead && yearTail && yearHead[1].length + yearTail[1].length === 4) return ""
   if (particleContinues(left, right)) return ""
-  if (endsAsWord(left)) return " "
+  // 다음 줄이 문서 줄 안에 홀로 선 적 없는 한 음절 조각인가 (아래 한 음절 조각 판정)
+  const r1 = right.replace(/[.,)」』’”]+$/, "")
+  const lone = !!lex && /[가-힣]$/.test(left) && /^[가-힣]$/.test(r1) && !STANDALONE_SYLLABLE.test(r1) && !lex.isWord(r1) && !lex.isWord(right)
+  // 받침으로만 가린 조사 꼴(이·과·가·와)로 끝난 어절은 낱말 끝 음절일 때도 많다 — 결재란 부서명 칸 "데이터전략과⏎장", "추가⏎분".
+  // 그 뒤 한 음절 조각은 조사 뒤 새 어절이 아니라 꺾인 조각으로 본다
+  if (endsAsWord(left) && !(lone && /[이과가와]$/.test(left))) return " "
   // Latin line-end hyphens can be typesetting breaks. Preserve the token boundary
   // unless an intact hyphenated compound is attested within this document.
   // Korean prose wraps Latin terms at their real hyphens; retain that policy.
   if (/[A-Za-z]-$/.test(left) && /^[A-Za-z]/.test(right) && !/[가-힣]/.test(prev + next)) {
     return lex?.joinedWord(left, right.replace(/[.,;:!?)]*$/, "")) ? "" : " "
   }
-  // 가운뎃점·붙임표로 끝난 줄은 이어진 낱말 (소방·⏎가스, 생산-가공⏎-유통 — 줄 끝 "·" 105/109 붙음). 가운뎃점을 겹쳐 쓴 말줄임("주의···⏎관세청")은 뺀다
-  if (/[·ㆍ‧-]/.test(a) && !/[·ㆍ‧…]{2}$/.test(prev) && /[가-힣A-Za-z0-9]/.test(b)) return ""
+  // 가운뎃점·붙임표로 끝난 줄은 이어진 낱말 (소방·⏎가스, 생산-가공⏎-유통 — 줄 끝 "·" 105/109 붙음). 가운뎃점을 겹쳐 쓴 말줄임("주의···⏎관세청")은 뺀다.
+  // 반각 가운뎃점 "･"(U+FF65)·한 점 리더 "․"(U+2024)도 가운뎃점으로 쓴다("공연･전시･영화･⏎도서", "국민건강보험공단․⏎국세청" — 보도자료 14곳)
+  if (/[·ㆍ‧･․-]/.test(a) && !/[·ㆍ‧･․…]{2}$/.test(prev) && /[가-힣A-Za-z0-9]/.test(b)) return ""
+  // 거꾸로 본문 다음 줄이 가운뎃점·붙임표로 바로 낱말을 이으면("해결⏎‧대응이", "‘생산-가공⏎-유통’") 한 어절이다 — 띄어 쓴 글머리 "- 항목" 은
+  // 아니고, 칸 글(heads=false)은 붙여 쓴 글머리("·취수원이 달라질 때마다⏎·수질변화시")가 흔해 뺀다
+  if (heads && /[가-힣A-Za-z0-9]/.test(a) && /^[·ㆍ‧･․-][가-힣A-Za-z0-9]/.test(next)) return ""
   // 영어 낱말은 한컴 영문 줄나눔 기본(단어)이라 줄에서 잘리지 않는다 — 한 글자 증거(data 의 "a|t")가 속이지 않게 먼저.
   // 숫자끼리도 한 글자 증거는 숫자 안 이웃(2026 의 "0|2")이라 믿지 않는다(11:00⏎2026. 9. 2)
   if ((/[A-Za-z]/.test(a) && /[A-Za-z]/.test(b)) || (/\d/.test(a) && /\d/.test(b))) return " "
+  // 조문 번호 "제⏎41조" — 앞 줄이 홀로 선 "제" 로 끝나면 번호와 한 어절이다
+  if (/(?:^|[^가-힣])제$/.test(left) && /^\d+(?:조|항|호|목|장|절|편|관)/.test(right)) return ""
+  // 조문 인용 사이 "제42조⏎제1항" — 문서가 줄 안에서 인용을 붙여 쓰는지 띄워 쓰는지 따른다(행정업무운영 편람 "제42조제1항")
+  const cite = left.match(/제\d+(조|항|호)(?:의\d+)?$/)
+  if (cite && /^제\d+(?:항|호|목)/.test(right)) {
+    const joins = lex?.citationJoins(cite[1])
+    if (joins != null) return joins ? "" : " "
+  }
+  // 본문에서 한글 낱말 뒤 여는 괄호로 꺾인 줄 — 문서가 줄 안에서 "공동주택(아파트)" 처럼 붙여 쓰면 붙이고 띄워 쓰면 띄운다(보도자료 67문서 83곳이
+  // "공동주택 (아파트)"). 서술 끝(-다·-함 …)·조사로 끝난 어절 뒤 괄호는 따로 선 덧말이라 그대로 둔다. 칸 글(heads=false)은 빼다 —
+  // 머리 칸 "키⏎(cm)"·"2025년⏎(1~7월)" 은 원문도 따로 선 줄이다
+  // 다음 줄 전체가 괄호 하나인 줄바꿈(제목 "…카드 ⏎ (유학국 도착신고서)")·띄어 쓴 괄호 이름표("제공 ⏎ (성장 유형) 미취업…")·줄 안에서
+  // 띄어 쓴 그 두 어절("강력탈취 (상쾌한향-에이)" — 표 칸에 넷)은 원문도 띄운다
+  if (heads && b === "(" && /[가-힣]$/.test(left) && !endsAsWord(left) && !/(?:함|음|됨|임|다)$/.test(left) &&
+    !/^\([^()]*\)\s*$/.test(next) && !/^\([^()]*\s[^()]*\)\s/.test(next) && !lex?.spacedPair(left, right)) {
+    const joins = lex?.parenJoins()
+    if (joins != null) return joins ? "" : " "
+  }
   const ev = lex?.evidence(left, right)
   if (ev != null) return ev
   // 이어 붙인 꼴이 문서 줄 안에 한 어절로 나왔고 두 조각을 띄어 쓴 이웃 어절로는 나온 적 없으면 붙인다 — 글자 쌍 증거가 갈리는(한 문서에
@@ -281,8 +349,7 @@ export function wrapJoiner(prevText: string, nextText: string, lex?: WrapLexicon
   // 앞 조각 한 음절 붙음 0.53 → 이 검사로 "등·및·한·그" 를 거른다). 둘 다 한 음절이면 붙인다(79/91)
   if (lex && /^[가-힣]$/.test(left) && /^[가-힣]/.test(right) && !STANDALONE_SYLLABLE.test(left)
     && ([...right].length === 1 || !lex.isWord(left))) return ""
-  const r1 = right.replace(/[.,)」』’”]+$/, "")
-  if (lex && /[가-힣]$/.test(left) && /^[가-힣]$/.test(r1) && !STANDALONE_SYLLABLE.test(r1) && !lex.isWord(r1) && !lex.isWord(right)) return ""
+  if (lone) return ""
   // 앞 조각 한글 꼬리 + 뒤 조각 첫 두 음절이 문서 줄 안 어절의 머리로 나오고("개⏎최하고" ← "개최하여"), 그 꼬리 뒤에 뒤 조각 첫 음절로
   // 시작하는 어절을 줄 안에서 띄어 쓴 적이 없으면 붙인다. 증거 없는 꺾임을 띄우던 기본값이 보도자료 99쌍에서 22% 틀렸다(낱말 가운데 꺾임).
   // 첫 음절만 보면 다른 복합어가 증거가 됐다("처리⏎방안" ← "처리방법"). 칸 글은 빼고(heads=false) — 세로 이름표 "학⏎위⏎기⏎준" 은 원문도 한 자씩이다
@@ -357,11 +424,17 @@ export function joinPageBreakWraps(blocks: IRBlock[], lex?: WrapLexicon): void {
     pageParagraphs.set(b.pageNumber, (pageParagraphs.get(b.pageNumber) ?? 0) + 1)
   }
   for (let i = blocks.length - 1; i > 0; i--) {
-    const a = blocks[i - 1], b = blocks[i]
+    // 앞 쪽 끝 문단과 다음 쪽 첫 문단 사이에 그 쪽 바닥 각주(번호로 여는 작은 글자 문단)가 끼면 건너뛰어 잇는다 — 각주는 이은 문단 뒤에 남는다
+    // (일문 계약서 "…別途規定するものと" ⏎ [각주 1 この契約書のモデルは…] ⏎ "する。")
+    const note = i >= 2 && footnoteBetween(blocks[i - 2], blocks[i - 1], blocks[i]) ? blocks[i - 1] : null
+    const a = note ? blocks[i - 2] : blocks[i - 1], b = blocks[i]
     if (!a.pageNumber || b.pageNumber !== a.pageNumber + 1 || !a.text || !b.text) continue
     if ((a.type !== "paragraph" && a.type !== "list") || b.type !== "paragraph") continue
     const last = a.bbox && PARA_LAST_LINE.get(a.bbox), fs = last ? last.fontSize : 0
-    if (!last || fs <= 0 || (pageRight.get(a.pageNumber) ?? Infinity) - last.right >= BODY_FULL_TOL * fs) continue
+    // 중·일문은 줄 끝 문장부호를 판 밖으로 한 자 매달아(，。、) 쪽 오른끝이 그만큼 늘어 있다 — 한글 없는 중·일문 끝줄은 1em 더 봐 준다
+    // (중문 계약서 쪽 끝 "…规定款项的银" 523pt ↔ 매단 "，" 줄 534pt)
+    const hang = !/[가-힣]/.test(a.text) && CJK.test(a.text.replace(MARKUP, "").trimEnd().slice(-1)) ? fs : 0
+    if (!last || fs <= 0 || (pageRight.get(a.pageNumber) ?? Infinity) - last.right >= BODY_FULL_TOL * fs + hang) continue
     if (last.width < BODY_MIN_WIDTH_EM * fs || Math.abs((b.style?.fontSize ?? 0) - fs) > 0.15 * fs) continue
     // 쪽 사이에는 줄 간격 근거가 없다 — HWPX 쌍 대조(한컴 PDF 쌍의 잇기 후보 325곳, 원문 문단 경계와 비교)로 정한 가드:
     // · 목차 줄·항목 기호·용어 행·조항 번호로 여는 블록은 새 줄. 단 앞 문단 안에 같은 사각 기호가 이미 있으면 문장 속 나열이 이어진 것
@@ -398,7 +471,21 @@ export function joinPageBreakWraps(blocks: IRBlock[], lex?: WrapLexicon): void {
     if (bl) PARA_LAST_LINE.set(a.bbox!, bl)
     else PARA_LAST_LINE.delete(a.bbox!)
     blocks.splice(i, 1)
+    // 건너뛴 각주는 b 를 빼고 나면 이은 문단 바로 뒤에 남는다 — 다음 차례는 a 와 그 앞 블록
+    if (note) i--
   }
+}
+
+/** a(앞 쪽 끝 문단)와 b(다음 쪽 첫 문단) 사이의 f 가 a 쪽 바닥 각주인가 — 같은 쪽·a 보다 아래·더 작은 글자·각주 번호("1 "·"*"·"※")로 연다 */
+function footnoteBetween(a: IRBlock, f: IRBlock, b: IRBlock): boolean {
+  if (f.type !== "paragraph" || !f.text || !a.pageNumber || f.pageNumber !== a.pageNumber || b.pageNumber !== a.pageNumber + 1) return false
+  const afs = a.style?.fontSize ?? 0, ffs = f.style?.fontSize ?? 0
+  if (!afs || !ffs || ffs > afs * 0.95 || !a.bbox || !f.bbox || f.bbox.y + f.bbox.height > a.bbox.y + 1) return false
+  // 한글 없는 중·일문 문단이 문장 중간에서 끊겼을 때만 — 한국 보도자료는 문단 끝에 "(9.17. 기준)" 같은 덧말을 달아 문장 끝 판정을 빠져나가고,
+  // 그 뒤 각주("* WHO 공식 홈페이지…")를 건너뛰면 다음 쪽 새 문단까지 이어 붙였다
+  const at = a.text?.replace(MARKUP, "").trimEnd() ?? ""
+  if (/[가-힣]/.test(at) || SENTENCE_END.test(at)) return false
+  return /^(?:\d{1,2}\)?\s|\*|※)/.test(f.text.replace(MARKUP, "").trimStart())
 }
 
 /**
@@ -442,7 +529,11 @@ export function splitPageBreakWraps(blocks: IRBlock[]): IRBlock[] {
 }
 
 /** 본문 줄 기하 — 꺾임 판정 입력 (y 는 기준선, PDF 좌표라 아래 줄이 작다) */
-export interface WrapLine { text: string; left: number; right: number; y: number; fontSize: number }
+export interface WrapLine {
+  text: string; left: number; right: number; y: number; fontSize: number
+  /** 따로 찍힌 목록 번호·글머리("1." | "Place …") 뒤 글이 시작하는 x — 내어 쓴 다음 줄이 서는 자리 */
+  hang?: number
+}
 
 /** 여백 밖에 매달리는 줄 끝 전각 구두점 */
 const HANGING = /[，。、：；！？）」』】〕》〉．]\s*$/
@@ -459,6 +550,8 @@ const BODY_MAX_PITCH_EM = 2
  *  한 문단의 줄 간격이다(hwpx↔pdf 752쌍: 2em 이상이면서 이 안인 찬 줄 263곳 중 원문 문단 경계 12곳, 붙음 104·띄움 147).
  *  상한은 글자 크기 3.5배 — 그보다 넓은 간격이 이어진 묶음은 표제·서명란 나열이다 */
 const BODY_PITCH_REL = 1.05
+/** 내어 쓴 목록 항목 글 자리 허용치(pt) */
+const HANG_TOL = 1
 const BODY_MAX_PITCH_ABS_EM = 3.5
 
 /**
@@ -508,20 +601,27 @@ export function bodyLineJoins(lines: WrapLine[], lex?: WrapLexicon): string[] {
     if (p < p1) { p2 = p1; p1 = p; i1 = k } else if (p < p2) p2 = p
   }
   const out: string[] = []
+  // 내어 쓴 목록 항목의 글 자리 — 번호를 따로 찍은 줄에서 열고, 그 자리에서 시작하지 않는 줄에서 닫는다
+  let hangX: number | undefined
   for (let i = 0; i + 1 < lines.length; i++) {
     const a = lines[i], b = lines[i + 1]
     const fs = a.fontSize
+    if (a.hang !== undefined) hangX = a.hang
+    else if (hangX !== undefined && Math.abs(a.left - hangX) > HANG_TOL) hangX = undefined
     // 다른 쌍이 없으면 쪽 줄 흐름의 본문 줄 간격(lex.bodyPitch), 그것도 없으면 Infinity — 상대 기준 없이 2em
     // (줄 간격 255% 중문 계약서 "…延长⏎合同期限" 두 줄 묶음이 문단 경계로 끊겼다)
     const own = i === i1 ? p2 : p1
     const others = Number.isFinite(own) ? own : lex?.bodyPitch(fs) ?? Infinity
     const maxPitch = Number.isFinite(others) ? Math.min(BODY_MAX_PITCH_ABS_EM * fs, Math.max(BODY_MAX_PITCH_EM * fs, others * BODY_PITCH_REL)) : BODY_MAX_PITCH_EM * fs
     // 다단계 번호("5.1 ", "7.1.2 ")로 여는 줄은 새 조항이다 — ITEM_HEAD 는 한 단계 번호만 본다
-    const wordWrap = ragged && !full(a) && nextWordNoRoom(a, b) && !MULTI_LEVEL_NUMBER.test(b.text.trimStart())
+    // 왼쪽 정렬 목록 항목이 양쪽 정렬 본문과 한 묶음이면 ragged 가 거짓이라 덜 찬 꺾인 줄을 못 잡는다 — 다음 줄이 항목 글 자리(번호 뒤)에
+    // 서고 첫 어절이 이 줄 끝에 못 들어갔으면 꺾임이다(ODL 165 "1. Place … from 1.0 gram of" ⏎ "soil.")
+    const listWrap = !full(a) && hangX !== undefined && Math.abs(b.left - hangX) <= HANG_TOL && nextWordNoRoom(a, b) && !MULTI_LEVEL_NUMBER.test(b.text.trimStart())
+    const wordWrap = (ragged && !full(a) && nextWordNoRoom(a, b) && !MULTI_LEVEL_NUMBER.test(b.text.trimStart())) || listWrap
     const wraps = fs > 0
       && (full(a) || wordWrap)
       && a.right - a.left >= BODY_MIN_WIDTH_EM * fs
-      && a.y - b.y > 0 && a.y - b.y < maxPitch
+      && a.y - b.y > 0 && (a.y - b.y < maxPitch || indentedCjkFirstLine(a, b, fs))
       && Math.abs(b.fontSize - fs) <= 0.15 * fs
       && !startsNewItem(a.text, b.text)
       // 문장이 끝난 찬 줄 뒤 다단계 번호 줄도 새 조항 — "…참조할 수 있다." ⏎ "7.3.4 명명법" (KS 표준안)
@@ -530,6 +630,18 @@ export function bodyLineJoins(lines: WrapLine[], lex?: WrapLexicon): string[] {
     out.push(!wraps ? "\n" : wordWrap ? (unspacedCjkBoundary(a.text, b.text) ? "" : " ") : wrapJoiner(a.text, b.text, lex))
   }
   return out
+}
+
+/**
+ * 들여 쓴 중·일문 첫 줄이 찬 줄로 끝나고 다음 줄이 그보다 왼쪽(문단 여백)에서 시작하면 넓은 줄 간격이어도 같은 문단이다 — 쪽의 견줄 줄 간격이
+ * 각주(22pt)에 끌려 255% 본문(28pt) 두 줄 "上述著作物…（Proprietor） ，与海外 ⏎ 出版社(Publisher)…" 를 문단 경계로 봤다(kpipa 계약서 중문 1쪽).
+ * 한글 없는 줄만 — 한글 문서는 들여 쓴 첫 줄 뒤 내어 쓴 다음 항목이 흔하다
+ */
+function indentedCjkFirstLine(a: WrapLine, b: WrapLine, fs: number): boolean {
+  const cjk = (t: string) => !/[가-힣]/.test(t) && /[\u3040-\u30ff\u3400-\u9fff]/.test(t)
+  // 쪽 바닥 각주("1 この契約書…", 글자 작음)는 앞 쪽 끝 문단의 꺾인 줄이 아니다
+  return cjk(a.text) && cjk(b.text) && b.left < a.left - fs && a.y - b.y < BODY_MAX_PITCH_ABS_EM * fs &&
+    b.fontSize >= 0.95 * a.fontSize && !/^(?:\d{1,2}\)?\s|[*※])/.test(b.text.trimStart())
 }
 
 /** 칸 안쪽 오른 여백 상한(pt) — 왼 여백(가장 왼쪽 줄 시작 − 칸 왼끝)과 같다고 보되, 가운데 정렬 칸에서 부풀지 않게 한컴 기본

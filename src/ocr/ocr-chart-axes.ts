@@ -90,12 +90,52 @@ function categoryRow(items: OcrItem[], v: Axis & { zero?: boolean }): OcrItem[] 
   return words >= 2 && Math.max(...line.map(it => it.x + it.w)) > v.x2 + 6 * v.h ? line : []
 }
 
-/** 차트 판 안 상자 번호 — 세로 눈금 아래 붙은 가로 눈금이 있는 판만 */
+/**
+ * 숲 그림(forest plot) — 세로 눈금 없이 가로 눈금 아래에 "Favours …"·"… better" 비교 이름표가 붙는다(약품 설명서 하위군 분석 그림). 원본에선
+ * 그림이라 글이 아니다. 눈금 줄에서 위로는 줄 사이가 촘촘한(줄 높이 2.5배 안) 데까지, 아래로는 "그림·Figure·표" 설명 줄 앞까지 뺀다
+ */
+function forestPlotItems(items: OcrItem[], horizontals: Axis[], drop: Set<number>): void {
+  const cy = (it: OcrItem) => it.y + it.h / 2
+  for (const hz of [...horizontals, ...linearAxes(items)]) {
+    const h = hz.h
+    // 이름표는 눈금 아래(「Favours …」)나 위(「← Placebo better」)
+    const label = items.some(it => cy(it) > hz.y1 - 3 * h && cy(it) < hz.y2 + 3 * h && /favou?rs?|better|우세/i.test(it.text))
+    if (!label) continue
+    const rows = [...new Set(items.map(cy))].sort((a, b) => a - b)
+    const at = rows.findIndex(y => y >= hz.y1)
+    let top = hz.y1, bottom = hz.y2
+    for (let i = at - 1; i >= 0 && rows[i + 1] - rows[i] <= 2.5 * h; i--) top = rows[i]
+    const caption = (y: number) => items.some(it => Math.abs(cy(it) - y) < h * 0.5 && /^(그림|Figure|Fig\.|표)\s*\d/.test(it.text.trim()))
+    for (let i = at; i + 1 < rows.length && rows[i + 1] - rows[i] <= 2.5 * h && !caption(rows[i + 1]); i++) bottom = rows[i + 1]
+    items.forEach((it, i) => { if (cy(it) >= top - h * 0.5 && cy(it) <= bottom + h * 0.5) drop.add(i) })
+  }
+}
+
+/** 숲 그림 가로 눈금 — 수 하나짜리 상자 3개+ 가 한 줄에 놓이고 자리가 값에 비례한다(OCR 이 눈금 "0" 을 놓쳐 간격이 고르지 않아도) */
+function linearAxes(items: OcrItem[]): Axis[] {
+  const nums = items.filter(it => number(it.text) !== null)
+  const out: Axis[] = []
+  const used = new Set<OcrItem>()
+  for (const seed of nums) {
+    if (used.has(seed)) continue
+    const row = nums.filter(it => Math.abs(it.y + it.h / 2 - seed.y - seed.h / 2) <= Math.min(it.h, seed.h) * 0.6).sort((a, b) => a.x - b.x)
+    if (row.length < 3) continue
+    const pts = row.map(it => ({ pos: it.x + it.w / 2, value: number(it.text)! }))
+    const slopes = pts.slice(1).map((p, i) => (p.pos - pts[i].pos) / (p.value - pts[i].value))
+    if (slopes.some(k => !(k > 0)) || Math.max(...slopes) > Math.min(...slopes) * 1.25) continue
+    for (const it of row) used.add(it)
+    out.push({ x1: row[0].x, x2: row[row.length - 1].x + row[row.length - 1].w, y1: Math.min(...row.map(it => it.y)), y2: Math.max(...row.map(it => it.y + it.h)), h: seed.h })
+  }
+  return out
+}
+
+/** 차트 판 안 상자 번호 — 세로 눈금 아래 붙은 가로 눈금이 있는 판만(숲 그림은 가로 눈금 + 비교 이름표) */
 export function chartPlotItems(items: OcrItem[]): Set<number> {
   const drop = new Set<number>()
   const verticals = valueAxes(items)
-  if (!verticals.length) return drop
   const horizontals = timeAxes(items)
+  forestPlotItems(items, horizontals, drop)
+  if (!verticals.length) return drop
   for (const v of verticals) {
     // 가로 눈금은 세로 눈금 맨 아래 밑(줄 다섯 안 — 사이에 범례 줄이 끼기도 한다)에서 세로 눈금 오른쪽으로 뻗는다
     const hz = horizontals.find(a => a.y1 >= v.y2 - v.h && a.y1 <= v.y2 + 5 * v.h && a.x1 >= v.x1 - v.h && a.x1 <= v.x2 + 4 * v.h && a.x2 > v.x2 + 8 * v.h)
@@ -107,11 +147,23 @@ export function chartPlotItems(items: OcrItem[]): Set<number> {
     const bottom = hz ? hz.y2 + 2.5 * v.h : Math.max(...cats.map(c => c.y + c.h)) + 0.5 * v.h
     const right = hz ? hz.x2 + 2 * v.h : Math.max(...cats.map(c => c.x + c.w)) + v.h
     // 막대 차트는 맨 위 눈금 위로 한 눈금 간격(OCR 이 놓친 윗눈금·막대 위 값 표지)까지
-    const x1 = v.x1 - 5 * v.h, x2 = right, y1 = v.y1 - (hz ? 1.5 * v.h : Math.max(1.5 * v.h, v.gap ?? 0)), y2 = bottom
+    // 맨 위 눈금 위로 한 눈금 간격까지 — 큰 상자로 읽은 윗눈금("100", 오른끝 맞춤에서 빠짐)도 판이다(생존 곡선)
+    const x1 = v.x1 - 5 * v.h, x2 = right, y1 = v.y1 - Math.max(1.5 * v.h, v.gap ?? 0), y2 = bottom
     items.forEach((it, i) => {
       const cx = it.x + it.w / 2, cy = it.y + it.h / 2
       if (cx >= x1 && cx <= x2 && cy >= y1 && cy <= y2 && it.x >= x1 - v.h && it.x + it.w <= x2 + v.h) drop.add(i)
     })
+    // 판 바로 밑 위험 인원 표("Number at Risk" 와 군마다 인원 줄)도 그림이다 — 이름표부터 줄 사이가 줄 높이 2.5배 안으로 이어지는 데까지
+    // (그림 설명 줄 앞에서 멈춘다). 군 이름이 판 왼쪽 밖에서 시작해 판 폭으로는 못 잡는다
+    const cyOf = (it: OcrItem) => it.y + it.h / 2
+    const risk = items.find(it => cyOf(it) > y2 - v.h && cyOf(it) < y2 + 4 * v.h && /at\s*risk|위험\s*(대상|인원)/i.test(it.text))
+    if (risk) {
+      const rows = [...new Set(items.map(cyOf))].sort((a, b) => a - b)
+      let end = cyOf(risk)
+      for (let k = rows.indexOf(end); k + 1 < rows.length && rows[k + 1] - rows[k] <= 2.5 * v.h
+        && !items.some(it => Math.abs(cyOf(it) - rows[k + 1]) < v.h * 0.5 && /^(그림|Figure|Fig\.|표)\s*\d/.test(it.text.trim())); k++) end = rows[k + 1]
+      items.forEach((it, i) => { if (cyOf(it) >= cyOf(risk) - v.h * 0.5 && cyOf(it) <= end + v.h * 0.5) drop.add(i) })
+    }
   }
   return drop
 }

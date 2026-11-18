@@ -68,6 +68,11 @@ export KORDOC_ROOT=/srv/kordoc/work
 |------|------|--------------|
 | `KORDOC_OFFLINE` | 모델 다운로드·webhook 등 모든 아웃바운드를 시도 전에 차단 | 예외 발생, 사이드로드 방법 안내 |
 | `KORDOC_ROOT` | MCP 서버의 파일 읽기·쓰기를 해당 디렉토리 하위로 제한 | `KORDOC_ROOT 밖의 경로입니다` 예외 |
+| `KORDOC_NO_HANCOM` | `1` 이면 Windows 에서 DRM HWPX·배포용 HWP 를 만나도 한컴오피스 한글을 자동화(COM)로 띄우지 않는다. `to-hwpx --engine auto`도 한글을 고르지 않으며 `--engine hancom`을 지정하면 설정을 알리는 오류를 낸다 | DRM·배포용 안내로 끝남(라이브러리는 `hancomFallback: false` 와 같음) |
+
+Windows 에서 위 변수가 없으면 kordoc 은 DRM HWPX·배포용 HWP 를 읽을 때 `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`
+(전체 경로)로 한글을 숨긴 창으로 띄워 쪽마다 글을 받는다(최대 2분, 비동기). 한글 창·프로세스를 띄우면 안 되는 서버·감싼 앱은 이 변수를 고정한다.
+CLI 의 문서 암호는 `--password` 대신 환경 변수 `KORDOC_PASSWORD` 로 넘기면 프로세스 목록에 남지 않는다.
 
 `KORDOC_ROOT` 판정은 심볼릭 링크를 해석한 실제 경로(realpath)로 하므로 링크로
 빠져나갈 수 없고, 형제 디렉토리(`/srv/kordoc/work-old`)도 통과하지 않는다.
@@ -83,17 +88,18 @@ MCP 서버는 기동 시 적용된 제한을 stderr 에 한 줄 남긴다:
 
 ## 5. 아웃바운드 통신 전량 목록
 
-소스 전체에서 `fetch` 를 호출하는 지점은 두 곳뿐이다.
+소스 전체에서 `fetch` 를 호출하는 지점은 세 곳뿐이고, 바깥으로 나가는 것은 앞의 두 곳이다.
 
 | # | 위치 | 목적지 | 발생 조건 | 차단 |
 |---|------|--------|-----------|------|
 | 1 | `src/pdf/formula/models.ts` | `huggingface.co` | OCR/수식 기능 사용 + 모델 미캐시 (최초 1회) | `KORDOC_OFFLINE=1` |
 | 2 | `src/watch.ts` | 운영자가 지정한 URL | `kordoc watch --webhook <url>` 명시 시에만 | `KORDOC_OFFLINE=1` |
+| 3 | `src/pdf/hayro.ts` | 패키지 안 자기 파일(`hayro-pdf.wasm`, 번들과 같은 출처) | 브라우저에서 PDF 를 읽을 때. Node 는 파일로 읽어 `fetch` 를 부르지 않는다 | 바깥 통신 아님 |
 
 검증(재현 가능):
 
 ```bash
-grep -rnE '\bfetch\(' src --include='*.ts'          # 소스 기준 2건
+grep -rnE '\bfetch\(' src --include='*.ts'          # 소스 기준 3건
 grep -rn 'await fetch(' dist/*.js dist/*.cjs        # 빌드 산출물 기준(ESM/CJS 중복 포함)
 ```
 

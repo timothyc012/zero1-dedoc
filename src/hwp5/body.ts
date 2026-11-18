@@ -35,6 +35,7 @@ function cid(s: string): number {
 
 const CTRL_TBL = cid("tbl ")    // 표
 const CTRL_GSO = cid("gso ")    // 그리기 개체 (그림/글상자)
+const CTRL_PIC = cid("$pic")    // 그리기 개체 첫 SHAPE_COMPONENT 의 그림 표지 (묶음은 "$con")
 const CTRL_EQED = cid("eqed")   // 수식
 const CTRL_HEAD = cid("head")   // 머리말
 const CTRL_FOOT = cid("foot")   // 꼬리말
@@ -480,7 +481,11 @@ function applyCtrlEffect(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hwp5Ctx): 
         const attr = ctrl.data.readUInt32LE(4)
         const type = attr & 0x0f
         const format = (attr >>> 4) & 0xff
-        const num = ctx.doc.autoCounters.get(type) ?? 1
+        // 각주·미주·그림·표·수식 번호는 한/글이 저장해 둔 값(u16@8, HWPX hp:autoNum num 과 같은 값)을 쓴다 — 문서 차례로 세면 세는
+        // 경로를 타지 않는 앞 캡션만큼 모자랐다(tac-img-02 "<그림 5> 싱크홀 맵" 이 그림 3). 0 이면(저장 안 한 파일) 센다.
+        // 쪽 번호(0)는 조판 때 정해지는 값이라 저장값이 그 쪽 번호가 아니다(편람 본문 "－346－")
+        const stored = type !== 0 && ctrl.data.length >= 10 ? ctrl.data.readUInt16LE(8) : 0
+        const num = stored || (ctx.doc.autoCounters.get(type) ?? 1)
         ctx.doc.autoCounters.set(type, num + 1)
         const prefix = ctrl.data.length >= 14 ? wcharAt(ctrl.data, 12) : ""
         const suffix = ctrl.data.length >= 16 ? wcharAt(ctrl.data, 14) : ""
@@ -881,11 +886,17 @@ function parseGsoControl(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hwp5Ctx): 
     }
   }
 
-  // 캡션: SHAPE_COMPONENT 이전의 LIST_HEADER
+  // 캡션: SHAPE_COMPONENT 이전의 LIST_HEADER. 그림 하나($pic)의 캡션 방향(표 캡션과 같은 속성 비트)이 아래면 그림 뒤에 — HWPX 가
+  // hp:pic 캡션을 그림 뒤에 내는 것과 같게(정책연구용역 중간진도보고서 "그림 20." 이 그림 앞에 나와 같은 문서 HWPX 와 순서가 갈렸다).
+  // 묶음($con)·글상자 캡션은 HWPX 도 개체 앞 문단 글로 내니 종전대로 앞에
+  const picture = scIdx >= 0 && records[scIdx].data.length >= 4 && records[scIdx].data.readUInt32LE(0) === CTRL_PIC
+  let captionBlocks: IRBlock[] = []
   if (scIdx > childStart) {
     for (let i = childStart; i < scIdx; i++) {
       if (records[i].tagId === TAG_LIST_HEADER) {
-        blocks.push(...parseParagraphList(records, i + 1, scIdx, { ...ctx, depth: ctx.depth + 1 }))
+        const cap = parseParagraphList(records, i + 1, scIdx, { ...ctx, depth: ctx.depth + 1 })
+        if (picture && records[i].data.length >= 12 && (records[i].data.readUInt32LE(8) & 3) === 3) captionBlocks = cap
+        else blocks.push(...cap)
         break
       }
     }
@@ -914,6 +925,7 @@ function parseGsoControl(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hwp5Ctx): 
   if (textListIdx >= 0) {
     blocks.push(...parseParagraphList(records, textListIdx + 1, childEnd, { ...ctx, depth: ctx.depth + 1, plainText: true }))
   }
+  blocks.push(...captionBlocks)
 
   return blocks
 }

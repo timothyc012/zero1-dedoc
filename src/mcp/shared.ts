@@ -1,7 +1,7 @@
 /** kordoc MCP 공용 — 경로·확장자 검증, 파일 읽기, 오류 문구, 응답 상한 (도구 모듈 공유) */
 
 import { realpathSync, openSync, readSync, closeSync, lstatSync, constants } from "fs"
-import { readFile, stat, realpath, open } from "fs/promises"
+import { readFile, stat, realpath, open, lstat } from "fs/promises"
 import { resolve, isAbsolute, extname, dirname, basename, join } from "path"
 import { detectFormat } from "../index.js"
 import { toArrayBuffer, sanitizeError, classifyError, KordocError } from "../utils.js"
@@ -11,7 +11,7 @@ import { assertWithinRoot } from "../shared/offline.js"
 export const ALLOWED_EXTENSIONS = new Set([".hwp", ".hwpx", ".hml", ".pdf", ".xls", ".xlsx", ".docx", ".pptx"])
 /** 파싱 계열 도구(parse_*·detect_format) 입력 확장자 — 문서 + 이미지(자동 OCR).
  *  이미지 3종은 detect.ts 매직바이트 지원 범위와 동일. 쓰기·패치 계열은 ALLOWED_EXTENSIONS 유지 */
-export const PARSE_EXTENSIONS = new Set([...ALLOWED_EXTENSIONS, ".pptx", ".png", ".jpg", ".jpeg", ".webp"])
+export const PARSE_EXTENSIONS = new Set([...ALLOWED_EXTENSIONS, ".pptx", ".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff", ".gif", ".avif", ".heic", ".heif", ".pcx", ".dcx", ".bmp"])
 /** 도장/서명 이미지 허용 확장자 (place_seal image_path) */
 export const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".bmp"])
 /** 서식 프로필 허용 확장자 (generate_document profile_path) */
@@ -95,7 +95,23 @@ export async function writeOutputFile(filePath: string, data: string | Uint8Arra
   const parent = await realpath(dirname(filePath))
   assertWithinRoot(parent)
   const target = join(parent, basename(filePath))
-  const handle = await open(target, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, 0o666)
+  // Windows does not implement O_NOFOLLOW. Create exclusively or open an existing
+  // regular file without truncating, then confirm its identity before writing.
+  const handle = await open(target, "wx", 0o666).catch(async (err: NodeJS.ErrnoException) => {
+    if (err.code !== "EEXIST") throw err
+    const entry = await lstat(target, { bigint: true })
+    if (!entry.isFile()) throw new KordocError("일반 파일에만 쓸 수 있습니다. 폴더와 심볼릭 링크는 허용하지 않습니다.")
+    const existing = await open(target, constants.O_WRONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0))
+    try {
+      const opened = await existing.stat({ bigint: true })
+      if ((!constants.O_NOFOLLOW && opened.ino === 0n) || entry.dev !== opened.dev || entry.ino !== opened.ino) throw new KordocError("저장 중 대상 파일이 바뀌었습니다. 경로를 다시 확인하세요.")
+      await existing.truncate(0)
+      return existing
+    } catch (error) {
+      await existing.close()
+      throw error
+    }
+  })
   try {
     await handle.writeFile(data, encoding ? { encoding } : undefined)
   } finally {

@@ -6,9 +6,11 @@ import type { numberBlocksFromIR } from "../hwpx/number-lint.js"
 import { runLintSuite } from "../hwpx/lint-suite.js"
 import { lintBlocks } from "../hwpx/lint-blocks.js"
 import { extractLevelStyles } from "../hwpx/level-styles.js"
-import { detectFormat, markdownToHwpx, loadAgencyPack, packTemplate, resolvePackKind, packRoleWarnings, hwpxToProfile, PRESET_ALIAS, unknownFontWarnings, incompatibleGongmunWarnings, gongmunLintWarnings, muncheLintWarnings, usesGaejosikMunche, slopLintWarnings, logicLintWarnings, usesLogicStructure, gongmunGate, formatGateFinding } from "../index.js"
+import { detectFormat, markdownToHwpx, hwpxToHwp, loadAgencyPack, packTemplate, resolvePackKind, packRoleWarnings, hwpxToProfile, PRESET_ALIAS, unknownFontWarnings, incompatibleGongmunWarnings, gongmunLintWarnings, muncheLintWarnings, usesGaejosikMunche, slopLintWarnings, logicLintWarnings, usesLogicStructure, gongmunGate, formatGateFinding } from "../index.js"
 import { parseFormatProfileJson } from "../hwpx/profile-io.js"
 import { loadGenerationImages } from "../shared/generate-images.js"
+import { measurePdfLayout } from "../pdf/layout-measure.js"
+import { applyMeasuredLayout } from "../hwpx/layout-options.js"
 import { buildGongmunOptions, BODY_FONTS, H2_MARKERS, BULLET2_CHARS, TOTAL_ROWS, parseLevelsSpec, levelFontRecord, templateConflictMessage } from "../hwpx/gongmun-surface.js"
 import type { FormatProfile } from "../hwpx/gen-profile.js"
 import { toArrayBuffer, sanitizeError } from "../utils.js"
@@ -18,8 +20,8 @@ import type { Command } from "commander"
 const TEMPLATE_CLI_CONFLICTS = [
   "preset", "font", "pt", "lineSpacing", "profile", "org", "date", "toc", "cover", "approval", "pageNumbers", "endMark",
   "bodyTitleBox", "chapterFit", "h2Marker", "bandColor", "bandTextColor", "summary", "docInfo", "dept", "checklist", "coverLabel",
-  "fonts", "sizes", "levels", "levelsFrom", "bullet2", "agency", "suppressSingle", "docHead", "docFoot", "reportInfo",
-  "noticeHead", "pressHead", "pressSub", "pressPeople", "plain", "paper", "landscape", "columns", "header", "footer",
+  "fonts", "sizes", "levels", "levelsFrom", "layout", "bullet2", "agency", "suppressSingle", "docHead", "docFoot", "reportInfo",
+  "noticeHead", "pressHead", "pressSub", "pressPeople", "plain", "paper", "landscape", "columns", "columnGap", "columnLine", "header", "footer",
   "imageDir", "inlineMath",
 ]
 
@@ -28,7 +30,7 @@ export function registerGenerateCommands(program: Command): void {
     .command("generate <markdown>")
     .alias("gen")
     .description("마크다운 → 공문서 HWPX 생성 — kordoc generate 보고서.md -o 보고서.hwpx --preset 보고서 (markdown에 '-' 지정 시 stdin)")
-    .option("-o, --output <path>", "출력 HWPX 경로 (기본: <입력>.hwpx)")
+    .option("-o, --output <path>", "출력 HWPX 경로 (기본: <입력>.hwpx) — .hwp 로 끝나면 HWP 로 저장 (optional peer dep @rhwp/core 필요)")
     .option("--preset <name>", "공문서 프리셋: 기안문(official)·보고서(report)·계획서(plan)·통지(notice)·회의록(minutes)·개조식(gaejosik — 표지·목차·장헤더 자동)·업무보고(ministry — 중앙부처 업무보고: 장 띠·절 숫자칸·소제목 박스·① 항목 띠·성과 요약박스·별첨 띠)·서울방침(bangchim — 서울시 방침서: 제목표·파랑 부제·요약박스·[Ⅰ] 장 상자·절 띠·❶ 과제)·보도자료(press)", "기안문")
     .option("--font <type>", "본문 글꼴: myeongjo(함초롬바탕) 또는 gothic(맑은 고딕)")
     .option("--pt <size>", "본문 글자 크기(pt)")
@@ -62,6 +64,7 @@ export function registerGenerateCommands(program: Command): void {
     .option("--sizes <spec>", "개조식 요소별 크기(pt): dae=16,cham=13,table=12,coverTitle=30 …")
     .option("--levels <spec>", "항목부호 단계별 위계 타이포: 0=HY견고딕/17/bold,1=한컴돋움/15/bold,2=휴먼명조/14 (depth 0~7, 숫자=pt·bold·plain·글꼴명)")
     .option("--levels-from <hwpx>", "견본 HWPX 에서 항목부호 단계별 글꼴·크기·굵기를 배워 적용 (kordoc levels 와 같은 추출, --levels 로 준 단계가 우선)")
+    .option("--layout <pdf>", "보고서 PDF 의 모양을 재서 적용: 여백·줄간격·단계별(□ㅇ-※) 글꼴·크기·장 번호칸 색 (kordoc measure 와 같은 측정, 직접 준 옵션이 우선)")
     .option("--bullet2 <char>", "2단계 항목부호: ㅇ(이응 — 기안문·공고문 실측 지배)·○(원 — 보고서 양식)·◦·❍")
     .option("--agency <name>", "기관 서식 — 중앙행정기관 이름(국세청·교육부 …) 또는 공통. 보도자료 2,670건 실측 단계 글꼴·크기·2단계 부호·표 머리·기관 색 (보고서·계획서·업무보고·개조식·보도자료)")
     .option("--suppress-single", "단일 형제 항목 부호 생략 (편람 규정 — 기본은 하나여도 부호 부여)")
@@ -77,6 +80,8 @@ export function registerGenerateCommands(program: Command): void {
     .option("--paper <size>", "용지: A4·A3·B4·B5·Letter 또는 '210x297'(mm)")
     .option("--landscape", "용지 가로 방향")
     .option("--columns <n>", "다단 개수 (1~8)")
+    .option("--column-gap <mm>", "단 사이 간격 mm (기본 8, 시험지 2단은 3)")
+    .option("--column-line", "단 구분선 — 시험지처럼 가는 검은 실선")
     .option("--header <text>", "머리말 텍스트 (모든 쪽, 인라인 마크다운 허용)")
     .option("--footer <text>", "꼬리말 텍스트")
     .option("--image-dir <dir>", "마크다운 이미지 참조(![](x.png))를 이 디렉토리에서 읽어 실데이터 임베드")
@@ -146,7 +151,6 @@ export function registerGenerateCommands(program: Command): void {
             process.exit(1)
           }
           const buf = await markdownToHwpx(md, { template: tplBytes, warnings, ...(opts.totalRow ? { totalRow: opts.totalRow } : {}) })
-          if (!silent) for (const w of warnings) process.stderr.write(`[kordoc] ⚠ ${w}\n`)
           const outPath = resolve(output ?? (markdown === "-" ? `${baseName}.hwpx` : markdown.replace(/\.(md|markdown|txt)$/i, "") + ".hwpx"))
           // 원고와 견본 이름이 같으면(보고서.md --template 보고서.hwpx) 기본 출력 경로가 견본이 된다
           let sameAsTemplate = outPath === tplPath
@@ -155,10 +159,13 @@ export function registerGenerateCommands(program: Command): void {
             process.stderr.write(`[kordoc] 출력 경로가 견본과 같습니다. 견본을 덮어쓰지 않습니다. -o 로 다른 경로를 지정하세요\n`)
             process.exit(1)
           }
+          const asHwp = /\.hwp$/i.test(outPath)
+          const bytes = asHwp ? await hwpxToHwp(buf, { warnings }) : new Uint8Array(buf)
+          if (!silent) for (const w of warnings) process.stderr.write(`[kordoc] ⚠ ${w}\n`)
           mkdirSync(dirname(outPath), { recursive: true })
-          writeFileSync(outPath, Buffer.from(buf))
-          if (!silent) process.stderr.write(`[kordoc] HWPX 생성 (${opts.pack ? "기관팩" : "견본"}:${basename(tplPath)}) → ${outPath}\n`)
-          if (opts.json) process.stdout.write(JSON.stringify({ output: outPath, preset: null, ...(opts.pack ? { pack: tplPath, packKind: opts.packKind ?? null } : { template: tplPath }), bytes: buf.byteLength, warnings }) + "\n")
+          writeFileSync(outPath, Buffer.from(bytes))
+          if (!silent) process.stderr.write(`[kordoc] ${asHwp ? "HWP" : "HWPX"} 생성 (${opts.pack ? "기관팩" : "견본"}:${basename(tplPath)}) → ${outPath}\n`)
+          if (opts.json) process.stdout.write(JSON.stringify({ output: outPath, preset: null, ...(opts.pack ? { pack: tplPath, packKind: opts.packKind ?? null } : { template: tplPath }), bytes: bytes.byteLength, warnings }) + "\n")
           return
         }
 
@@ -263,6 +270,15 @@ export function registerGenerateCommands(program: Command): void {
           })
         }
 
+        // 보고서 PDF 에서 잰 모양 — 직접 준 옵션이 비운 자리만 채운다
+        if (gongmun && opts.layout) {
+          const measured = applyMeasuredLayout(gongmun, await measurePdfLayout(readFileSync(resolve(String(opts.layout)))))
+          gongmun = measured.gongmun
+          if (!silent) {
+            process.stderr.write(`[kordoc] PDF 모양 적용: ${measured.applied.join(" · ") || "없음"}\n`)
+            for (const w of measured.warnings) process.stderr.write(`[kordoc] ⚠ ${w}\n`)
+          }
+        }
         // 폰트 오버라이드 오타·미설치 경고 (A2) — 생성은 진행
         if (gongmun?.fonts && !silent) {
           for (const w of unknownFontWarnings(gongmun.fonts)) process.stderr.write(`[kordoc] ${w}\n`)
@@ -307,7 +323,7 @@ export function registerGenerateCommands(program: Command): void {
 
         // 페이지 옵션 (v4.5.0) — 용지·방향·다단·머리말/꼬리말
         let page: import("../index.js").PageOptions | undefined
-        if (opts.paper || opts.landscape || opts.columns || opts.header || opts.footer) {
+        if (opts.paper || opts.landscape || opts.columns || opts.columnGap || opts.columnLine || opts.header || opts.footer) {
           let size: import("../index.js").PageOptions["size"]
           if (opts.paper) {
             const wh = /^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$/i.exec(String(opts.paper).trim())
@@ -317,6 +333,8 @@ export function registerGenerateCommands(program: Command): void {
             ...(size !== undefined ? { size } : {}),
             ...(opts.landscape ? { orientation: "landscape" as const } : {}),
             ...(opts.columns ? { columns: Number(opts.columns) } : {}),
+            ...(opts.columnGap ? { columnGapMm: Number(opts.columnGap) } : {}),
+            ...(opts.columnLine ? { columnLine: true } : {}),
             ...(opts.header ? { header: String(opts.header) } : {}),
             ...(opts.footer ? { footer: String(opts.footer) } : {}),
           }
@@ -343,19 +361,50 @@ export function registerGenerateCommands(program: Command): void {
             warnings: genWarnings,
           }
           : undefined)
-        if (!silent) for (const w of genWarnings) process.stderr.write(`[kordoc] ⚠ ${w}\n`)
         const outPath = resolve(output ?? (markdown === "-" ? `${baseName}.hwpx` : markdown.replace(/\.(md|markdown|txt)$/i, "") + ".hwpx"))
+        const asHwp = /\.hwp$/i.test(outPath)
+        const bytes = asHwp ? await hwpxToHwp(buf, { warnings: genWarnings }) : new Uint8Array(buf)
+        if (!silent) for (const w of genWarnings) process.stderr.write(`[kordoc] ⚠ ${w}\n`)
         mkdirSync(dirname(outPath), { recursive: true })
-        writeFileSync(outPath, Buffer.from(buf))
+        writeFileSync(outPath, Buffer.from(bytes))
 
         if (!silent) {
           const mode = gongmun ? `공문서:${gongmun.preset}` : "범용"
-          process.stderr.write(`[kordoc] HWPX 생성 (${mode}) → ${outPath}\n`)
+          process.stderr.write(`[kordoc] ${asHwp ? "HWP" : "HWPX"} 생성 (${mode}) → ${outPath}\n`)
         }
         // 다른 프로그램(한/글 실시간 편집 도구 등)이 결과를 받아 이어 쓰도록 — 사람용 메시지는 그대로 stderr
         if (opts.json) {
-          process.stdout.write(JSON.stringify({ output: outPath, preset: gongmun?.preset ?? null, bytes: buf.byteLength, warnings: genWarnings }) + "\n")
+          process.stdout.write(JSON.stringify({ output: outPath, preset: gongmun?.preset ?? null, bytes: bytes.byteLength, warnings: genWarnings }) + "\n")
         }
+      } catch (err) {
+        process.stderr.write(`[kordoc] 오류: ${sanitizeError(err)}\n`)
+        process.exit(1)
+      }
+    })
+
+  program
+    .command("measure <pdf>")
+    .description("보고서 PDF 의 모양 재기: 쪽 여백·줄간격·단계별(□ㅇ-※) 글꼴·크기·들여쓰기·장 번호칸 색 (generate --layout 으로 바로 적용)")
+    .option("--json", "잰 값을 JSON 으로 stdout 출력")
+    .option("--preset <name>", "이 프리셋에 적용될 값도 보이기 (기본: 보고서)", "보고서")
+    .action(async (file: string, opts) => {
+      try {
+        const spec = await measurePdfLayout(readFileSync(resolve(file)))
+        const presetKey = String(opts.preset).trim()
+        const preset = Object.hasOwn(PRESET_ALIAS, presetKey) ? PRESET_ALIAS[presetKey] : "report"
+        const result = applyMeasuredLayout({ preset }, spec)
+        if (opts.json) {
+          process.stdout.write(JSON.stringify({ spec, preset, gongmun: result.gongmun, applied: result.applied, warnings: result.warnings }, null, 2) + "\n")
+          return
+        }
+        process.stdout.write(`쪽 ${spec.pageCount}개 중 ${spec.measuredPages.length}개를 쟀습니다 (${spec.page.widthMm}×${spec.page.heightMm}mm)\n`)
+        if (spec.edges) process.stdout.write(`가장자리 위 ${spec.edges.top}·아래 ${spec.edges.bottom}·왼쪽 ${spec.edges.left}·오른쪽 ${spec.edges.right}mm\n`)
+        for (const lv of spec.levels) process.stdout.write(`${lv.depth}단계 ${lv.marker} ${lv.font ?? `(알 수 없는 글꼴 ${lv.pdfFont})`} ${lv.pt}pt · 부호 ${lv.markerMm}mm·글 ${lv.textMm}mm · ${lv.lines}줄\n`)
+        if (spec.ref) process.stdout.write(`※ ${spec.ref.font ?? `(알 수 없는 글꼴 ${spec.ref.pdfFont})`} ${spec.ref.pt}pt\n`)
+        if (spec.lineSpacing) process.stdout.write(`줄간격 ${spec.lineSpacing}%\n`)
+        if (spec.chapterFill) process.stdout.write(`장 번호칸 ${spec.chapterFill}\n`)
+        process.stdout.write(`${opts.preset} 프리셋에 적용: ${result.applied.join(" · ") || "없음"}\n`)
+        for (const w of result.warnings) process.stderr.write(`[kordoc] ⚠ ${w}\n`)
       } catch (err) {
         process.stderr.write(`[kordoc] 오류: ${sanitizeError(err)}\n`)
         process.exit(1)

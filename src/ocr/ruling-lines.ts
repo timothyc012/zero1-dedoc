@@ -94,6 +94,8 @@ export interface PxSegment {
   x1: number; y1: number
   x2: number; y2: number
   thicknessPx: number
+  /** 칠한 열에 맞붙어 띠 합집합에서 빠졌다가 따로 더한 행 괘선 — 표 행 경계 보강용이라 그림 영역 OCR 은 쓰지 않는다 */
+  isolated?: true
 }
 
 export interface RulingLines {
@@ -238,7 +240,50 @@ export function detectRulingLines(
   }
   const dotted: RunReader = (m, base, step, span) => dottedRuns(m, base, step, span, minLenPx, dot.maxGap, dot.maxDash, dot.maxPeriod)
   const horizontals = detectBands(ink, width, height, maxThickPx, false, solid)
+  // 칠한 열에 맞붙은 행 괘선 — 띠 합집합으로 이으면 칠한 칸 블록과 한 띠가 되어 버려진다(detectBands prevRun). 위아래가 빈 외톨이 선만 더한다
+  // 양 끝의 칠한 칸 속(위아래 2줄 밖이 모두 잉크) 구간은 잘라낸다 — 여러 행에 걸친 채움 칸 옆 행 괘선은 그 줄에서 칸 화소와 한 런이 된다
+  const filledAt = (x: number, h: PxSegment) => {
+    const yt = Math.round(h.y1 - h.thicknessPx / 2) - 2, yb = Math.round(h.y1 + h.thicknessPx / 2) + 2
+    return yt >= 0 && yb < height && ink[yt * width + x] === 1 && ink[yb * width + x] === 1
+  }
+  const trimFilled = (h: PxSegment): PxSegment | null => {
+    let x1 = Math.round(h.x1), x2 = Math.round(h.x2)
+    while (x1 < x2 && filledAt(x1, h)) x1++
+    while (x2 > x1 && filledAt(x2, h)) x2--
+    return x2 - x1 + 1 >= minLenPx ? { ...h, x1, x2, isolated: true } : null
+  }
+  const hAdd = detectBands(ink, width, height, maxThickPx, false, solid, true).map(trimFilled).filter((h): h is PxSegment => h !== null)
+    .filter(h => !horizontals.some(p => Math.abs(p.y1 - h.y1) <= maxThickPx && Math.min(p.x2, h.x2) - Math.max(p.x1, h.x1) > (h.x2 - h.x1) * 0.5))
+  const baseH = horizontals.length
+  horizontals.push(...hAdd)
   const verticals = detectBands(ink, width, height, maxThickPx, true, solid)
+  // 잡힌 세로 괘선이 같은 x 에서 옅은 선(휘도 230 이하·양옆 3px 보다 20 이상 어둡게)으로 이어지면 그만큼 늘인다 — 머리 띠 안에서는 진하고
+  // 데이터 행에서는 옅은(208~217) 열 괘선이 머리 행에서 끊겨 데이터 칸이 옆 칸과 합쳐졌다(합격자 표 "4 8"). 잡힌 선의 이음만이라 흐린 판의 얼룩은 안 걸린다
+  const faint = (x: number, y: number) => {
+    const l = luma[y * width + x]
+    // 잉크 문턱보다 밝은 것만 — 진한 획은 이미 잉크 선으로 잡혔을 것이고, 사이 구간의 글자 획을 옅은 선으로 세면 다른 토막을 이었다(기운 서식)
+    return l > INK_LUMA_MAX && l <= 230 && x >= 3 && x + 3 < width && l + 20 <= Math.min(luma[y * width + x - 3], luma[y * width + x + 3])
+  }
+  for (const v of verticals) {
+    const xs = [Math.round(v.x1) - 1, Math.round(v.x1), Math.round(v.x1) + 1]
+    // 가로 괘선 교차점(x 와 양옆 3px 이 모두 진함)은 지나간다 — 옅은 열 괘선은 행 괘선을 건너 이어진다
+    const cross = (y: number) => xs.some(x => x >= 3 && x + 3 < width && luma[y * width + x] <= INK_LUMA_MAX && luma[y * width + x - 3] <= INK_LUMA_MAX && luma[y * width + x + 3] <= INK_LUMA_MAX)
+    const at = (y: number) => xs.some(x => faint(x, y))
+    for (const dir of [1, -1] as const) {
+      let y = dir > 0 ? Math.round(v.y2) + 1 : Math.round(v.y1) - 1, end = y - dir, gap = 0
+      while (y >= 0 && y < height && gap <= GAP_TOL_PX) { if (at(y)) { end = y; gap = 0 } else if (!cross(y)) gap++; y += dir }
+      if (Math.abs(end - (dir > 0 ? v.y2 : v.y1)) < minLenPx) continue
+      // 늘인 끝이 가로 괘선에 닿아야 한다 — 칸 경계로 끝나지 않는 어중간한 늘임은 흐린 판의 번짐이었다(검정고시 계획 blur 판)
+      if (!horizontals.some(h => Math.abs(h.y1 - end) <= maxThickPx * 2 && h.x1 <= v.x1 + maxThickPx && h.x2 >= v.x1 - maxThickPx)) continue
+      // 그 가로 괘선은 표 위·아랫변이어야 한다 — 다른 세로 괘선도 거기서 끝난다. 표 가운데 행 괘선에서 멈추면 표 아래가 글로 풀렸다
+      if (!verticals.some(o => o !== v && Math.abs((dir > 0 ? o.y2 : o.y1) - end) <= maxThickPx * 2)) continue
+      if (dir > 0) v.y2 = end; else v.y1 = end
+    }
+  }
+  // 가로 외톨이 선은 세로 괘선 둘 이상과 만날 때만(표 안 행 경계) — 쪽 폭 회색 구역 나눔 띠는 표가 아니다(건축허가 서식 기운 판: 구역 사이 글이 표로 묶였다)
+  const meets = (h: PxSegment) => new Set(verticals.filter(v => v.x1 >= h.x1 - maxThickPx && v.x1 <= h.x2 + maxThickPx && h.y1 >= v.y1 - maxThickPx && h.y1 <= v.y2 + maxThickPx).map(v => Math.round(v.x1 / 4))).size >= 2
+  // 두께 3px 까지 — 쪽 폭 굵은 회색 띠(표 위 구역 나눔)는 세로선과 만나도 행 경계가 아니다
+  horizontals.splice(baseH, hAdd.length, ...hAdd.filter(h => h.thicknessPx <= 3 && meets(h)))
   const dotH = detectBands(ink, width, height, maxThickPx, false, dotted)
   const dotV = detectBands(ink, width, height, maxThickPx, true, dotted)
   const tol = Math.max(2, Math.round(DOT_TOUCH_PT * scale))
@@ -263,8 +308,16 @@ export function detectRulingLines(
     && !sides(p.x1, p.y1, q.y1) && !sides(p.x2, p.y1, q.y1)
     && endsAt(p.x1, p.y1) && endsAt(p.x2, p.y1) && startsAt(q.x1, q.y1) && startsAt(q.x2, q.y1)))
   const shortV = detectBands(ink, width, height, maxThickPx, true, (m, base, step, span) => solidRuns(m, base, step, span, bridgeMin)).filter(v => v.y2 - v.y1 + 1 < minLenPx)
+  // 칸 없는 구간 이름 행("총포괄손익"·"기타포괄손익")에 끊긴 열 괘선 — 그 사이 한 행 높이 값 행의 세로 조각은 최소 길이에 못 미쳐 빠졌고,
+  // 행이 통째로 한 칸이 돼 값 9개가 한 줄 글로 뭉쳤다(감사보고서 연결자본변동표 "당기순손실"). 위아래 끝이 모두 가로 괘선 안쪽(양옆으로
+  // 더 뻗은 행 괘선)에 닿고 같은 x 에 긴 세로 괘선(같은 열 선)이 위와 아래 모두 있는 조각만 — 조직도 작은 상자의 옆변은 위아래 가로변의
+  // 끝이라 받지 않는다(여수·창원 계획 조직도가 칸으로 갈렸다). 칸 안 글자 획은 행 괘선 둘에 닿지 않는다
+  const long = verticals.filter(p => p.y2 - p.y1 + 1 >= minLenPx)
+  const inside = (x: number, y: number) => endsOn(x, y).some(h => h.x1 < x - 3 * tol && h.x2 > x + 3 * tol)
   for (const v of shortV) {
-    if (!sameSpan(endsOn(v.x1, v.y1), endsOn(v.x1, v.y2), v.x1)) continue
+    const column = inside(v.x1, v.y1) && inside(v.x1, v.y2) &&
+      long.some(p => Math.abs(p.x1 - v.x1) <= tol && p.y2 <= v.y1 + tol) && long.some(p => Math.abs(p.x1 - v.x1) <= tol && p.y1 >= v.y2 - tol)
+    if (!column && !sameSpan(endsOn(v.x1, v.y1), endsOn(v.x1, v.y2), v.x1)) continue
     if (!verticals.some(p => Math.abs(p.x1 - v.x1) <= tol && p.y1 <= v.y1 + tol && p.y2 >= v.y2 - tol)) verticals.push(v)
   }
   const allH = [...horizontals, ...dotH], allV = [...verticals, ...dotV]
@@ -323,7 +376,9 @@ export function detectRulingLines(
     if (!b || a.x2 - a.x1 < tol * 4) continue
     const y = (a.y1 + b.y1) / 2
     if (!onV(a.x1, y) || !onV(a.x2, y) || horizontals.some(h => Math.abs(h.y1 - y) <= tol && h.x1 <= a.x1 + tol && h.x2 >= a.x2 - tol)) continue
-    horizontals.push({ x1: a.x1, y1: y, x2: a.x2, y2: y, thicknessPx: 1 })
+    // 본문 행 괘선 끝에 맞닿으면 괘선째 한 선으로 — 맞닿은 두 조각은 표 격자가 한 선으로 잇지 못한다
+    const p = ruleH.find(p => Math.abs(p.y1 - y) <= fillGap && (Math.abs(p.x1 - a.x2) <= tol * 3 || Math.abs(a.x1 - p.x2) <= tol * 3))
+    horizontals.push(p ? { ...p, x1: Math.min(a.x1, p.x1), x2: Math.max(a.x2, p.x2) } : { x1: a.x1, y1: y, x2: a.x2, y2: y, thicknessPx: 1 })
   }
   // 칠한 칸 변이 본문 행 괘선 끝에 맞닿고(흰 틈 위아래, 괘선 y ± FILL_GAP) 다른 끝이 세로선에 닿아도 그 괘선을 잇는다 — 칠한 칸 옆이 연한 칠이라
   // 위 짝 변의 끝이 세로선에 안 닿는 행(합격자 표 "남자" 위)
@@ -334,7 +389,8 @@ export function detectRulingLines(
       if (!a) continue
       const far = side < 0 ? a.x1 : a.x2
       if (!onV(far, p.y1) || horizontals.some(h => Math.abs(h.y1 - p.y1) <= tol && h.x1 <= Math.min(far, end) + tol && h.x2 >= Math.max(far, end) - tol)) continue
-      horizontals.push({ ...p, x1: Math.min(far, end), x2: Math.max(far, end) })
+      // 틈 조각만 따로 넣으면 격자가 맞닿은 두 조각을 한 선으로 잇지 못해 칠한 열 칸이 행마다 갈리지 않았다 — 괘선째 늘인 한 선으로
+      horizontals.push({ ...p, x1: Math.min(far, p.x1), x2: Math.max(far, p.x2) })
     }
   }
   horizontals.push(...fillH)
@@ -597,6 +653,8 @@ interface Band {
   hi: number // 런 진행축 끝
   first: number // 직교축 시작 스캔라인 (h: yTop, v: xLeft)
   last: number // 직교축 마지막 스캔라인
+  plo: number // 직전 스캔라인 런 (이을지 판정용 — 띠 합집합이 아니라)
+  phi: number
 }
 
 /**
@@ -610,6 +668,7 @@ function detectBands(
   maxThickPx: number,
   transpose: boolean,
   readRuns: RunReader,
+  prevRun = false,
 ): PxSegment[] {
   const lines = transpose ? width : height // 스캔라인 개수 (직교축)
   const span = transpose ? height : width // 런 진행축 길이
@@ -634,6 +693,8 @@ function detectBands(
   const emit = (b: Band) => {
     const thick = b.last - b.first + 1
     if (thick > maxThickPx) return // 색상바·텍스트 밴드
+    // prevRun 띠는 위아래가 다 비어야 한다 — 한쪽이 사진·그림·칠한 띠인 변은 종전처럼 그 띠의 일부다
+    if (prevRun && (surroundInkRatio(b, b.first - 2) >= SURROUND_INK_RATIO || surroundInkRatio(b, b.last + 2) >= SURROUND_INK_RATIO)) return
     if (
       surroundInkRatio(b, b.first - 2) >= SURROUND_INK_RATIO &&
       surroundInkRatio(b, b.last + 2) >= SURROUND_INK_RATIO
@@ -659,11 +720,17 @@ function detectBands(
       for (let r = 0; r < runs.length; r++) {
         if (used.has(r)) continue
         const run = runs[r]
-        const overlap = Math.min(band.hi, run.hi) - Math.max(band.lo, run.lo) + 1
-        const shorter = Math.min(band.hi - band.lo, run.hi - run.lo) + 1
-        if (overlap >= shorter * BAND_OVERLAP_RATIO) {
+        // prevRun: 직전 스캔라인 런과 견준다 — 띠 합집합과 견주면 괘선에 맞붙은 칠한 열(감색 머리 칸)이 괘선 띠에 붙고, 그 띠가 아래 행
+        // 괘선까지 차례로 삼켜 두꺼운 띠로 버려졌다(지역인재 합격자 표 행 괘선). 길이가 절반도 안 되는 런(칠한 칸·글자)은 다른 띠다
+        const lo = prevRun ? band.plo : band.lo, hi = prevRun ? band.phi : band.hi
+        const overlap = Math.min(hi, run.hi) - Math.max(lo, run.lo) + 1
+        const prevLen = hi - lo + 1, runLen = run.hi - run.lo + 1
+        const shorter = Math.min(prevLen, runLen)
+        if (overlap >= shorter * BAND_OVERLAP_RATIO && (!prevRun || shorter * 2 >= Math.max(prevLen, runLen))) {
           band.lo = Math.min(band.lo, run.lo)
           band.hi = Math.max(band.hi, run.hi)
+          band.plo = run.lo
+          band.phi = run.hi
           band.last = line
           next.push(band)
           used.add(r)
@@ -674,7 +741,7 @@ function detectBands(
       if (!merged) emit(band)
     }
     for (let r = 0; r < runs.length; r++) {
-      if (!used.has(r)) next.push({ lo: runs[r].lo, hi: runs[r].hi, first: line, last: line })
+      if (!used.has(r)) next.push({ lo: runs[r].lo, hi: runs[r].hi, first: line, last: line, plo: runs[r].lo, phi: runs[r].hi })
     }
     open = next
   }

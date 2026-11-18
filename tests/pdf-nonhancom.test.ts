@@ -5,7 +5,8 @@
 
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { readFileSync } from "node:fs"
+import { OPS } from "../src/pdf/ops.js"
 import { normalizeItems, mergeLineSimple, type PdfTextItem, type NormItem } from "../src/pdf/text-line.js"
 import { detectColumns } from "../src/pdf/columns.js"
 import { dropShadingClipGrids, dropHeadBandClipGrids, dropCoarseClipGrids } from "../src/pdf/table-grid.js"
@@ -28,6 +29,16 @@ describe("normalizeItems — 자간 숫자 공백 접기", () => {
     assert.equal(mergeLineSimple(items), "Learning and Systems, 5.")
     // 자간을 벌린 숫자열은 그대로 접는다
     assert.equal(mergeLineSimple(normalizeItems([ti("45 0 -7 3 40 )", 10, 100, 80, 10)])), "450-7340)")
+  })
+  it("반올림으로 틈이 0 이 된 자리의 공백 글리프는 낱말 경계다 — \"Universal\" + \" \" + \"model\" (ODL 199 각주)", () => {
+    const items = normalizeItems([ti("B: Universal", 52.5, 11.7, 154.5, 5), ti(" ", 207, 11.7, 1.69, 5), ti("model of leading", 208.26, 11.7, 88.83, 5)])
+    // 한컴 외 PDF 는 반올림 좌표만 쓴다(parser preciseGaps)
+    for (const it of items) { delete it.fx; delete it.fw }
+    assert.equal(mergeLineSimple(items), "B: Universal model of leading")
+    // 공백 글리프 없이 붙은 조각은 그대로 붙인다
+    const plain = normalizeItems([ti("B: Universal", 52.5, 11.7, 154.5, 5), ti("model", 208.26, 11.7, 20, 5)])
+    for (const it of plain) { delete it.fx; delete it.fw }
+    assert.equal(mergeLineSimple(plain), "B: Universalmodel")
   })
 
   it("소수 덩어리가 둘 이상이면 따로 선 수들이다 — 표 한 행 값을 담은 조각 (평가 기준 별표2 \"2 100 1.0 2.0 … 10.0\")", () => {
@@ -499,5 +510,27 @@ describe("mergeSideBandTables — numeric label/value bands", () => {
     const short = table([["1 2 3 4 5 6 7 8 9"]], 242, 100, 540)
     assert.equal(mergeSideBandTables([labels, prose]).length, 2)
     assert.equal(mergeSideBandTables([labels, short]).length, 2)
+  })
+})
+
+describe("detectClusterTables — 틈 없는 중·일문 줄", () => {
+  it("양쪽 맞춤 중문 본문 ①②③ 항목은 표가 아니다 — 은행 기입란만 남는다 (LibreOffice 중문 계약서 4쪽 실측 아이템)", () => {
+    const raw: [string, number, number, number, number, number][] = JSON.parse(readFileSync(new URL("./fixtures/cjk-justified-prose-items.json", import.meta.url), "utf8"))
+    const items: ClusterItem[] = raw.map(([text, x, y, w, fs, sp]) => ({ text, x, y, w, h: fs, fontSize: fs, fontName: "f", hasSpaceBefore: sp === 1 }))
+    const prose = (t: { usedItems: Set<ClusterItem> }) => [...t.usedItems].some(i => i.text === "本著作物的翻译应" || i.text === "自本合同")
+    assert.equal(detectClusterTables(items, 4).filter(prose).length, 0)
+  })
+  it("기입 빈칸이 낀 중문 본문 ①②③ 항목은 표가 아니다 (LibreOffice 중문 계약서 6쪽 \"但出版社在 ____ 日内未履行…\" 실측 아이템)", () => {
+    const raw: [string, number, number, number, number, number][] = JSON.parse(readFileSync(new URL("./fixtures/cjk-fill-blank-prose-items.json", import.meta.url), "utf8"))
+    const items: ClusterItem[] = raw.map(([text, x, y, w, fs, sp]) => ({ text, x, y, w, h: fs, fontSize: fs, fontName: "f", hasSpaceBefore: sp === 1 }))
+    const tables = detectClusterTables(items, 6)
+    assert.ok(!tables.some(t => [...t.usedItems].map(i => i.text).join("").includes("日内未履行")), "기입 빈칸 본문은 표 밖")
+  })
+  it("기입란 2열 표 위 본문 세 줄은 표의 첫 행이 아니다 (LibreOffice 일문 계약서 4쪽 은행 기입란 실측 아이템)", () => {
+    const raw: [string, number, number, number, number, number][] = JSON.parse(readFileSync(new URL("./fixtures/cjk-form-above-prose-items.json", import.meta.url), "utf8"))
+    const items: ClusterItem[] = raw.map(([text, x, y, w, fs, sp]) => ({ text, x, y, w, h: fs, fontSize: fs, fontName: "f", hasSpaceBefore: sp === 1 }))
+    const tables = detectClusterTables(items, 4)
+    assert.ok(tables.some(t => [...t.usedItems].some(i => i.text === "銀")), "기입란 표는 남는다")
+    assert.ok(!tables.some(t => [...t.usedItems].some(i => i.text.startsWith("い。ただし"))), "본문 줄은 표 밖")
   })
 })

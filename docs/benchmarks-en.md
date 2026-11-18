@@ -2,6 +2,121 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.83: footnote-list rule for ordinal-column tables · 2026-11-17
+
+The rule that treats a borderless table whose first column holds only `1)`, `2)`, … as a footnote list now also requires that at least half of those numbers are referenced by small-font body items on the same page (#214). Across 2,111 corpus PDFs (score benchmark 1,911, ODL 200) the rule fires on one page only, task1725 p.209, where references point to all 4 numbers, so that page is judged as before. Against 4.24.82, score 5,465, PDF text 744, PDF tables 730, annex 544, formats 146, roundtrip 75, ODL 200 (all four runs), OCR 56 and robustness 54 show no per-document change, and the KoOCR-Bench public 877-page predictions are byte-identical (.90657). Scoring code is unchanged.
+
+## 4.24.82: hayro as the PDF text-layer engine · 2026-11-17
+
+Text items, operators, fonts and images in PDFs now come from hayro (WebAssembly) instead of pdf.js (#213). OCR and formula rasters still use PDFium. Against 4.24.81, score 5,465, PDF text 744, PDF tables 730, annex 544, formats 146, roundtrip 75, ODL 200 (all four runs), OCR 56 and robustness 54 show no per-document drops and 2 gains (ODL `01030000000007` nid .99441 → .99684, robustness web047 at +1° skew CER .1663 → .1227). KoOCR-Bench public 877 pages .90653 → .90657. The scoring references (`ocr-lib.mjs`, `verify-pages.mjs`, `ref/pdf-consensus.mjs`) keep using pdfjs-dist, independent of the engine under test.
+
+## 4.24.81: escaping line-start `>` and `---` in markdown · 2026-11-16
+
+Plain paragraphs now escape a line-start `>`, a line made only of hyphens and a setext underline below a text line with `\`, in paragraph position only (#212). Table cells and IR text are unchanged. Score 5,465, PDF text 744, PDF tables 730, annex 544, formats 146, roundtrip 75 and ODL 200 (all four runs): no per-document change. Scoring code is unchanged.
+
+## 4.24.80: HWP output · 2026-11-15
+
+Adds an output that converts generated HWPX to HWP 5.0 (optional dependency `@rhwp/core`). 11 generated samples (plain, two columns with equations, 9 government-document presets, with tables and images) keep their page counts with 0 content-loss reports; re-read text matches the HWPX for plain, two-column, official, notice, minutes and press (for report, plan, gaejosik, ministry and bangchim the HWP parser also reads chapter numbers and the table of contents as text). Parser and scoring code are unchanged.
+
+## 4.24.79: spaced digits, line-start particles, page-break table rows, OCR value rows · 2026-11-14
+
+- Digits spaced with real space glyphs stay spaced; line-start fragments after Hanja and particle-shaped words, and weekday parentheses after dates, join the previous line: PDF text spaceF1 .99149 → .99159, 19 documents up (.981 → 1, .990 → 1), ODL TEDS .98015 → .98053 (5 documents). One drop: reading order of one form document .86375 → .86241 — its ground truth writes page numbers as "- 10 -", which the new output now matches (spaceF1 .964 → .969), but the scorer strips the leading "- " as a list marker and four page numbers leave the order sample
+- Table rows split at an unruled page break (two-line labels, numbered lists inside cells) are joined: annex PDF recall .99982 → .99983 (one annex .99837 → 1). One drop: score PDF cross-coverage of the same document 1 → .99903 — the two-extractor consensus follows physical line order, so merging the cell changes a neighbour pair; the output now matches the HWPX ground truth
+- Short column rules between unruled section-name rows survive in OCR tables: KoOCR 0.90644 → 0.90653 (one audit-report table .901 → 1). Tables, OCR, ODL OCR, formats and roundtrip unchanged per document; the other KoOCR pages unchanged
+
+## 4.24.78: letter-spacing false spaces, table captions, figure caption order, list wraps · 2026-11-14
+
+- pdfjs false spaces inside letter-spaced Hangul lines in Hancom PDFs (no space glyph in the glyph stream, same-TJ shift ≤ 0.15em) are removed: PDF text spaceF1 .99139 → .99149, 20 documents up (.925 → .954, .949 → .977, .947 → .965), no drops
+- Table captions survive layout-table flattening: the last score document below 1 goes .9995 → 1 — all 5,465 documents at 1
+- HWP figure ($pic) captions below the image follow the image (same order as HWPX); wrapped lines of hanging-indent numbered PDF lists join their item (ODL 165): no per-document change
+- OCR cells "18 (18.2%)" are no longer split into count and percent columns: KoOCR drug_label page CER .134 → .123, KoOCR 0.90644 (text .86431 → .86432). Tables, annex, the four ODL runs, OCR, formats and roundtrip unchanged per document
+
+## 4.24.77: PDF false spaces by producer, preview formulas · 2026-11-14
+
+- The unrounded-coordinate space rules now also apply to Microsoft Print To PDF and LibreOffice PDFs: PDF text spaceF1 on four press releases .962 → .993, .974 → .992, .983 → .991, .982 → .986, and five LibreOffice pairs up (one form .991 → 1). Tables, annex, score, the four ODL runs, OCR, formats and roundtrip unchanged per document; KoOCR 0.90644 unchanged
+- SVG preview: fractions are drawn stacked (numerator, rule, denominator); cases and matrices render as one line without leaking environment names. reflow gate 59/59
+
+## 4.24.76: superscript runs, footnote lists, two-line cell labels · 2026-11-14
+
+- Superscript runs printed as several items (run end right before the next glyph, uniform and smaller size) attach as one superscript: PDF text spaceF1 on four documents up (.967 → .976, .989 → .996, .997 → 1, .984 → .985), one reading order .9942 → .9945
+- Footnote lists at the page foot ("78) … see", consecutive numbers) are not tables — footnotes 78) to 81) on one page now join the body notes
+- Two-line labels in a cell (same size, horizontally overlapping) are not absorbed as superscripts: coverage .981 → 1 on one form
+- score pdfCoverage up on 11 documents; tables, annex, the four ODL runs, OCR, formats and roundtrip unchanged per document; KoOCR 0.90644 unchanged
+- Rejected: cutting gap-free word lines out of cluster regions (one exam paper's order .913 → .716, ODL 117 TEDS 1 → .76, seven drops)
+
+## 4.24.75: exam papers and formulas · 2026-11-14
+
+- PDF exam page borders: box rules inside questions split the page-frame grid and the page body became a table (text-layer pages). PDF text reading order 0.99398 → 0.99463 (two exam papers .877 → .952 and .889 → .963, another .800 → .865, hwp3-sample16 .990 → 1), PDF table exact 0.98241 → 0.98284, score pdfCoverage up on six documents. The four small drops on the same documents (−0.0001 to −0.0008) are explained in the CHANGELOG (page-header text the false table held on one page, the benchmark's note unwrapping treating " |" inside reference formulas as a cell boundary, an ambiguous line wrap). Annex, the four ODL runs, OCR, formats and roundtrip unchanged; KoOCR 0.90644 unchanged
+- Reading HWP/HWPX equations: over 4,361 distinct corpus formulas, bare denominators 112 → 0, leaked conversion markers 63 → 6, literal over 58 → 0, root 16 → 0, HWPX rm/it leaks 792 → 0
+- Generated equation boxes: against 22,130 Hancom-saved formulas the median relative width error falls from 2.235 to 0.079 (p90 8.17 → 0.33); median height and baseline error 0. Generating and re-reading the formulas of four exam papers returns 4,502 of 4,521 unchanged
+- Rejected: a wrap guard that keeps a space before a whole parenthetical line (spaceF1 down on four documents whose source glues it), removing box rules on OCR pages too (a unit line joined the header cell on one KoOCR gazette table page)
+
+## 4.24.74: image normalisation and image-file input (#210) · 2026-11-13
+
+Images inside documents and image files are normalised to formats LLM APIs accept (public HWP/HWPX samples: images rejected by LLM APIs 5,109 (46%) → 416 (3.8%), PR #210). No per-document change on text, tables, annex tables, score, the four ODL runs, OCR, formats or roundtrip; KoOCR-Bench 0.90644 with no page changed.
+
+## 4.24.73: middle-dot line wraps · particles after footnote stars · 2026-11-13
+
+PDF text (744 hwpx↔pdf pairs) word-boundary F1 0.99125 → **0.99131** (28 documents up). One document down (fiscal strategy agenda 0.99399 → 0.99385) is a ground-truth limit: the source wrote "설계-제작 -검증-인증" with a stray space before a hyphen, which falls at a PDF line end and cannot be told apart. No per-document drops on tables, annex tables, score, the four ODL runs or OCR; KoOCR-Bench 0.90644 unchanged.
+
+- Rejected: joining bracket wraps by default when the document gives no evidence (10 up, 3 down), joining line-start middle dots inside table cells (cell bullets such as "·수질변화시" — 4 documents down).
+
+## 4.24.72: line wraps before brackets · HWP3 figure numbers · formula post-processing · 2026-11-13
+
+PDF text (744 hwpx↔pdf pairs) word-boundary F1 0.99117 → **0.99125** (35 press releases up, none down). Formula ground truth (20 arXiv papers, 621 pages, run alone) exact match 0.6171 → **0.6266** (recall 0.9775 and precision 0.9725 unchanged, no paper down). HWP↔HWPX pair (score) hwp3-sample similarity → 1. No per-document drops on tables, annex tables, score, the four ODL runs or OCR; KoOCR-Bench 0.90644 unchanged.
+
+- Rejected: applying the bracket rule to cell text too (header cells "키⏎(cm)", "2025년⏎(1~7월)" — 10 documents down), only one-word brackets (43 → 14 documents up), formula normalisation before the junk filter (one multi-line formula dropped whole), a closing `\;|` norm rule (2 pairs up, 1 down).
+
+## 4.24.71: borderless label/value tables · CJK fill-in lines · bracket auto-spacing · 2026-11-13
+
+PDF text (744 hwpx↔pdf pairs) reading order 0.99366 → **0.99398** (two LibreOffice student-council reports 0.965 → 0.998 and 0.972 → 0.993), word-boundary F1 0.99114 → **0.99117** (Japanese contract 0.975 → 0.987, Chinese 0.982 → 0.988), precision 0.99683 → 0.99685. No per-document drops on tables, annex tables, score, the four ODL runs or OCR; KoOCR-Bench 0.90643 → 0.90644.
+
+- Rejected: splitting label/value fragments without guards (two-column paper lines became a 2-column table — ODL 189 TEDS 0.966 → 0.889; "❍ 기 | 간 : 연중" colon lines became tables — Jangheung plan coverage down; dash-only revision columns — issue2019 order down), a median right edge for CJK full lines (treated ragged left-aligned lines as full, four tests failed, no gain on the target documents).
+
+## 4.24.70: CJK page breaks and auto-spacing · vertical cuts through fill-in blanks · HWP auto numbers · 2026-11-13
+
+PDF text (744 hwpx↔pdf pairs) word-boundary F1 0.99113 → **0.99114** (LibreOffice Chinese contract 0.961 → 0.982, Japanese 0.962 → 0.975), recall 0.99885 → 0.99886. External KoOCR-Bench v2.0c, 877 public pages: 0.90633 → **0.90643** (four CSAT math pages up, none down — reading-order fix). HWP↔HWPX pairs (score): tac-img-02 and footnote_tail similarity → 1. No per-document drops on tables, annex tables, score, the four ODL runs or OCR.
+
+- Rejected: skipping footnotes for Korean documents too (a paragraph ending in a "(9.17. 기준)" note was joined across the footnote to the next page's new paragraph — reading order down on two press releases), blocking every one-line-tail vertical cut without geometric limits (8 ODL documents up but 6 documents down — side-by-side pages "<붙임1>" and label cells), stored values for page-number auto numbers ("－346－" in the handbook body).
+
+## 4.24.69: PDF CJK body text · nested ordered lists · 2026-11-12
+
+PDF text (744 hwpx↔pdf pairs) word-boundary F1 0.99111 → **0.99113** (7 documents up — LibreOffice Chinese contract 0.940 → 0.961, Japanese 0.956 → 0.962), two annex documents up. No per-document drops on tables, annex tables, score, the four ODL runs, OCR, formats, roundtrip or gen. One drop (pii word F1 0.94235 → 0.94222) is a benchmark artifact: the two changed lines now match the ground-truth HWPX lines character for character and precision rose 0.99339 → 0.99357 — the old duplicated "1\." happened to offset "1." tokens the PDF side lacks elsewhere. KoOCR 0.90633 unchanged after merging #209.
+
+- Rejected: choosing HWPX textDir by the Hangul version recorded in the HWP summary (55 pairs saved as HWP by 2022 and later as HWPX by 2024 cannot be told apart — exact matches 69 → 37), strikeout NONE under centre underline (only one 2022-saved ground truth; 92 documents reversed), joining side-by-side table grids (indistinguishable from one table split in half — 5 KoOCR pages down).
+
+## 4.24.68: OCR two-line cells · CJK fill-in forms · white-background frames · 2026-11-12
+
+External KoOCR-Bench v2.0c, 877 public pages: 0.90623 → **0.90633** (tables 0.91574 → 0.91594, five table pages up). Two pages dropped (a figure label inside a drug-label table cell and an "exit" label on a booth map): visible figure text is now read, while the ground truth omits figure text — a ground-truth limit (scoring unchanged). PDF text Japanese contract word-boundary F1 0.944 → 0.956. No per-document drops on in-house OCR, OCR robust, ODL-OCR, text, tables, annex tables, score or the four ODL runs.
+
+- Rejected: relaxing the two-line re-read outside table cells (5 figure-label pages down), dropping white fill outlines that touch no visible line (also used for paragraph separation — 13 documents down), discarding white-fill grids (ODL 157, which uses them as column frames, dropped).
+
+## 4.24.67: closed box tables · CJK body text · 2026-11-12
+
+External KoOCR-Bench v2.0c, 877 public pages: 0.90590 → **0.90623** (tables 0.91507 → 0.91574 — a press-release page whose "release date" and "contact" boxes were merged into one table: TEDS 0.678 → 0.847, no drops). PDF text (744 pairs) word-boundary F1 0.99108 → **0.99111** (Chinese contract 0.867 → 0.940, Japanese contract 0.930 → 0.944), reading order one document up. No per-document drops on in-house OCR, tables, annex tables, score or the four ODL runs.
+
+- Rejected: pre-joining touching kanji/kana fragments before table detection (combined with fill-in fields on other lines into a new false table), applying the closed-box rule to one-cell frames (the frame-unwrapping path changed and box lines stopped joining).
+- Left as ground-truth limits: KoOCR 156759247_p003 (ground truth is a different page's table), 156760717_p001 (three side-by-side tables as one), 156728866_p046 (hidden empty rows under every value row), ODL 187 and 189 (text layer "✗" written as "X").
+
+## 4.24.66: OCR rules next to filled columns · PDF word spacing · 2026-11-12
+
+External KoOCR-Bench v2.0c, 877 public pages: 0.90568 → **0.90590** (tables 0.91464 → 0.91507 — a recruitment-result table TEDS 0.706 → 0.786, a statistics table 0.695 → 0.733, no drops). PDF text (744 hwpx↔pdf pairs) word-boundary F1 0.99103 → **0.99108** (13 documents up, none down); ODL 200 default, best, fast and OCR: one document up. No per-document drops on in-house OCR, OCR robust, tables, annex tables or score.
+
+- Rejected: adding isolated vertical rules (rows merged in open form tables without outer verticals — a building-permit form CER 6.3% → 16.3%), applying the rounded-space rule to every space item (zero-width spaces in math PDFs and spaces before superscripts — 6 ODL and 3 in-house documents down).
+- Left as ground-truth limits: ODL 184 footnotes (text-line strip images), 197 (ground truth makes a one-column list a 1×2 table), 122 (garbled ground-truth glyphs), 200 (ground-truth rowspan differs from the page), 165 (formulas drawn as glyph outlines).
+
+## 4.24.65: OCR figure text (forest plots, number-at-risk tables) · 2026-11-12
+
+External KoOCR-Bench v2.0c, 877 public pages: 0.90517 → **0.90568** (text 0.86118 → 0.86376 — drug-label forest-plot pages CER 1.0 → 0.0 and 1.0 → 0.547, a survival-curve page 0.437 → 0.034, no drops). No per-document drops on in-house OCR, OCR robust or ODL-OCR.
+
+- Rejected: restoring a leading "ㅇ" lost in blurred scans (false ㅇ on ☑ checkboxes and boxed sources — 6 pages down), handwriting drop threshold 0.35 and 0.6 (both worse; 0.5 kept), extending table verticals through text gutters (header cells split).
+
+## 4.24.64: official-document "-" items, formula norms, OCR filled-column rules · 2026-11-11
+
+Formula OCR ground truth (20 arXiv papers, 621 pages, report only, run alone): exact 0.615 → **0.6171**, meanNED 0.0366 → 0.0365, nedAll 0.0582 → 0.0581, BLEU-4 0.9021 → 0.9022, recall and precision unchanged; 7 pairs improved, none worse. The official-document "-" item output change: no per-document drops on score 5,465, roundtrip 75, generation repro 5, formats 146 and annexes 544. OCR filled-column rules: KoOCR-Bench 0.90517 unchanged (pass-roster table 0.703 → 0.706); no drops on in-house OCR, OCR robust or ODL-OCR.
+
+- Held back: adding isolated OCR rule lines (tables 0.9146 → 0.9156, KoOCR 0.90566) still drops a weather table and the pass-roster table.
+
 ## 4.24.63: URL links (#204), OCR dark header columns · 2026-11-11
 
 #204 (body URLs, QR URLs, `htmlCellLinks` option) was merged onto the previous main and compared per document against main on score 5,465, PDF text 744, PDF tables 730, ODL 200 (default, HTML tables, OCR off), annexes 544, formats 146, roundtrip 75, generation repro 5 and OCR 56 — all identical. OCR row boundaries in dark-filled header columns: KoOCR-Bench 0.90517 unchanged (statistics table 0079_445161_p069 TEDS 0.692 → 0.695, no drops); no per-document drops on in-house OCR, OCR robust or ODL-OCR.

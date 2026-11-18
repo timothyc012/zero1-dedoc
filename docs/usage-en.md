@@ -33,7 +33,7 @@ npm install kordoc        # CLI only? no install needed: npx kordoc <file>
 
 PDF and OCR dependencies are installed by default (`--omit=optional` slims the install but drops PDF and OCR). Only PDF print rendering (`markdownToPdf`) needs `puppeteer-core` installed separately.
 
-Embedding kordoc as a library in an app (Electron etc.): the only required packages `import "kordoc"` actually loads are `jszip` and `markdown-it` (`cfb` and the XML parser wasm are bundled). `@modelcontextprotocol/sdk` (plus the 92 packages, about 11MB, it pulls in such as express and hono), `commander` and `zod` serve only `kordoc mcp` and the CLI, so they can be left out of an app installer. Optional dependencies (`sharp`, `onnxruntime-node`, `@huggingface/tokenizers`, `@hyzyla/pdfium`, `pdfjs-dist`) can be dropped for the features you do not use (PNG render, OCR, PDF). The MCP SDK is not an optional dependency because, as in #99 below, npm drops optional dependencies together when one of them fails to install, which would remove the MCP server entirely.
+Embedding kordoc as a library in an app (Electron etc.): the only required packages `import "kordoc"` actually loads are `jszip` and `markdown-it` (`cfb` and the XML parser wasm are bundled). `@modelcontextprotocol/sdk` (plus the 92 packages, about 11MB, it pulls in such as express and hono), `commander` and `zod` serve only `kordoc mcp` and the CLI, so they can be left out of an app installer. Optional dependencies (`sharp`, `onnxruntime-node`, `@huggingface/tokenizers`, `@hyzyla/pdfium`) can be dropped for the features you do not use (PNG render, OCR). The PDF engine (hayro wasm) ships inside the package. The MCP SDK is not an optional dependency because, as in #99 below, npm drops optional dependencies together when one of them fails to install, which would remove the MCP server entirely.
 
 <details>
 <summary>Troubleshooting</summary>
@@ -101,7 +101,7 @@ if (result.success) {
 | `memos` | `--memos` | append document memos (Hangul "insert memo") as a final "메모" section — the memo list is always in the result's `memos` (memo text, anchored text, paragraph, author, time, block index; HWPX · HWP5) |
 | `dedupeRunningHeaders` | `--dedupe-headers` | drop running headers repeated per page in HWP5 layout tables (opt-in: may also drop per-attachment renumbering) |
 | `inlineImages` | `--inline-images` | inline images as base64 data URIs (BMP→PNG, HWP5) |
-| `imageFormat` | `--image-format webp` | image format. Unset: as before, PDF images are PNG and other formats keep the original embedded images. Set: every image is in that format (file name, MIME and bytes agree; the format is judged from the bytes): `"png"` gives PNG, `"webp"` lossless WebP (`exact`; 200 PDF images: 25.5 → 14.8MB, encoding CPU 3.25 → 8.6s). EXIF rotation, ICC, CMYK, animated GIF and SVG are matched to what is shown. Images that cannot be converted (WMF/EMF, unreadable BMP or damaged, WebP over 16,383px) keep their original format with a warning. 2,782 documents: png 4,099 → 775MB, webp 4,099 → 504MB. Needs the optional dependency `sharp` |
+| `imageFormat` | `--image-format webp` | image format. Unset: images are normalized to what LLMs read — PNG, JPEG and WebP (accepted by all major LLM APIs: Claude, OpenAI, Gemini) keep their original bytes, others (BMP, GIF, TIFF, AVIF, HEIC, SVG) become PNG, and PDF images are PNG. Set: every image is in that format (file name, MIME and bytes agree; the format is judged from the bytes): `"png"` gives PNG, `"webp"` lossless WebP (`exact`; 200 PDF images: 25.5 → 14.8MB, encoding CPU 3.25 → 8.6s). EXIF rotation, ICC, CMYK, animated GIF and SVG are matched to what is shown. Images that cannot be converted (WMF/EMF, unreadable BMP or damaged, WebP over 16,383px) keep their original format with a warning. 2,782 documents: png 4,099 → 775MB, webp 4,099 → 504MB. Needs the optional dependency `sharp` |
 | `imagePlacement` | `--image-placement flow` | where PDF image blocks go. Default `"page-end"` (page end, no `bbox`). `"flow"`: between text blocks by position on the page — after the last block in the same column (blocks that overlap horizontally) that starts at or above the image's top edge, otherwise before that column's first block. Image blocks get a `bbox`. A repeated image appears only where it is first drawn |
 | `dropBlankImages` | `--drop-blank-images` | drop near-uniform images (after compositing on white, every channel's max − min ≤ 24: blank panels, solid bars, faint gradients) from image blocks, `images` and references in text (default false; only when image bytes are produced). All formats — PDFs use the decoded pixels, other formats decode the original (built-in BMP decoder, otherwise the optional dependency `sharp`; WMF/EMF are kept) |
 | `qrCodes` | `--qr-codes` | read QR codes in images into the image block's `qr` and the line after the Markdown image placeholder (an http(s) URL as the autolink `<url>`; all formats, also with `images: false`). Needs the optional dependency `zxing-wasm` |
@@ -195,7 +195,7 @@ await markdownToHwpx(md, {
   gongmun: {
     preset: "개조식",
     cover: { org: "Agency", date: "2026. 7. 11." },
-    toc: true,                          // h2 list → Ⅰ Ⅱ Ⅲ TOC (on by default for gaejosik)
+    toc: true,                          // h2 list → Ⅰ Ⅱ Ⅲ TOC (on by default for gaejosik with a cover)
     approval: ["담당", "팀장", "과장"],   // approval box (optional)
     pageNumbers: true,                  // page numbers (on by default for gaejosik/report/plan)
     endMark: false,                     // "끝." at the end (on by default for drafts)
@@ -204,8 +204,11 @@ await markdownToHwpx(md, {
 ```
 
 - Tables follow government conventions automatically (shaded header, double bottom rule, content-proportional widths). Themes and a reference document's table format (`hwpxToProfile`) are accepted too.
-- For the report, plan, gaejosik and bangchim presets, a blockquote right after the `#` title (`> …하고자 함`) becomes the summary box (gaejosik puts it under the title box on the first body page when the cover is on, the default; with `cover: false` the first `#` is a chapter header and the quote stays a ※ note). Keep it to one sentence (commas allowed) within three lines; longer or multi-sentence summaries produce a warning. For ministry, `> ▪ …` blockquotes become performance summary boxes wherever they appear.
+- For the report, plan, gaejosik and bangchim presets, a blockquote right after the `#` title (`> …하고자 함`) becomes the summary box (gaejosik puts it under the title box on the first body page; with `cover: false` a single leading `#` becomes that title box on page 1 and the TOC is off by default, while several `#` headings stay chapter headers). Keep it to one sentence (commas allowed) within three lines; longer or multi-sentence summaries produce a warning. For ministry, `> ▪ …` blockquotes become performance summary boxes wherever they appear.
+- In gaejosik, a numbered `### 1. Section` becomes a section band (number cell + underlined title); an unnumbered `### Title` stays a □ item. A `< Table title >` paragraph right before a table is a centred caption, `(단위: 억원)` is a small right-aligned unit line, and a `자료 : …` line right after a table is a source line (report, plan and bangchim treat captions and unit lines the same way; source lines become ※ notes).
+- With `toc: true`, report, plan and bangchim fill the TOC page column with the page each chapter starts on (body page 1 = 1) and list 붙임 (attachment) lines below the chapters. Pages come from kordoc's own layout.
 - CLI: `kordoc generate report.md -o report.hwpx --preset 개조식 --org Agency --approval 담당,팀장,과장`
+- HWP (5.0) output: `-o report.hwp` (for MCP `generate_document`, give `output_path` a `.hwp` extension). kordoc writes HWPX and converts it with the optional peer dependency `@rhwp/core` (MIT, about 32 MB unpacked), so run `npm install @rhwp/core` first. In the library: `await hwpxToHwp(await markdownToHwpx(md))`. Anything dropped in the conversion is reported in `warnings`.
 
 ### Layout-preserving render
 
@@ -360,6 +363,7 @@ npx kordoc fill --template gian -j values.json -o draft.hwpx        # built-in d
 
 # generate · edit · verify
 npx kordoc generate report.md -o report.hwpx --preset 보고서         # Markdown → official HWPX
+npx kordoc generate report.md -o report.hwp --preset 보고서          # save as HWP (5.0) — needs npm install @rhwp/core
 npx kordoc patch original.hwpx edited.md -o patched.hwpx            # format-preserving patch (.hwp auto)
 npx kordoc patch original.hwpx edited.md --json --silent            # applied count, skipped edits, verification residual as JSON
 npx kordoc to-hwpx document.hwp                                     # HWP → HWPX (5.x keeps formatting; -o needed when a same-name .hwpx exists)
@@ -375,6 +379,8 @@ npx kordoc generate report.md -o report.hwpx --preset report --gate # no file wh
 npx kordoc profile agency-form.hwpx                                 # table format profile JSON → generate --profile
 npx kordoc levels agency-sample.hwpx                                # per-marker-level font/size/bold → generate --levels
 npx kordoc generate report.md -o report.hwpx --levels-from agency-sample.hwpx  # apply a sample's level styles
+npx kordoc measure public-report.pdf --preset 보고서                 # measure a report PDF: margins, line spacing, per-level (□ㅇ-※) font/size, chapter cell colour
+npx kordoc generate report.md -o report.hwpx --preset 보고서 --layout public-report.pdf  # apply the measured look on top of the preset (explicit options win)
 npx kordoc generate report.md -o report.hwpx --preset report --agency 국세청  # central-ministry house style (measured on 2,670 press releases, 52 agencies + 공통)
 npx kordoc pack build report1.hwpx report2.hwpx report3.hwpx --name Gwangyang -o gwangyang.kpack  # agency pack from your own documents (docs/agency-pack-en.md)
 npx kordoc pack info gwangyang.kpack --guide                        # pack summary and writing guide
@@ -429,7 +435,7 @@ Conversion failures emit the JSON below to stdout in every `--format` and exit 1
 | `ZIP_BOMB` / `DECOMPRESSION_BOMB` | decompression-bomb guard triggered |
 | `NO_SECTIONS` | no body sections |
 | `OUTPUT_TOO_LARGE` | output serialization exceeds the runtime string limit |
-| `MISSING_DEPENDENCY` | optional dependency not installed (pdfjs-dist, …) |
+| `MISSING_DEPENDENCY` | optional dependency not installed (onnxruntime-node, …) |
 | `EMPTY_INPUT` | empty input |
 | `FILE_NOT_FOUND` | input path does not exist (ENOENT) |
 | `PARSE_ERROR` | any other parse failure |
@@ -477,7 +483,7 @@ On Windows, if Claude Desktop can't find `.cmd`, use `"command": "cmd", "args": 
 | `patch_document` | apply edited Markdown back into the original HWPX/HWP, format preserved |
 | `convert_to_hwpx` | HWP → HWPX — HWP 5.x keeps its formatting (fonts, paragraph shapes, tables, pictures, shapes, equations, headers, footnotes, charts), HWP 3.x carries text and tables only. Needs `output_path` when a same-name .hwpx already exists |
 | `extract_profile` | table format profile JSON from a reference HWPX — reuse via `generate_document`'s `profile_path` |
-| `generate_document` | Markdown (tables/equations/charts) → HWPX, official-document presets (table total row goes right under the header by default — `total_row`), department template `template_path`, agency pack `pack_path` |
+| `generate_document` | Markdown (tables/equations/charts) → HWPX, official-document presets (table total row goes right under the header by default — `total_row`), department template `template_path`, agency pack `pack_path`, report PDF look `layout_path` |
 | `build_agency_pack` | a few agency documents (HWPX) → agency pack (.kpack): picks a representative template, strips original text, writes a writing guide ([agency packs](agency-pack-en.md)) |
 | `agency_pack_info` | agency pack summary and writing guide — read it before writing a manuscript for the pack |
 | `lint_document` | official-document review — notation always, plus opt-in style/slop/logic/number/budget checks (calculation basis, table totals, foreign currency, increase basis); each finding has line and column |
@@ -499,7 +505,7 @@ On Windows, if Claude Desktop can't find `.cmd`, use `"command": "cmd", "args": 
 | `parse(buffer, options?)` | auto format detection → Markdown + `IRBlock[]` (a file path string works too) |
 | `parseHwpx` · `parseHwp` · `parseHwp3` · `parseHwpml` | HWPX · HWP 5.x · HWP 3.x (1996–2002) · HWPML only — all `(buffer, options?)` |
 | `parsePdf` · `parseDocx` · `parsePptx` · `parseXlsx` · `parseXls` | PDF · DOCX · PPTX · XLSX · XLS (Excel 97–2003, BIFF8) only |
-| `parseImage(buffer, options?)` | images (PNG/JPG/WebP) only — built-in OCR always on |
+| `parseImage(buffer, options?)` | images (PNG/JPG/WebP/TIFF/GIF/BMP/AVIF/HEIC/PCX) only — built-in OCR always on |
 | `detectFormat(buffer)` | synchronous magic-byte detection — returns `hwpx` for ZIP and `hwp` for OLE2 for backward compatibility |
 | `await detectZipFormat(buffer)` | ZIP entries → `hwpx` · `xlsx` · `docx` · `pptx` · `unknown` |
 | `detectOle2Format(buffer)` | OLE2 streams → `hwp` · `xls` · `unknown` |
@@ -582,12 +588,12 @@ import type {
 | **HWP 5.x** (Hancom legacy) | OLE2 + CFB | distribution-copy decryption, open passwords, corrupted-CFB recovery, footnotes/hyperlinks, 21 control chars, image extraction, real page boundaries |
 | **HWP 3.x** (1996–2002) | single binary | Johab → Unicode, 5,893 Hanja/symbol lookup, nested paragraphs, arae-a (archaic Hangul), open passwords |
 | **HWPML 2.x** (XML-based HWP) | XML DOM | HeadingType-based headings, merged cells, DoS guards |
-| **PDF** | pdfjs-dist | ruled, clip-based and borderless tables, XY-Cut reading order, two-column pages, headings, footnotes/endnotes, math-font recovery, OCR, underline/links, image extraction, text-quality signals |
+| **PDF** | hayro (wasm) | ruled, clip-based and borderless tables, XY-Cut reading order, two-column pages, headings, footnotes/endnotes, math-font recovery, OCR, underline/links, image extraction, text-quality signals |
 | **XLSX** (Excel) | ZIP + XML DOM | shared strings, merged cells, multiple sheets, formula display, date cells to ISO, large-sheet streaming |
 | **XLS** (Excel 97–2003) | OLE2 + BIFF8 | Workbook stream, SST shared strings, cell/sheet extraction |
 | **DOCX** (Word) | ZIP + XML DOM | style-based headings, numbering (real number labels), footnotes, hyperlinks, image extraction |
 | **PPTX** (PowerPoint) | ZIP + XML DOM | presentation order (sldIdLst), one slide = one page, title placeholders as headings, two-level body bullet lists, merged tables, speaker notes (as quotes), image extraction, hidden slides skipped. Chart/SmartArt text: warning only |
-| **Images** (PNG/JPG/WebP) | sharp + built-in OCR | screenshots and scans as direct input, tables recovered from raster rules |
+| **Images** (PNG/JPG/WebP/TIFF/GIF/BMP/AVIF/HEIC/PCX) | sharp + built-in OCR (BMP and PCX via the built-in decoder, HEIC via `npm install libheif-js`) | screenshots, scans, faxes and phone photos as direct input, multi-page TIFF and DCX page by page, tables recovered from raster rules. JPEG 2000, PSD etc. are rejected with the format name |
 
 ---
 
@@ -609,7 +615,8 @@ import type {
 - **PaddleOCR** (Apache 2.0, PaddlePaddle) — derived text OCR engine (PP-OCRv5 korean)
 - **Pix2Text** (MIT, breezedeus) — formula OCR (MFD/MFR) algorithm port. Models are downloaded at runtime and not redistributed — the MFD weights are based on Ultralytics YOLOv8 (AGPL-3.0), so commercial or closed products relying on formula OCR should check those terms separately
 - **cfb** (Apache 2.0, SheetJS) — HWP5 OLE2 container parsing
-- **pdfjs-dist** (Apache 2.0, Mozilla) — PDF text extraction
+- **hayro** (Apache 2.0 OR MIT, The Hayro Authors) — PDF engine (shipped as wasm; crate notices in `THIRD_PARTY/hayro-pdf.txt`)
+- **PDF.js** (Apache 2.0, Mozilla) — text-chunk rules, operator numbering and PDF string decoding re-implemented
 - **JSZip** (MIT, Stuart Knightley et al.) — ZIP-based format parsing
 
 Full notices are in [NOTICE](../NOTICE) and license texts in `THIRD_PARTY/` — both ship in the npm package.

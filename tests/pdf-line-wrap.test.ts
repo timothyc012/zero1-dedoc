@@ -16,6 +16,35 @@ function lexOf(...lines: string[]): WrapLexicon {
 }
 
 describe("wrapJoiner — 꺾인 자리 붙임/띄움 (hwpx↔pdf 실측 사례)", () => {
+  it("반각 가운뎃점 ･·한 점 리더 ․ 로 끝난 줄도 이어진 낱말 (공연･전시･영화･⏎도서, 국민건강보험공단․⏎국세청)", () => {
+    assert.equal(wrapJoiner("문화(공연･전시･영화･", "도서) 지원"), "")
+    assert.equal(wrapJoiner("국민건강보험공단․", "국세청 등"), "")
+    assert.equal(wrapJoiner("다음을 참고․․", "자료"), " ")
+    // 다음 줄이 가운뎃점·붙임표로 바로 이어지면 한 어절, 띄어 쓴 글머리는 아니다
+    assert.equal(wrapJoiner("공동 해결", "‧대응이 필요하다"), "")
+    assert.equal(wrapJoiner("‘생산-가공", "-유통’ 전 과정"), "")
+    assert.equal(wrapJoiner("다음과 같다", "- 첫째 항목"), " ")
+    // 각주 별표·닫는 따옴표 뒤 조사도 앞 어절의 꼬리다
+    assert.equal(wrapJoiner("안전조치 사업자*", "에 대해"), "")
+    assert.equal(wrapJoiner("근로장려금 1천원*", "으로, 근로"), "")
+    assert.equal(wrapJoiner("‘공공임대주택”", "이라면서, 이"), "")
+  })
+
+  it("한글 낱말 뒤 여는 괄호로 꺾인 줄 — 문서가 줄 안에서 붙여 쓰면 붙이고 띄워 쓰면 띄운다 (공동주택⏎(아파트))", () => {
+    // 같은 글자 쌍("택(")이 없어도 문서의 괄호 표기 습관으로 정한다
+    const joined = lexOf("국민연금(노령연금)과 기초연금(국비)을", "시설(경로당) 대상", "청년(19~34세) 대상")
+    assert.equal(wrapJoiner("층간소음 예방 공동주택", "(아파트) 구조로 연출한", joined), "")
+    const spaced = lexOf("국민연금 (노령연금)과 기초연금 (국비)을", "시설 (경로당) 대상", "청년 (19~34세) 대상")
+    assert.equal(wrapJoiner("층간소음 예방 공동주택", "(아파트) 구조로 연출한", spaced), " ")
+    // 서술 끝 뒤 괄호는 따로 선 덧말 — 증거와 무관하게 띄운다
+    assert.equal(wrapJoiner("지원을 확대한다", "(붙임 참조)", joined), " ")
+    // 다음 줄 전체가 괄호 하나(제목 줄바꿈)·띄어 쓴 괄호 이름표·줄 안에서 띄어 쓴 그 두 어절은 띄운다
+    assert.equal(wrapJoiner("외국정부 초청 장학생 카드", "(유학국 도착신고서)", joined), " ")
+    assert.equal(wrapJoiner("참여수당 등 제공", "(성장 유형) 미취업 청년에게", joined), " ")
+    const product = lexOf("국민연금(노령연금)과 기초연금(국비)을", "시설(경로당) 대상", "섬유탈취제 강력탈취 (상쾌한향-에이) 제품")
+    assert.equal(wrapJoiner("섬유탈취제 강력탈취", "(상쾌한향-에이) 제품", product), " ")
+  })
+
   it("다음 줄 첫 어절이 조사·어미뿐이면 붙인다 (또⏎는, 제7조의9⏎에, 박물관’⏎으로)", () => {
     assert.equal(wrapJoiner("사망자 또는 행방불명자의 배우자 또", "는 자녀"), "")
     assert.equal(wrapJoiner("법률」 제7조의9", "에 따라 아래와 같이"), "")
@@ -87,6 +116,23 @@ describe("wrapJoiner — 꺾인 자리 붙임/띄움 (hwpx↔pdf 실측 사례)"
     assert.equal(wrapJoiner("특송화물 · 국제우편 등", "주요 반입경로에", lex), " ")
   })
 
+  it("받침으로 가린 조사 꼴(과·이·가·와)로 끝난 어절 뒤 한 음절 조각은 붙인다 (결재란 데이터전략과⏎장)", () => {
+    const lex = lexOf("수신 인사과장 (경유)", "데이터전략과에서는 아래와 같이 요청합니다", "이 법 시행 전")
+    assert.equal(wrapJoiner("데이터전략과", "장", lex, false), "")
+    assert.equal(wrapJoiner("정산 금액 추가", "분 반영", lex), "")
+    // 조사 뒤 새 어절 — 두 음절 넘는 조각, 홀로 서는 한 음절(및·등), 문서 줄 안에 홀로 선 한 음절(법)은 띄운다
+    assert.equal(wrapJoiner("교육과", "훈련을 강화", lex), " ")
+    assert.equal(wrapJoiner("국민과", "등 관계자", lex), " ")
+    assert.equal(wrapJoiner("헌법과", "법 체계", lex), " ")
+  })
+
+  it("한자 낱말 뒤 줄 머리 조사도 앞 어절에 붙인다 (對數正規分布)⏎를 따를)", () => {
+    assert.equal(wrapJoiner("대수정규분포(log-normal distribution, 對數正規分布)", "를 따를 경우에는", undefined, false), "")
+    assert.equal(wrapJoiner("국제연합(國際聯合)", "의 결의", new WrapLexicon()), "")
+    // 한자 뒤 새 어절은 종전대로 띄운다
+    assert.equal(wrapJoiner("국제연합(國際聯合)", "결의안 채택", new WrapLexicon()), " ")
+  })
+
   it("닫힌 부류 한 음절(및·등)은 앞 쪽에 아직 안 나왔어도 조각으로 보지 않는다 (첫 쪽 보전⏎및)", () => {
     const empty = new WrapLexicon()
     assert.equal(wrapJoiner("해양자원의 보전", "및 지속가능한 활용", empty), " ")
@@ -111,6 +157,11 @@ describe("wrapJoiner — 꺾인 자리 붙임/띄움 (hwpx↔pdf 실측 사례)"
     assert.equal(wrapJoiner("(청장 후보자 윤희근)은 7월 28일", "(목)부터 전국의", lexOf("신청은 7월 29일(금)까지 받는다")), "")
     // 날짜가 아닌 한 음절 조각은 종전대로 ("주시기 바⏎랍니다")
     assert.equal(wrapJoiner("납부하여 주시기 바", "랍니다.", empty), "")
+    // 요일 괄호는 문서가 괄호를 띄워 쓰는 쪽이어도 날짜에 붙인다 — 항목 머리 "(가)" 꼴로 끊지도 않는다
+    const spaced = lexOf("모집 공고 (안) 붙임 (서식) 참조 (예시) 자료", "신청 기간 (1차) 접수 (2차) 심사")
+    assert.equal(wrapJoiner("경찰청은 7월 28일", "(목)부터 전국의", spaced), "")
+    assert.equal(startsNewItem("경찰청은 7월 28일", "(목)부터 전국의"), false)
+    assert.equal(startsNewItem("다음과 같다", "(가) 첫째 항목"), true)
   })
 
   it("되다 활용 앞 주격 '이'·인용 '-라' 뒤 하다는 띄우고, 명사 뒤 하다·되다는 붙인다", () => {
@@ -182,6 +233,9 @@ describe("wrapJoiner — 어절 머리 증거", () => {
 describe("startsNewItem — 줄 머리 새 항목", () => {
   it("글머리표·번호·조항은 새 항목", () => {
     assert.equal(startsNewItem("앞 줄", "○ 통계분야에 대한 지식"), true)
+    // "# " 도 글머리다(위험물 사용 신청서 "…제출 필요" ⏎ "# 화기․위험물의 예") — 붙은 "#3" 은 아니다
+    assert.equal(startsNewItem("[별지 서식 제4호] 제출 필요", "# 화기․위험물의 예"), true)
+    assert.equal(startsNewItem("부스 번호는", "#3 입니다"), false)
     assert.equal(startsNewItem("앞 줄", "- 일급: 80,240원"), true)
     assert.equal(startsNewItem("앞 줄", "2.개인정보 보호책임자 지정"), true)
     assert.equal(startsNewItem("앞 줄", "제3조(목적) 이 법은"), true)
@@ -254,6 +308,23 @@ describe("bodyLineJoins — 본문 꺾임 기하", () => {
     ])
     // 둘째 자리("5.1 …" → "5.2 …")는 묶음에서 가장 넓은 찬 줄이라 기존 full 판정이 잇는다 — 이 규칙의 몫이 아니다
     assert.equal(joins[0], "\n")
+  })
+
+  it("양쪽 정렬 본문과 한 묶음인 왼쪽 정렬 목록 — 번호 뒤 글 자리에 선 다음 줄의 첫 어절이 못 들어간 줄은 잇는다 (ODL 165)", () => {
+    // 본문 오른끝 555.3(양쪽 정렬), 목록 "1." 61.2 · 글 74.7 · 9pt · 줄 간격 14pt
+    const item = (text: string, right: number, y: number, hang?: number) => ({ ...line(text, hang ? 61.2 : 74.7, right, y, 9), hang })
+    const joins = bodyLineJoins([
+      line("Phenolphthalein changes from colorless to faint pink when the quantity of OH- ions added via the NaOH equals the", 56.7, 555.3, 460.7, 9),
+      line("quantity of H+ ions in the solution (that is, when the pH is raised to 7). For this activity, assume the soil samples have", 56.7, 555.3, 446.7, 9),
+      line("been extracted and the filtrates are now available for analysis.", 56.7, 314.3, 432.7, 9),
+      item("1. Place 10 ml of each filtrate into separate 125 ml flasks. This 10 ml quantity is the amount of filtrate from 1.0 gram of", 550.9, 405.9, 74.7),
+      item("soil.", 91.3, 391.9),
+      item("2. Add 10 drops of the phenolphthalein indicator.", 268.3, 377.9, 74.7),
+      item("3. Titrate the extract with the NaOH solution to a faint pink endpoint. The titration must be done very carefully to", 540.6, 363.9, 74.7),
+      item("obtain meaningful results. If you put too much NaOH in the flask and get a bright pink color, discard the solution", 545.3, 349.9),
+      item("and repeat the process. In the table below, record the milliliters of NaOH solution used to achieve the endpoint.", 540.5, 335.9),
+    ])
+    assert.deepEqual(joins, [" ", " ", "\n", " ", "\n", "\n", " ", " "])
   })
 
   it("양쪽 정렬 묶음의 덜 찬 줄은 문단 끝줄이라 잇지 않는다 (ODL 188 \"e.g., H6.\" ⏎ \"Model merging.\")", () => {
@@ -574,5 +645,53 @@ describe("bodyLineJoins — 줄 둘뿐인 묶음의 넓은 줄 간격", () => {
   })
   it("근거가 없으면 종전대로 2em 넘는 간격은 문단 경계", () => {
     assert.equal(bodyLineJoins(two)[0], "\n")
+  })
+})
+
+describe("wrapJoiner — 조문 인용 꺾임 (행정업무운영 편람 부칙 칸)", () => {
+  it("줄 끝 홀로 선 \"제\" 는 다음 줄 조문 번호와 한 어절이다", () => {
+    assert.equal(wrapJoiner("협업 촉진에 관한 규정」 제", "41조제1항”을"), "")
+  })
+  it("인용 사이 꺾임은 문서가 줄 안에서 쓴 표기를 따른다", () => {
+    const joined = lexOf("제9조제9항제6호 중 다음과 같이", "영 제13조제4항에 따른 사항")
+    assert.equal(wrapJoiner("관한 규정」 제42조", "제1항”으로 한다.", joined), "")
+    const spaced = lexOf("법 제3조 제1항에 따라 다음과", "같은 법 제5조 제2항 및 제3항")
+    assert.equal(wrapJoiner("관한 규정」 제42조", "제1항”으로 한다.", spaced), " ")
+    // 단위마다 따로 — 조·항은 붙이고 항·호는 띄운 문서(퇴직공직자 취업심사 보도자료 "제17조제2항 제8호")
+    const mixed = lexOf("공직자윤리법 제17조제2항 제8호에 따른", "같은 법 제17조제2항 제7호 및")
+    assert.equal(wrapJoiner("공직자윤리법 제17조제2항", "제5호, 제8호", mixed), " ")
+    assert.equal(wrapJoiner("공직자윤리법 제17조", "제2항 제8호", mixed), "")
+  })
+  it("인용으로 끝난 줄 뒤 하위 단위는 새 항목이 아니다 — 새 조 머리는 그대로 항목", () => {
+    assert.equal(startsNewItem("관한 규정」 제42조", "제1항”으로 한다."), false)
+    assert.equal(startsNewItem("공포한 날부터 시행한다.", "제2조(다른 법령의 개정)"), true)
+  })
+})
+
+describe("joinPageBreakWraps — 중·일문 매단 문장부호", () => {
+  it("줄 끝 문장부호를 판 밖으로 매단 중문은 1em 짧은 끝줄도 꽉 찬 줄이다 (중문 계약서 \"…规定款项的银\" ⏎ \"行账号如下…\")", () => {
+    const mk = (text: string, page: number, x: number, w: number): IRBlock => ({ type: "paragraph", text, pageNumber: page, bbox: { page, x, y: 100, width: w, height: 10 }, style: { fontSize: 11 } })
+    const hung = mk("出版社应在发行前向著作权人发送译本的封面设计，", 1, 72, 462) // 매단 "，" 까지 534
+    const a = mk("第五条（版税的支付方法）出版社向著作权人支付上述第二条、第三条、第四条规定款项的银", 1, 72, 451)
+    PARA_LAST_LINE.set(a.bbox!, { right: 523, width: 451, fontSize: 11 })
+    const b = mk("行账号如下，或日后向著作权人书面告知出版社的指定账号进行支付。", 2, 72, 300)
+    const blocks = [hung, a, b]
+    joinPageBreakWraps(blocks)
+    assert.equal(blocks.length, 2)
+    assert.ok(blocks[1].text!.includes("的银行账号如下"), blocks[1].text)
+  })
+})
+
+describe("joinPageBreakWraps — 사이에 낀 쪽 바닥 각주", () => {
+  it("앞 쪽 끝 문단과 다음 쪽 첫 문단 사이 각주(작은 글자·번호로 엶)는 건너뛰어 잇고 각주는 뒤에 남긴다 (일문 계약서)", () => {
+    const a: IRBlock = { type: "paragraph", text: "なお、出版物の具体的な仕様については別途規定するものと", pageNumber: 1, bbox: { page: 1, x: 57, y: 217, width: 481, height: 132 }, style: { fontSize: 10 } }
+    PARA_LAST_LINE.set(a.bbox!, { right: 538, width: 481, fontSize: 10 })
+    const note: IRBlock = { type: "paragraph", text: "1 この契約書のモデルは、韓国出版社の間で有用である。", pageNumber: 1, bbox: { page: 1, x: 57, y: 65, width: 482, height: 129 }, style: { fontSize: 9 } }
+    const b: IRBlock = { type: "paragraph", text: "する。", pageNumber: 2, bbox: { page: 2, x: 68, y: 757, width: 30, height: 10 }, style: { fontSize: 10 } }
+    const blocks = [a, note, b]
+    joinPageBreakWraps(blocks)
+    assert.equal(blocks.length, 2)
+    assert.ok(blocks[0].text!.endsWith("規定するものとする。"), blocks[0].text)
+    assert.equal(blocks[1], note)
   })
 })

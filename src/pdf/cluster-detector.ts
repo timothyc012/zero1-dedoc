@@ -16,7 +16,7 @@
  */
 
 import type { IRTable, IRCell, BoundingBox } from "../types.js"
-import { PREFIX_SCRIPT } from "./text-line.js"
+import { PREFIX_SCRIPT, scriptRunFits } from "./text-line.js"
 import { isProseFragmentTable, isProseTable } from "./table-roles.js"
 import { clusterCellLines, joinClusterCellLines, type ClusterCellLine } from "./cluster-cell-text.js"
 import type { WrapLexicon } from "./line-wrap.js"
@@ -34,6 +34,9 @@ export interface ClusterItem {
   fontName: string
   /** pdfjs 공백 아이템이 직전에 있었음 — 단어 경계 힌트 */
   hasSpaceBefore?: boolean
+  /** 반올림 전 x·폭 — 공백 글리프 자리의 실제 틈을 잰다(text-line exactGap) */
+  fx?: number
+  fw?: number
   /** 직전 공백이 pdfjs 가 글자 틈으로 만든 것뿐(글리프 흐름에 공백 글리프 없음, tracked-text markSyntheticSpaces) — 균등배분 run 을 끊지 않는다 */
   syntheticSpace?: boolean
   /** 줄 끝 공백 글리프 (tracked-text markTrailingSpaceGlyphs) — 칸 줄 꺾임이 어절 경계 */
@@ -132,7 +135,9 @@ export function detectClusterTables(items: ClusterItem[], pageNum: number, rejec
       const columns = extractColumnClusters(suspiciousRows)
       if (columns.length >= MIN_COLS) {
         const tableRegions = findTableRegions(rows, columns)
-        for (const region of tableRegions) {
+        for (const found of tableRegions) {
+          const region = { ...found, rows: trimCjkProseEdges(found.rows) }
+          if (region.rows.length < MIN_ROWS) continue
           // 열은 영역 안 행으로 다시 세운다 — 같은 쪽 다른 표의 열 x 가 섞이면 가짜 사이 열이 생긴다.
           // 영역 열이 더 적을 때만(섞인 열을 걷어낼 때만), 그 표의 몸통 칸 글이 모두 짧고 글꼴 사용자 영역(수식 기호) 문자가 없을 때만 쓴다 — 행이 적은 영역은 기준 수가
           // 낮아 기호 줄·문장 줄에서 가짜 표가 살아난다(수학 시험지·보도자료 본문)
@@ -168,7 +173,7 @@ export function detectClusterTables(items: ClusterItem[], pageNum: number, rejec
   // 산문 역할의 후보도 표가 아니다 (table-roles.ts). 목차·차트는 호출 측이 그 영역의 글로 바꾼다
   return results.filter(r => {
     const twoColumns = isTwoColumnProse(r)
-    const prose = twoColumns || isProseTable(r.table) ||
+    const prose = twoColumns || isProseTable(r.table) || gaplessCjkLines(r) || isFootnoteList(r, items) ||
       [...r.usedItems].every(it => it.fontName === "ocr") && isProseFragmentTable(r.table)
     if (prose && rejected) rejected.prose++
     // OCR 두 단 본문은 단 경계(군집 상자들 사이 빈 x 띠 가운데 양쪽 글이 고른 가장 넓은 것)를 알린다 — 호출 측이 글 판정으로 못 찾은
@@ -187,6 +192,77 @@ export function detectClusterTables(items: ClusterItem[], pageNum: number, rejec
     return !prose
   })
 }
+
+/**
+ * 각주 목록 — 쪽 아래 "78) 제19장 … 참조" 줄들은 번호와 글 사이가 벌어져 2열 후보가 된다. 채워진 행이 (하나 빼고) 모두 첫 칸에 각주 번호
+ * "N)" 만 들고 번호가 하나씩 차례로 늘고, 그 번호의 절반 이상을 같은 쪽 본문의 작은 글씨 참조("가능성"78))가 가리키면 표가 아니다.
+ * 본문 글로 돌려 각주 잇기(본문 "78)" 참조 ↔ 각주 줄)가 받는다(task1725 209쪽: 참조 6pt, 각주 줄 12pt). 참조가 없으면 번호 열 표다
+ * ("1) | 사업 방식", #214). 각주 번호와 본문 글자 크기가 같은 문서가 있어 글자 크기로는 구분하지 않는다
+ */
+function isFootnoteList(r: ClusterTableResult, items: ClusterItem[]): boolean {
+  const filled = r.table.cells.map(row => row.filter(cell => cell.text.trim())).filter(row => row.length)
+  const marks = filled.map(row => /^(\d{1,3})\)$/.exec(row[0].text.trim())).filter(m => m !== null).map(m => Number(m![1]))
+  if (marks.length < 3 || marks.length < filled.length - 1 || !marks.every((v, i) => i === 0 || v === marks[i - 1] + 1)) return false
+  const sizes = [...r.usedItems].map(i => i.fontSize).sort((a, b) => a - b)
+  const small = sizes[sizes.length >> 1] * 0.85
+  const refs = new Set(items.filter(i => !r.usedItems.has(i) && i.fontSize <= small)
+    .map(i => /^\(?(\d{1,3})\)?$/.exec(i.text.trim())).filter(m => m !== null).map(m => Number(m![1])))
+  return marks.filter(m => refs.has(m)).length * 2 >= marks.length
+}
+
+/**
+ * 틈 없는 중·일문 줄로 된 후보 — 중·일문은 낱말 사이 공백이 없고 글자 폭이 고른 격자라 양쪽 맞춤 줄의 아이템 경계가 줄마다 같은 x 에
+ * 놓여 열처럼 보였다(LibreOffice 중문 계약서 ①②③ 본문이 4열 표로). 줄 안 아이템 사이 가장 큰 틈(줄머리 부호 뒤 제외)이 글자 크기 절반도
+ * 안 되는(칸 틈이 없는) 중·일문 줄이 셋 이상이고 아이템 둘 이상인 줄의 60% 이상이면 산문
+ */
+function gaplessCjkLines(r: ClusterTableResult): boolean {
+  let lines = 0, gapless = 0
+  for (const row of groupByBaseline([...r.usedItems].filter(i => i.text.trim()))) {
+    if (row.items.length < 2) continue
+    lines++
+    if (gaplessCjkRow(row.items)) gapless++
+  }
+  return gapless >= 3 && gapless >= lines * 0.6
+}
+
+/** 칸 틈 없는 중·일문 줄 — 아이템 둘 이상, 한자·가나가 절반 이상, 줄머리 부호 뒤를 뺀 가장 큰 틈이 글자 크기 절반 미만 */
+function gaplessCjkRow(items: ClusterItem[]): boolean {
+  const sorted = [...items].filter(i => i.text.trim()).sort((a, b) => a.x - b.x)
+  if (sorted.length < 2) return false
+  const text = sorted.map(i => i.text).join("").replace(/\s+/g, "")
+  if ([...text].filter(c => CJK_CHAR.test(c)).length < text.length * 0.5) return false
+  // 줄머리 항목 부호("①"·"1.") 뒤 들여쓰기 틈은 칸 틈이 아니다. 양쪽이 모두 여섯 자 넘는 글인 틈은 본문 속 기입 빈칸이다
+  // ("但出版社在 ____ 日内未履行合同义务" — 기입란 칸 글은 "银 行 名："처럼 짧다)
+  const fs = sorted[0].fontSize
+  const start = [...sorted[0].text.trim()].length <= 2 ? 2 : 1
+  const chars = (from: number, to: number) => sorted.slice(from, to).reduce((n, i) => n + i.text.trim().length, 0)
+  for (let k = start; k < sorted.length; k++) {
+    if (sorted[k].x - (sorted[k - 1].x + sorted[k - 1].w) < fs * 0.5) continue
+    // 틈 앞뒤 글 — 앞쪽 틈·뒤쪽 틈까지
+    let p = k - 1, q = k
+    while (p > 0 && sorted[p].x - (sorted[p - 1].x + sorted[p - 1].w) < fs * 0.5) p--
+    while (q + 1 < sorted.length && sorted[q + 1].x - (sorted[q].x + sorted[q].w) < fs * 0.5) q++
+    if (chars(p, k) <= 6 || chars(k, q + 1) <= 6) return false
+  }
+  return true
+}
+
+/** 영역 위아래 끝의 틈 없는 중·일문 본문 줄을 떼어 낸다 — 기입란 2열 표 위 본문 세 줄이 첫 행으로 붙었다(LibreOffice 일문 계약서 은행 기입란) */
+function trimCjkProseEdges(rows: RowGroup[]): RowGroup[] {
+  // 영역 전체가 틈 없는 본문 줄 위주면 떼지 않는다 — 통째로 산문 판정(gaplessCjkLines)을 받아야 한다. 끝만 떼면 빈칸 밑줄 틈이 있는
+  // 남은 본문 몇 줄이 작은 표로 살아났다(중문 계약서 1쪽 "出版社(Publisher) ____ 对本著作物")
+  const multi = rows.filter(r => r.items.filter(i => i.text.trim()).length >= 2)
+  const gapless = multi.filter(r => gaplessCjkRow(r.items)).length
+  if (gapless >= 3 && gapless >= multi.length * 0.6) return rows
+  let a = 0, b = rows.length
+  while (a < b && gaplessCjkRow(rows[a].items)) a++
+  while (b > a && gaplessCjkRow(rows[b - 1].items)) b--
+  // 본문 두 줄 이상이 붙었을 때만 — 제목 한 줄만 떼면 빈칸 밑줄 틈이 있는 남은 계약서 문장들이 작은 표로 살아났다(중문 계약서 1쪽)
+  return a + rows.length - b >= 2 ? rows.slice(a, b) : rows
+}
+
+/** 한자·가나·전각 문장부호 한 글자 (띄어쓰기 없는 중·일문 글) */
+const CJK_CHAR = /[\u3000-\u303f\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uff00-\uffef]/
 
 /** 세로 색인 탭 기둥으로 볼 최소 글자 수 */
 const SIDE_TAB_MIN = 6
@@ -347,37 +423,60 @@ function detectCompactStatisticalTables(rows: RowGroup[], pageNum: number): Clus
   return found
 }
 
+/**
+ * 줄을 칸 조각으로 — 아이템 둘이면 그대로 두 칸, 셋 이상이면 1.2em 넘는 틈에서만 가른다("1) 사업 방식 | 학부생들의 유대감과 결 MT 를 진행함" 이
+ * 아이템 다섯). 조각 글은 아이템 사이 틈이 0.2em 넘거나 공백 힌트가 있으면 띄운다. 가른 줄은 왼쪽 칸이 이름표처럼 짧아야(20자 안) 두 칸이다 —
+ * 두 단 본문 줄("ing merged model ‘SFT v3+v4’ retains the high | for GSM8K is 58.83, …")도 단 사이 틈으로 두 조각이 된다(ODL 189)
+ */
+function twoColumnCells(row: RowGroup): Array<{ x: number; y: number; fontSize: number; text: string }> {
+  const items = [...row.items].sort((a, b) => a.x - b.x)
+  if (items.length <= 2) return items.map(c => ({ x: c.x, y: c.y, fontSize: c.fontSize, text: c.text }))
+  const out: Array<{ x: number; y: number; fontSize: number; text: string; end: number }> = []
+  for (const c of items) {
+    const last = out.at(-1), gap = last ? c.x - last.end : Infinity
+    if (last && gap <= c.fontSize * 1.2) { last.text += (gap > c.fontSize * 0.2 || c.hasSpaceBefore ? " " : "") + c.text; last.end = Math.max(last.end, c.x + c.w) }
+    else out.push({ x: c.x, y: c.y, fontSize: c.fontSize, text: c.text, end: c.x + c.w })
+  }
+  // "❍ 기 간 : 연중"·"- 생계급여\t: 1,716가구" 처럼 띄운 쌍점으로 잇는 줄은 이름표·값 칸이 아니라 한 줄 글이다(균등배분 이름표 틈에서 갈리기도 한다)
+  if (out.length === 2 && (out[0].text.length > 20 || out.some(c => /^\s*[:：]|[:：]\s*$|\s[:：]\s/.test(c.text)))) return []
+  return out.map(({ end: _end, ...cell }) => cell)
+}
+
 /** Recover compact, borderless tables from repeated cell starts, even when
  * the inter-column whitespace is narrower than the generic gap threshold. */
 function detectAlignedTwoColumnTables(rows: RowGroup[], pageNum: number): ClusterTableResult[] {
   const found: ClusterTableResult[] = []
   let i = 0
   while (i < rows.length - 2) {
-    const first = [...rows[i].items].sort((a, b) => a.x - b.x)
+    const first = twoColumnCells(rows[i])
     if (first.length !== 2 || first.some(c => !c.text.trim() || c.text.length > 48) ||
         first[1].x - first[0].x < 45 || first[1].x - first[0].x > 260 ||
         /[.!?]$/.test(first[0].text)) { i++; continue }
-    const body: RowGroup[] = []
+    const body: Array<{ rows: RowGroup[]; left: string; right: string[] }> = []
     let j = i
     for (; j < rows.length; j++) {
-      const cells = [...rows[j].items].sort((a, b) => a.x - b.x)
+      const cells = twoColumnCells(rows[j])
       const previous = body.at(-1)
+      if (previous && previous.rows.at(-1)!.y - rows[j].y > Math.max(24, first[0].fontSize * 2.8)) break
+      // 값 칸이 꺾인 줄 — 오른쪽 열에 맞춰 선 한 조각은 앞 행 값에 잇는다(LibreOffice 테두리 없는 표 "…함께하며 ⏎ 이야기를 나누는 자리를 마련")
+      if (previous && cells.length === 1 && Math.abs(cells[0].x - first[1].x) <= 5 && cells[0].text.trim()) {
+        previous.rows.push(rows[j]); previous.right.push(cells[0].text); continue
+      }
       if (cells.length !== 2 || cells.some(c => !c.text.trim() || c.text.length > 48) ||
-          Math.abs(cells[0].x - first[0].x) > 5 || Math.abs(cells[1].x - first[1].x) > 5 ||
-          (previous && previous.y - rows[j].y > Math.max(24, first[0].fontSize * 2.8))) break
-      body.push(rows[j])
+          Math.abs(cells[0].x - first[0].x) > 5 || Math.abs(cells[1].x - first[1].x) > 5) break
+      body.push({ rows: [rows[j]], left: cells[0].text, right: [cells[1].text] })
     }
-    if (body.length < 3) { i++; continue }
+    // 값 열 절반 넘게 글자·숫자가 없으면(신구조문 대비표 "------ 제4항----" 줄표) 값 칸이 아니다
+    if (body.length < 3 || body.filter(b => !/[\p{L}\p{N}]/u.test(b.right.join(""))).length * 2 >= body.length) { i++; continue }
     const top = rows[i - 1]
     const title = top?.items.length === 1 && Math.abs(top.items[0].x - first[0].x) <= 5 &&
       top.items[0].text.length <= 65 && top.y - first[0].y <= Math.max(24, first[0].fontSize * 2.8)
       ? top : undefined
-    const tableRows = title ? [title, ...body] : body
-    const cells: IRCell[][] = tableRows.map((row, idx) => {
-      if (title && idx === 0) return [{ text: row.items[0].text, colSpan: 2, rowSpan: 1 }, { text: "", colSpan: 1, rowSpan: 1 }]
-      const [left, right] = [...row.items].sort((a, b) => a.x - b.x)
-      return [{ text: left.text, colSpan: 1, rowSpan: 1 }, { text: right.text, colSpan: 1, rowSpan: 1 }]
-    })
+    const tableRows = [...(title ? [title] : []), ...body.flatMap(b => b.rows)]
+    const cells: IRCell[][] = [
+      ...(title ? [[{ text: title.items[0].text, colSpan: 2, rowSpan: 1 }, { text: "", colSpan: 1, rowSpan: 1 }]] : []),
+      ...body.map(b => [{ text: b.left, colSpan: 1, rowSpan: 1 }, { text: b.right.join(" "), colSpan: 1, rowSpan: 1 }]),
+    ]
     const usedItems = new Set(tableRows.flatMap(row => row.items))
     const all = [...usedItems]
     const minX = Math.min(...all.map(c => c.x)), minY = Math.min(...all.map(c => c.y))
@@ -453,7 +552,8 @@ function isTwoColumnProse(r: ClusterTableResult): boolean {
 
   // 두 실질 열 모두 평균 셀 길이가 길어야 함 (진짜 표엔 짧은 라벨/숫자 열 존재)
   for (const c of dense) {
-    const lens = t.cells.map(row => row[c]?.text.replace(/\s+/g, "").length ?? 0).filter(n => n > 0)
+    // OCR 한 글자 셀은 길이 평균에서 뺀다 — 포스터 장식 원을 "0" 으로 읽은 noise 가 단마다 끼어 평균을 깎았다(ODL 141, two-column.ts ocrGlyph 와 같은 noise)
+    const lens = t.cells.map(row => row[c]?.text.replace(/\s+/g, "").length ?? 0).filter(n => n > (ocr ? 1 : 0))
     const avg = lens.reduce((s, v) => s + v, 0) / (lens.length || 1)
     if (avg < (ocr ? 15 : 12)) return false
   }
@@ -750,7 +850,24 @@ function mergeOverlappingRows(rows: RowGroup[]): RowGroup[] {
  *  한다(연도 위첨자 "(’10)10.2만건 → (’25)17.1만건" 이 한 줄에 넷 — 넓은 간격의 넷 칸 행이 되어 본문 쪽이 통째로 4열 표가 됐다) */
 function isFragmentRow(row: RowGroup, host: RowGroup): boolean {
   if (!row.items.every(i => i.text.length <= 8)) return false
-  return row.items.length <= 3 || (row.items.length <= 16 && row.items.every(i => PREFIX_SCRIPT.test(i.text.trim()) && host.items.some(h => scriptAttached(i, h))))
+  if (row.items.length <= 3) return true
+  if (row.items.length > 16 || !row.items.every(i => PREFIX_SCRIPT.test(i.text.trim()))) return false
+  // 아이템 여럿으로 찍힌 위첨자 덩어리("2023.7|월|~|12|월", 사이 0.7em 안)는 덩어리 끝만 다음 글자 앞에 붙는다 — 끝이 붙으면 덩어리째 (text-line isAttachedScripts 와 같은 뜻)
+  const sorted = [...row.items].sort((a, b) => a.x - b.x)
+  for (let k = 0, start = 0; k < sorted.length; k++) {
+    const next = sorted[k + 1]
+    if (next && next.x - (sorted[k].x + sorted[k].w) <= sorted[k].fontSize * 0.7) continue
+    const run = sorted.slice(start, k + 1)
+    const end = run[run.length - 1]
+    // 덩어리는 붙는 글자보다 작고 고른 크기여야 한다(text-line scriptRunFits)
+    const runOk = run.length > 1 && host.items.some(h => {
+      const before = h.x - (end.x + end.w)
+      return before <= h.fontSize * 0.6 && before >= -h.fontSize * 0.1 && scriptRunFits(run, h)
+    })
+    if (!runOk && !run.every(i => host.items.some(h => scriptAttached(i, h)))) return false
+    start = k + 1
+  }
+  return true
 }
 
 /** 첨자 조각이 본문 글자 뒤에 맞붙었거나(틈 −0.1em ~ 0.35em) 앞에 빈칸 하나 안(0.6em)으로 붙었나 */

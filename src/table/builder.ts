@@ -293,6 +293,16 @@ export function escapeGfm(text: string): string {
 }
 
 /**
+ * 문단 줄 첫 블록 표지: 줄 첫 ">"(인용문)·하이픈 3개 이상만 든 줄(가로줄 "---")·윗줄 아래 "="·"-" 만 든 줄(setext 밑줄)의
+ * 첫 글자를 \ 로. 일반 문단 "> 50% 이상"·"---" 가 렌더·markdownToHwpx 왕복에서 인용문·가로줄이 되어 글자가 사라지던 것 (#212).
+ * 홀로 선 "====" 문단은 마크다운에서도 글자라 두고, 표 칸(GFM·HTML)에는 블록 문법이 없어 escapeGfm 에 두지 않고 문단 자리에서만 건다 (escapeGfm 뒤에)
+ */
+export function escapeBlockStart(md: string): string {
+  return md.replace(/^([ \t]*)(?=>|(?:-[ \t]*){3,}$)|(?<=\S[ \t]*\n)([ \t]*)(?=(?:=+|-+)[ \t]*$)/gm,
+    (_m, a: string | undefined, b: string | undefined) => (a ?? b ?? "") + "\\")
+}
+
+/**
  * IR 글 규약: 원문의 리터럴 `$` 는 `\$` 로 담는다. `$…$`·`$$…$$` 는 파서가 넣은 수식 스팬에만 쓴다
  * (HWPX·HWP5·HWP3). 둘이 같은 글자면 셸 변수 "echo $HOME $PATH" 가 마크다운 렌더러·채점에서
  * 수식으로 읽혔다 (v4.14.3). `\$` 는 CommonMark 백슬래시 이스케이프라 렌더 결과는 `$` 그대로다.
@@ -402,7 +412,11 @@ export function flattenLayoutTables(blocks: IRBlock[]): IRBlock[] {
       const hasNested = cells.some(row => row.some(c => c.blocks?.some(b => b.type === "table" && b.table)))
       const isFormFrame = hasNested && totalTextLen <= FORM_FRAME_MAX_TEXT
       if (!isFormFrame && numCols < 4 && (totalNewlines > 5 || (numRows <= 2 && totalTextLen > 300))) {
-        // 레이아웃 테이블 → 각 셀을 paragraph 블록으로 분해
+        // 레이아웃 테이블 → 각 셀을 paragraph 블록으로 분해. 표 캡션은 문단으로 남긴다(아래 캡션은 셀 글 뒤에) — 종전엔 버려
+        // 정책연구용역 중간진도보고서 "표 31. 일본 생존 간이식 실시 체제…" 같은 캡션 글이 사라졌다
+        const caption: IRBlock[] = block.table.captionBlocks?.length ? block.table.captionBlocks
+          : (block.table.caption ?? "").split("\n").map(l => l.trim()).filter(Boolean).map(text => ({ type: "paragraph" as const, text, pageNumber: block.pageNumber }))
+        if (!block.table.captionBelow) result.push(...caption)
         for (let r = 0; r < numRows; r++) {
           for (let c = 0; c < numCols; c++) {
             const cell = cells[r]?.[c]
@@ -425,6 +439,7 @@ export function flattenLayoutTables(blocks: IRBlock[]): IRBlock[] {
             }
           }
         }
+        if (block.table.captionBelow) result.push(...caption)
         continue
       }
     }
@@ -612,7 +627,10 @@ export function blocksToMarkdown(blocks: IRBlock[], options?: MarkdownOptions): 
       if (block.children) {
         for (const child of block.children) {
           const childPrefix = child.listType === "ordered" ? "1." : "-"
-          lines.push(`  ${childPrefix} ${escapeItemHead(escapeGfm(child.text || ""))}`)
+          // 글이 이미 제 번호·부호로 시작하면 그것을 표지로 쓴다(부모 항목과 같은 규칙) — "1. 1\\. 出版社无法…" 처럼 번호가 두 번 찍혔다(중문 계약서)
+          const ct = child.text || "", own = /^(\d{1,3}\.|-)\s+/.exec(ct)
+          const mine = own && (child.listType === "ordered") === (own[1] !== "-")
+          lines.push(mine ? `  ${own![0]}${escapeItemHead(escapeGfm(ct.slice(own![0].length)))}` : `  ${childPrefix} ${escapeItemHead(escapeGfm(ct))}`)
         }
       }
       continue
@@ -641,9 +659,10 @@ export function blocksToMarkdown(blocks: IRBlock[], options?: MarkdownOptions): 
         continue
       }
 
-      // gongmun 리스트 depth 선행 공백 (v4.0.5) — sanitizeText가 선두 공백을 지우므로
-      // 텍스트가 아니라 방출 시점에 붙인다. 2칸/단계 = md-runs 리스트 그리드와 동일
-      const listIndent = block.listDepth ? "  ".repeat(block.listDepth) : ""
+      // gongmun 리스트 부호 문단('- '·'1) ', listDepth) — 들여쓰기 대신 부호를 이스케이프해 글자 부호로 낸다. 2칸/단계 들여쓰기는
+      // 위 "○" 가 마크다운 목록이 아니라 4칸부터 코드 블록이 됐다(뷰어에서 항목이 목록으로 안 보임). □·○ 처럼 글자 부호로 두면
+      // 재생성 때 리터럴 부호 재분류(gen-gongmun-fit literalMarkerDepth)가 단계를 다시 매긴다
+      const listHead = (md: string) => block.listDepth ? escapeItemHead(md) : md
       const noteTable = noteTableMarkdown(block, gfm)
 
       // 인라인 강조 run-span (왕복 채널 — 자사 생성 파일 + 외래 실속성 복원) → 마커 재방출.
@@ -655,7 +674,7 @@ export function blocksToMarkdown(blocks: IRBlock[], options?: MarkdownOptions): 
           if (href) rendered = `[${rendered}](${href})`
         }
         if (block.footnoteText) rendered += noteTable || escapeGfm(` (주: ${block.footnoteText})`)
-        lines.push(block.quote ? "> " + rendered : listIndent + rendered, "")
+        lines.push(block.quote ? "> " + escapeBlockStart(rendered) : listHead(escapeBlockStart(rendered)), "")
         continue
       }
 
@@ -671,7 +690,7 @@ export function blocksToMarkdown(blocks: IRBlock[], options?: MarkdownOptions): 
       }
 
       // 여러 줄 인용문(요약 상자 문단 여럿)은 줄마다 "> " — 접두 없는 줄은 md 파서가 인용문에서 떼어 낸다
-      lines.push((block.quote ? escapeGfm(text).split("\n").map(l => "> " + l).join("\n") : listIndent + escapeGfm(text)) + noteTable, "")
+      lines.push((block.quote ? escapeBlockStart(escapeGfm(text)).split("\n").map(l => "> " + l).join("\n") : listHead(escapeBlockStart(escapeGfm(text)))) + noteTable, "")
     } else if (block.type === "table" && block.table) {
       // 테이블 앞에 빈 줄 보장 (마크다운 렌더링 필수)
       if (lines.length > 0 && lines[lines.length - 1] !== "") {

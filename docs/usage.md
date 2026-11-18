@@ -33,7 +33,7 @@ npm install kordoc        # CLI 만 쓸 거면 설치 없이 npx kordoc <파일>
 
 PDF·OCR 의존성은 기본으로 설치됩니다(줄이려면 `--omit=optional` — 대신 PDF·OCR 이 빠짐). PDF 인쇄 렌더(`markdownToPdf`)만 `puppeteer-core` 를 따로 설치하세요.
 
-앱(Electron 등)에 라이브러리로만 넣을 때: `import "kordoc"` 가 실제로 불러오는 필수 패키지는 `jszip`·`markdown-it` 뿐입니다(`cfb` 와 XML 파서 wasm 은 번들에 들어 있음). `@modelcontextprotocol/sdk`(와 그것이 끌고 오는 express·hono 등 92개, 약 11MB)·`commander`·`zod` 는 `kordoc mcp`·CLI 전용이라 앱 설치본에서 빼도 됩니다. 선택 의존(`sharp`·`onnxruntime-node`·`@huggingface/tokenizers`·`@hyzyla/pdfium`·`pdfjs-dist`)은 쓰지 않는 기능(PNG 렌더·OCR·PDF)만큼 뺄 수 있습니다. MCP SDK 를 선택 의존으로 돌리지 않는 이유는 아래 #99 처럼 다른 선택 의존 설치가 실패하면 npm 이 함께 빼 MCP 서버가 통째로 사라지기 때문입니다.
+앱(Electron 등)에 라이브러리로만 넣을 때: `import "kordoc"` 가 실제로 불러오는 필수 패키지는 `jszip`·`markdown-it` 뿐입니다(`cfb` 와 XML 파서 wasm 은 번들에 들어 있음). `@modelcontextprotocol/sdk`(와 그것이 끌고 오는 express·hono 등 92개, 약 11MB)·`commander`·`zod` 는 `kordoc mcp`·CLI 전용이라 앱 설치본에서 빼도 됩니다. 선택 의존(`sharp`·`onnxruntime-node`·`@huggingface/tokenizers`·`@hyzyla/pdfium`)은 쓰지 않는 기능(PNG 렌더·OCR)만큼 뺄 수 있습니다. PDF 엔진(hayro wasm)은 패키지 안에 들어 있습니다. MCP SDK 를 선택 의존으로 돌리지 않는 이유는 아래 #99 처럼 다른 선택 의존 설치가 실패하면 npm 이 함께 빼 MCP 서버가 통째로 사라지기 때문입니다.
 
 <details>
 <summary>설치 문제 해결</summary>
@@ -101,7 +101,7 @@ if (result.success) {
 | `memos` | `--memos` | 메모(한글 메모 넣기)를 문서 끝 "메모" 절로 — 메모 목록은 옵션 없이도 결과 `memos`(메모 글·붙은 글·문단·작성자·시각·블록 순번, HWPX·HWP5) |
 | `dedupeRunningHeaders` | `--dedupe-headers` | HWP5 레이아웃 표의 쪽마다 반복된 러닝 헤더 제거(붙임별 재번호도 지울 수 있어 opt-in) |
 | `inlineImages` | `--inline-images` | 이미지를 base64 data URI 로 인라인(BMP→PNG, HWP5) |
-| `imageFormat` | `--image-format webp` | 그림 형식. 지정하지 않으면 지금처럼 PDF 는 PNG, 다른 형식은 원본 그림 그대로. 지정하면 모든 그림이 그 형식(파일명·MIME·바이트가 같은 형식, 형식은 바이트로 판정): `"png"` 는 PNG, `"webp"` 는 무손실 WebP(`exact`, PDF 그림 200개 실측 25.5 → 14.8MB·인코딩 CPU 3.25 → 8.6초). EXIF 회전·ICC·CMYK·움직이는 GIF·SVG 는 보이는 그림으로 맞춘다. 바꿀 수 없는 그림(WMF·EMF, 못 읽는 BMP·손상, WebP 16,383px 초과)은 원본 형식으로 내고 경고. 문서 2,782개 실측: png 4,099 → 775MB, webp 4,099 → 504MB. optional dependency `sharp` 필요 |
+| `imageFormat` | `--image-format webp` | 그림 형식. 지정하지 않으면 LLM 이 읽는 형식으로 정규화: 주요 LLM API(Claude·OpenAI·Gemini)가 모두 받는 PNG·JPEG·WebP 는 원본 그대로, 그 밖(BMP·GIF·TIFF·AVIF·HEIC·SVG)은 PNG, PDF 는 PNG. 지정하면 모든 그림이 그 형식(파일명·MIME·바이트가 같은 형식, 형식은 바이트로 판정): `"png"` 는 PNG, `"webp"` 는 무손실 WebP(`exact`, PDF 그림 200개 실측 25.5 → 14.8MB·인코딩 CPU 3.25 → 8.6초). EXIF 회전·ICC·CMYK·움직이는 GIF·SVG 는 보이는 그림으로 맞춘다. 바꿀 수 없는 그림(WMF·EMF, 못 읽는 BMP·손상, WebP 16,383px 초과)은 원본 형식으로 내고 경고. 문서 2,782개 실측: png 4,099 → 775MB, webp 4,099 → 504MB. optional dependency `sharp` 필요 |
 | `imagePlacement` | `--image-placement flow` | PDF 그림 블록 자리. 기본 `"page-end"`(쪽 끝, `bbox` 없음). `"flow"`: 쪽 위 자리로 글 블록 사이에 — 같은 단(가로로 겹치는 블록)에서 그림 위쪽 변 이상 높이에서 시작하는 마지막 블록 뒤, 없으면 그 단의 첫 블록 앞. 그림 블록에 `bbox` 를 붙인다. 같은 그림의 반복은 처음 자리에만 |
 | `dropBlankImages` | `--drop-blank-images` | 거의 한 색인 그림(흰 바탕 합성 뒤 채널마다 최댓값−최솟값 24 이하: 빈 판·단색 띠·옅은 그러데이션)을 그림 블록·`images`·글 속 참조에서 뺀다(기본 false, 그림 바이트를 낼 때만). 모든 형식 — PDF 는 디코딩한 화소, 다른 형식은 원본을 풀어 본다(BMP 내장 디코더, 그 밖 optional dependency `sharp`, WMF·EMF 는 남김) |
 | `qrCodes` | `--qr-codes` | 그림 속 QR 코드 값을 그림 블록 `qr` 과 Markdown 그림 자리 다음 줄에(http(s) URL 은 자동 링크 `<URL>`, 모든 형식, `images: false` 여도 읽음). optional dependency `zxing-wasm` 필요 |
@@ -195,7 +195,7 @@ await markdownToHwpx(md, {
   gongmun: {
     preset: "개조식",
     cover: { org: "기관명", date: "2026. 7. 11." },
-    toc: true,                          // h2 목록 → Ⅰ Ⅱ Ⅲ 목차 (개조식 기본 켬)
+    toc: true,                          // h2 목록 → Ⅰ Ⅱ Ⅲ 목차 (개조식은 표지와 함께 기본 켬)
     approval: ["담당", "팀장", "과장"],   // 결재란 (선택)
     pageNumbers: true,                  // 쪽번호 (개조식·보고서·계획서 기본 켬)
     endMark: false,                     // 본문 끝 "끝." (기안문 기본 켬)
@@ -203,9 +203,12 @@ await markdownToHwpx(md, {
 })
 ```
 
+- 개조식 장 안 절은 `### 1. 절 제목`(번호칸 띠), □ 대항목은 번호 없는 `### 제목` 입니다. 표 바로 앞 「< 표 제목 >」 문단은 가운데 캡션, 「(단위: 억원)」은 오른쪽 작은 글씨, 표 바로 뒤 「자료 : …」는 출처행이 됩니다(보고서·계획서·서울방침도 캡션·단위 줄 같은 처리, 자료 줄은 ※ 참고).
+- 보고서·계획서·서울방침 목차(`toc: true`)는 쪽 칸에 장이 시작하는 쪽(본문 첫 쪽 = 1)을 넣고, 붙임 줄을 장 아래에 싣습니다. 쪽은 kordoc 조판 기준입니다.
 - 표는 정부 문서 관행(머리행 음영·이중 하변·내용 비례 열폭)을 자동 적용합니다. 테마·참조 문서 표 서식(`hwpxToProfile`)도 받습니다.
-- 보고서·계획서·개조식·서울방침은 `#` 제목 바로 뒤 인용문(`> …하고자 함`)이 요약 상자가 됩니다. 개조식은 표지가 있으면(기본) 본문 첫 쪽 제목 상자 아래에 두고, `cover:false` 면 첫 `#` 이 장 머리라 인용문은 ※ 참고가 됩니다. 보고 목적 한 문장(쉼표 허용) 3줄 이내로 쓰고, 넘거나 두 문장 이상이면 경고합니다. 업무보고는 `> ▪ …` 인용문이 자리와 관계없이 성과 요약 상자가 됩니다.
+- 보고서·계획서·개조식·서울방침은 `#` 제목 바로 뒤 인용문(`> …하고자 함`)이 요약 상자가 됩니다. 개조식은 본문 첫 쪽 제목 상자 아래에 둡니다. `cover:false` 개조식은 맨 앞 `#` 하나가 첫 쪽 제목 상자가 되고 목차는 기본으로 꺼집니다(`#` 이 여럿이면 종전대로 장 머리). 보고 목적 한 문장(쉼표 허용) 3줄 이내로 쓰고, 넘거나 두 문장 이상이면 경고합니다. 업무보고는 `> ▪ …` 인용문이 자리와 관계없이 성과 요약 상자가 됩니다.
 - CLI: `kordoc generate 보고서.md -o 보고서.hwpx --preset 개조식 --org 기관명 --approval 담당,팀장,과장`
+- HWP(5.0) 저장: `-o 보고서.hwp`(MCP `generate_document` 는 `output_path` 를 `.hwp` 로). kordoc 이 만든 HWPX 를 optional peer dep `@rhwp/core`(MIT, 풀면 약 32MB)로 옮겨 쓰므로 `npm install @rhwp/core` 가 필요합니다. 라이브러리는 `await hwpxToHwp(await markdownToHwpx(md))`. 옮기며 빠진 내용이 있으면 경고(`warnings`)로 알립니다.
 
 ### 레이아웃 보존 렌더
 
@@ -363,6 +366,7 @@ npx kordoc fill --template gian -j 값.json -o 기안문.hwpx           # 내장
 
 # 생성 · 편집 · 검증
 npx kordoc generate 보고서.md -o 보고서.hwpx --preset 보고서        # Markdown → 공문서 HWPX
+npx kordoc generate 보고서.md -o 보고서.hwp --preset 보고서         # HWP(5.0)로 저장 — npm install @rhwp/core 필요
 npx kordoc patch 원본.hwpx 편집.md -o 반영.hwpx                    # 서식 보존 패치 (.hwp 도 자동)
 npx kordoc patch 원본.hwpx 편집.md --json --silent                  # 적용 수·건너뛴 편집·검증 잔차 JSON
 npx kordoc to-hwpx 문서.hwp                                         # HWP → HWPX (5.x 는 서식 그대로, 같은 이름 .hwpx 가 있으면 -o 필요)
@@ -381,6 +385,8 @@ npx kordoc generate 보고서.md -o 보고서.hwpx --preset 보고서 --gate  # 
 npx kordoc profile 기관서식.hwpx                                   # 표 서식 프로필 JSON → generate --profile
 npx kordoc levels 기관견본.hwpx                                     # 항목부호 단계별 글꼴·크기·굵기 → generate --levels
 npx kordoc generate 보고서.md -o 보고서.hwpx --levels-from 기관견본.hwpx  # 견본 단계별 서식 바로 적용
+npx kordoc measure 공개보고서.pdf --preset 보고서                     # 보고서 PDF 모양 재기: 여백·줄간격·단계별(□ㅇ-※) 글꼴·크기·장 번호칸 색
+npx kordoc generate 보고서.md -o 보고서.hwpx --preset 보고서 --layout 공개보고서.pdf  # 잰 모양을 프리셋 위에 적용(직접 준 옵션 우선)
 npx kordoc generate 본문.md -o 새문서.hwpx --template 부서서식.hwpx     # 부서 견본의 제목표·담당 줄·요약 상자·□○-·※·표·참고 띠 서식으로 새 내용
 npx kordoc generate 보고서.md -o 보고서.hwpx --preset 보고서 --agency 국세청  # 중앙부처 기관 서식 (보도자료 2,670건 실측, 52곳·공통)
 npx kordoc pack build 보고서1.hwpx 보고서2.hwpx 보고서3.hwpx --name 광양시 -o 광양시.kpack  # 기관팩 — 우리 기관 문서로 서식 묶음 (docs/agency-pack.md)
@@ -436,7 +442,7 @@ npx kordoc watch ./문서 --webhook https://api/hook  # 웹훅 알림
 | `ZIP_BOMB` / `DECOMPRESSION_BOMB` | 압축 폭탄 방어 발동 |
 | `NO_SECTIONS` | 본문 섹션 없음 |
 | `OUTPUT_TOO_LARGE` | 출력 직렬화가 런타임 문자열 한계 초과 |
-| `MISSING_DEPENDENCY` | 선택 의존성 미설치 (pdfjs-dist 등) |
+| `MISSING_DEPENDENCY` | 선택 의존성 미설치 (onnxruntime-node 등) |
 | `EMPTY_INPUT` | 빈 입력 |
 | `FILE_NOT_FOUND` | 입력 경로 없음 (ENOENT) |
 | `PARSE_ERROR` | 그 외 파싱 실패 |
@@ -484,7 +490,7 @@ Windows 에서 Claude Desktop 이 `.cmd` 를 못 찾으면 `"command": "cmd", "a
 | `patch_document` | 편집한 Markdown 을 원본 HWPX/HWP 에 서식 보존 반영 |
 | `convert_to_hwpx` | HWP → HWPX 변환 — HWP 5.x 는 서식 그대로(글꼴·문단 모양·표·그림·도형·수식·머리말·각주·차트), HWP 3.x 는 글·표만. 같은 이름 .hwpx 가 이미 있으면 `output_path` 필요 |
 | `extract_profile` | 참조 HWPX 의 표 서식 프로필 JSON — `generate_document` 의 `profile_path` 로 재현 |
-| `generate_document` | Markdown(표·수식·차트) → HWPX, 공문서 프리셋 (표 합계 행은 기본 머리행 바로 아래 — `total_row`), 부서 견본 `template_path`·기관팩 `pack_path` |
+| `generate_document` | Markdown(표·수식·차트) → HWPX, 공문서 프리셋 (표 합계 행은 기본 머리행 바로 아래 — `total_row`), 부서 견본 `template_path`·기관팩 `pack_path`, 보고서 PDF 모양 `layout_path` |
 | `build_agency_pack` | 기관 문서(HWPX) 몇 건 → 기관팩(.kpack) — 대표 견본 고르기·원문 비우기·작성 요령 ([기관팩](agency-pack.md)) |
 | `agency_pack_info` | 기관팩 요약·작성 요령 — 팩으로 원고를 쓰기 전에 읽는다 |
 | `lint_document` | 공문서 검수 — 표기법 + 문체·윤문·구성·수치 대조·예산(산출근거 검산·표 합계·외화·증감 기준) 옵트인. 지적마다 줄·글자 위치 |
@@ -506,7 +512,7 @@ Windows 에서 Claude Desktop 이 `.cmd` 를 못 찾으면 `"command": "cmd", "a
 | `parse(buffer, options?)` | 포맷 자동 감지 → Markdown + `IRBlock[]` (파일 경로 문자열도 받음) |
 | `parseHwpx` · `parseHwp` · `parseHwp3` · `parseHwpml` | HWPX · HWP 5.x · HWP 3.x(1996~2002) · HWPML 전용 — 모두 `(buffer, options?)` |
 | `parsePdf` · `parseDocx` · `parsePptx` · `parseXlsx` · `parseXls` | PDF · DOCX · PPTX · XLSX · XLS(Excel 97~2003, BIFF8) 전용 |
-| `parseImage(buffer, options?)` | 이미지(PNG/JPG/WebP) 전용 — 내장 OCR 상시 적용 |
+| `parseImage(buffer, options?)` | 이미지(PNG/JPG/WebP·TIFF·GIF·BMP·AVIF·HEIC·PCX) 전용 — 내장 OCR 상시 적용 |
 | `detectFormat(buffer)` | 동기 매직 바이트 감지 — 하위 호환을 위해 ZIP 은 `hwpx`, OLE2 는 `hwp` 반환 |
 | `await detectZipFormat(buffer)` | ZIP 내부 구조로 `hwpx`·`xlsx`·`docx`·`pptx`·`unknown` 구분 |
 | `detectOle2Format(buffer)` | OLE2 내부 스트림으로 `hwp`·`xls`·`unknown` 구분 |
@@ -589,12 +595,12 @@ import type {
 | **HWP 5.x** (한컴 레거시) | OLE2 + CFB | 배포용 복호화, 열기 암호, 손상 CFB 복구, 각주·하이퍼링크, 21종 제어문자, 이미지 추출, 실제 쪽 경계 |
 | **HWP 3.x** (1996~2002) | 단일 binary | 상용조합형 → 유니코드, 한자·기호 5,893자 lookup, 중첩 문단, 아래아(옛한글), 열기 암호 |
 | **HWPML 2.x** (XML HWP) | XML DOM | HeadingType 기반 헤딩, 병합 셀, DoS 방어 |
-| **PDF** | pdfjs-dist | 선·클립·무괘선 표, XY-Cut 읽기 순서, 2단 지면, 헤딩, 각주·미주, 수식 글꼴 복원, OCR, 밑줄·링크, 이미지 추출, 텍스트 품질 신호 |
+| **PDF** | hayro (wasm) | 선·클립·무괘선 표, XY-Cut 읽기 순서, 2단 지면, 헤딩, 각주·미주, 수식 글꼴 복원, OCR, 밑줄·링크, 이미지 추출, 텍스트 품질 신호 |
 | **XLSX** (Excel) | ZIP + XML DOM | 공유 문자열, 병합 셀, 다중 시트, 수식 표시, 날짜 셀 ISO 변환, 대형 시트 스트리밍 |
 | **XLS** (Excel 97~2003) | OLE2 + BIFF8 | Workbook 스트림, SST 공유 문자열, 셀·시트 추출 |
 | **DOCX** (Word) | ZIP + XML DOM | 스타일 헤딩, 번호 매기기(실제 번호 라벨), 각주, 하이퍼링크, 이미지 추출 |
 | **PPTX** (PowerPoint) | ZIP + XML DOM | 발표 순서(sldIdLst), 슬라이드 = 쪽, 제목 개체 틀 헤딩, 본문 글머리 목록(2단), 병합 표, 발표자 노트(인용), 이미지 추출, 숨긴 슬라이드 제외. 차트·SmartArt 글은 경고만 |
-| **이미지** (PNG/JPG/WebP) | sharp + 내장 OCR | 스크린샷·스캔 이미지 직접 입력, 래스터 괘선으로 표 복원 |
+| **이미지** (PNG/JPG/WebP·TIFF·GIF·BMP·AVIF·HEIC·PCX) | sharp + 내장 OCR (BMP·PCX 는 내장 디코더, HEIC 는 `npm install libheif-js`) | 스크린샷·스캔·팩스·휴대폰 사진 직접 입력, 멀티페이지 TIFF·DCX 는 페이지마다, 래스터 괘선으로 표 복원. JPEG 2000·PSD 등은 형식 이름을 담아 거절 |
 
 ---
 
@@ -616,7 +622,8 @@ import type {
 - **PaddleOCR** (Apache 2.0, PaddlePaddle) — 텍스트 OCR 엔진 파생 (PP-OCRv5 korean)
 - **Pix2Text** (MIT, breezedeus) — 수식 OCR(MFD/MFR) 알고리즘 포팅. 모델은 런타임 다운로드이며 재배포하지 않습니다 — MFD 가중치의 기반인 Ultralytics YOLOv8 은 AGPL-3.0 이므로 수식 OCR 에 의존하는 상용·비공개 제품은 해당 조건을 별도 확인하세요
 - **cfb** (Apache 2.0, SheetJS) — HWP5 OLE2 컨테이너 파싱
-- **pdfjs-dist** (Apache 2.0, Mozilla) — PDF 텍스트 추출
+- **hayro** (Apache 2.0 OR MIT, The Hayro Authors) — PDF 해석 엔진 (wasm 으로 배포, 크레이트 고지는 `THIRD_PARTY/hayro-pdf.txt`)
+- **PDF.js** (Apache 2.0, Mozilla) — 글 조각 규칙·연산자 번호·PDF 글 디코딩을 옮겨 씀
 - **JSZip** (MIT, Stuart Knightley 외) — ZIP 기반 포맷 파싱
 
 전체 고지는 [NOTICE](../NOTICE), 라이선스 전문은 `THIRD_PARTY/` — 둘 다 npm 배포 패키지에 포함됩니다.
