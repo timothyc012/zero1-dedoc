@@ -74,6 +74,8 @@ Measured on the merge (Node 26.12.0, macOS arm64):
 - Zero1 Office's bundled OCR bridge (`zero1-dedoc-ocr.mjs`, German) on three local scans: `ocrLines` JSON and Markdown identical before and after.
 - 25 local text-layer PDFs: 16 identical, 9 changed; 7 of the changes match pure upstream v4.25.0 exactly (number spacing, escaped `---` lines, form field values). One guidebook PDF loses 17 bullet-list "tables" (upstream also gives 0). The remaining differences from pure upstream are fork heading and header rules.
 - CLI convert (docx, xlsx), `generate` to HWPX and re-parse, and the MCP server (22 tools, `initialize` reports `zero1-dedoc` 4.25.0-zero1.1) work.
+- hayro's `pageView`/`pageRotate` equal pdf.js `page.view`/`page.rotate` on pages turned 90°, 180° and 270° with a CropBox offset, so OCR text layers keep their position.
+- Bridge `preflight` (text PDF, scan, 483- and 384-page PDFs), Korean OCR through the bridge, scan2pdf's `ocr_lines.mjs`, PNG OCR, `sync-meta --check` and `check-notices` pass. Parse time on the 25 PDFs without other load: 14.5 s before, 14.1 s after.
 
 Not run: the public ODL 200-document benchmark and `bench:german-smoke` (inputs are not on this machine), and the private Korean corpus gate (`bench/corpus` absent).
 
