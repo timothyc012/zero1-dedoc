@@ -54,3 +54,27 @@ Post-merge review fixes on top of the conflict resolution:
 
 - Full-page OCR on quarter-turned rasters (PDF and image inputs) returned blocks in the corrected raster's coordinates while `ocrLines` reported original-frame lines; `restoreOcrPageOrientation()` now maps block, nested-block, caption, footnote and table-cell boxes back to the original orientation, preserving reading order.
 - `ocrLinesInPdfSpace()` undid the quarter turn with pixel-index math (`W−1−y`), off by one raster pixel; it now uses continuous box-edge transforms.
+
+## Full merge: upstream v4.25.0 (2026-11-18)
+
+Branch `claude/zeroon-office-connection-ec6ef8` merges `upstream/main` `6fa11788` (v4.25.0) into the fork as a normal merge commit; the merge base moves from `a71bdba9` (v4.24.63). 128 upstream commits landed. The largest change is the PDF text-layer engine: pdf.js (`pdfjs-dist`) is replaced at runtime by hayro compiled to wasm (`src/pdf/hayro-pdf.wasm`, committed, so `npm ci && npm run build` needs no Rust toolchain). OCR and formula rasters still use PDFium. Other additions: HWP 5.0 save (`generate -o x.hwp`), PDF layout measuring for report generation (`measure`, `generate --layout`), image normalisation for LLM APIs, more image input formats, and Hancom automation hardening.
+
+15 files conflicted (`CHANGELOG.md`, `README.md`, `package*.json`, `scripts/sync-meta.mjs`, `src/cli.ts`, `src/mcp.ts`, `src/mcp/{shared,tools-parse}.ts`, `src/ocr/image-ocr.ts`, `src/pdf/{cell-extract,parser,table-grid}.ts`, `src/shared/generate-images.ts`, `tests/pdf-nonhancom.test.ts`). The policy was unchanged.
+
+Kept from the fork:
+
+- Identity: package name and bins, CLI and MCP descriptions, PPTX in the MCP parse extensions, and `sync-meta` without MCP registry or plugin version sync (no `mcpName`). The inherited `plugins/kordoc` snapshot now reads v4.25.0.
+- PDF page frames for `ocrLinesInPdfSpace()`: the parser now takes `view` and `rotate` from hayro (`doc.pageView`, `doc.pageRotate`) instead of the pdf.js page.
+- The caption-in-gap split (`gapText`) in `mergeAdjacentGrids`, combined with upstream's new 10pt limit for two closed boxes (`CLOSED_BOX_GAP`). `tests/pdf-table-gap-caption.test.ts` now uses an 8pt gap so the caption rule is still exercised.
+- `imageOcrItemsToBlocks()` with the quarter-turn restore, now taking upstream's page number.
+
+Measured on the merge (Node 26.12.0, macOS arm64):
+
+- `npm run typecheck` passes; `npm test`: 5,366 tests, 5,337 pass, 25 skipped, 3 failures fixed after the merge (two test expectations above and a doubled `file:` URL in `tests/stdout-channel.test.ts`), then the three files pass.
+- Zero1 Office's bundled OCR bridge (`zero1-dedoc-ocr.mjs`, German) on three local scans: `ocrLines` JSON and Markdown identical before and after.
+- 25 local text-layer PDFs: 16 identical, 9 changed; 7 of the changes match pure upstream v4.25.0 exactly (number spacing, escaped `---` lines, form field values). One guidebook PDF loses 17 bullet-list "tables" (upstream also gives 0). The remaining differences from pure upstream are fork heading and header rules.
+- CLI convert (docx, xlsx), `generate` to HWPX and re-parse, and the MCP server (22 tools, `initialize` reports `zero1-dedoc` 4.25.0-zero1.1) work.
+
+Not run: the public ODL 200-document benchmark and `bench:german-smoke` (inputs are not on this machine), and the private Korean corpus gate (`bench/corpus` absent).
+
+Known consequence: Zero1 PDF's `scripts/build-pdf-table-parser.sh` requires `node_modules/pdfjs-dist` assets and imports `PDFJS_DOCUMENT_OPTIONS`, neither of which exists after this merge. The already-built, hash-pinned table parser bundled in the app keeps working; rebuilding it needs a separate update of that script.
